@@ -1,0 +1,282 @@
+/* ── Alarm Trigger (bell icon wrapper) ── */
+.alarm-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.alarm-trigger__btn {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+/* ── Badge ── */
+.alarm-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-chip);
+  pointer-events: none;
+}
+
+.alarm-badge--info {
+  background: var(--color-info);
+}
+
+.alarm-badge--warning {
+  background: var(--color-warning);
+}
+
+.alarm-badge--error {
+  background: var(--color-error);
+}
+
+/* ── Popover container ── */
+.alarm-popover {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: 360px;
+  height: 480px;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Popover header ── */
+.alarm-popover__header {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.alarm-popover__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  color: var(--text-primary);
+}
+
+.alarm-popover__filters {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.alarm-popover__filter {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-chip);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.alarm-popover__filter--active {
+  color: var(--text-primary);
+  border-color: var(--color-primary);
+}
+
+/* ── Popover list ── */
+.alarm-popover__list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.alarm-popover__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.alarm-popover__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.alarm-popover__list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+.alarm-popover__list::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.alarm-popover__empty {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+}
+
+/* ── Alarm list item ── */
+.alarm-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--divider);
+  cursor: pointer;
+  transition: background 120ms ease;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.alarm-item:hover {
+  background: var(--bg-hover);
+}
+
+.alarm-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.alarm-item:last-child {
+  border-bottom: none;
+}
+
+.alarm-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.alarm-item__code-severity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+
+.alarm-item__severity--info {
+  color: var(--color-info);
+}
+
+.alarm-item__severity--warning {
+  color: var(--color-warning);
+}
+
+.alarm-item__severity--error {
+  color: var(--color-error);
+}
+
+.alarm-item__timestamp {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.alarm-item__message {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+/* ── Alarm Detail Modal ── */
+.alarm-detail__overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-backdrop);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alarm-detail {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.alarm-detail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--divider);
+}
+
+.alarm-detail__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  color: var(--text-primary);
+}
+
+.alarm-detail__close {
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+}
+
+.alarm-detail__body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.alarm-detail__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.alarm-detail__label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.alarm-detail__value {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+/* ── Urgent alarm body flash ── */
+@keyframes alarm-urgent-pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: inset 0 0 30px var(--bg-error-subtle);
+  }
+}
+
+body[data-alarm-urgent="true"] .main-content {
+  animation: alarm-urgent-pulse 2s ease-in-out infinite;
+}

@@ -1,6 +1,9 @@
-@import "tailwindcss";
+@import "./styles/theme-tokens.css";
+@import "./components/ui/under-development.css";
 
-:root {
+/* @import "tailwindcss"; */
+
+/* :root {
   --background: #ffffff;
   --foreground: #171717;
 }
@@ -17,10 +20,212 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
-}
+} */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg-app);
+  color: var(--text-primary);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+
+
+.panel {
+  position: relative;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel__header {
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.panel__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panel__subheader {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--divider);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.panel__title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  color: var(--text-primary);
+}
+
+.panel__body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow: auto;
+}
+
+
+.panel--collapsed {
+  padding: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.panel__collapsed {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.panel__collapsed--start {
+  justify-content: flex-start;
+  padding-top: var(--space-4);
+}
+
+.panel__collapsed--end {
+  justify-content: flex-end;
+  padding-bottom: var(--space-4);
+}
+
+.panel__collapsed-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.input {
+  width: 100%;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-badge);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  font-size: var(--font-size-base);
+}
+
+.chip-row {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+.chip {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-chip);
+  padding: 6px 10px;
+  font-size: var(--font-size-base);
+}
+
+.icon-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-surface-1);
+  width: 70px;
+  height: 30px;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.icon-btn:focus-visible,
+.side-nav__link:focus-visible,
+.side-nav__icon-btn:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.icon-btn--ghost {
+  background: var(--bg-surface-1);
+}
+
+.panel__toggle {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+}
+
+.panel__toggle--edge {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+.panel__toggle--edge-right {
+  right: calc(-26px / 2);
+}
+
+.panel__toggle--edge-left {
+  left: calc(-26px / 2);
+}
+
+
+.tab-row {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.btn {
+  border-radius: var(--radius-control);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+}
+
+.btn--primary {
+  background: var(--color-primary);
+  color: var(--text-on-primary);
+  border-color: transparent;
+}
+
