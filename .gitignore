@@ -9,3 +9,9 @@ frontend/.next/
 # Env
 frontend/.env.local
 .env
+
+
+# prompts
+frontend/spec/
+frontend/CLAUDE.md
+frontend/.codex/
