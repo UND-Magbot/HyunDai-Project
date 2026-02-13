@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { IconButton } from "../ui/IconButton";
-import { AlarmListItem } from "./AlarmListItem";
-import { AlarmDetail } from "./AlarmDetail";
-import type { AlarmData, AlarmDetailData, AlarmSeverity, FilterType } from "@/lib/types/shell";
+import { AlarmSearchPopup } from "./AlarmSearchPopup";
+import type { AlarmData, AlarmSeverity } from "@/lib/types/shell";
 
 const mockAlarms: AlarmData[] = [
   {
@@ -55,28 +55,44 @@ function getHighestSeverity(alarms: AlarmData[]): AlarmSeverity | null {
   return highest;
 }
 
-export function AlarmPopover() {
+function isActiveAlarm(alarm: AlarmData): boolean {
+  return !alarm.clearedAt;
+}
+
+type AlarmPopoverProps = {
+  iconSrc?: string;
+};
+
+export function AlarmPopover({
+  iconSrc = "/icon/Icon_v2 (41).png",
+}: AlarmPopoverProps = {}) {
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<FilterType>("all");
-  const [selectedAlarm, setSelectedAlarm] = useState<AlarmDetailData | null>(
-    null
-  );
   const [hasUnread, setHasUnread] = useState(true);
+  const [neonAcknowledged, setNeonAcknowledged] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
+  const [keyword, setKeyword] = useState("");
   const triggerRef = useRef<HTMLDivElement>(null);
 
-  const hasUrgent =
-    hasUnread && mockAlarms.some((a) => a.severity === "error");
+  const hasGlobalNeonAlert = mockAlarms.some(
+    (alarm) =>
+      isActiveAlarm(alarm) &&
+      (alarm.severity === "warning" || alarm.severity === "error")
+  );
+
+  const showNeon = hasGlobalNeonAlert && !neonAcknowledged;
 
   useEffect(() => {
-    if (hasUrgent) {
-      document.body.setAttribute("data-alarm-urgent", "true");
+    document.body.removeAttribute("data-alarm-urgent");
+    if (showNeon) {
+      document.body.setAttribute("data-alarm-neon", "true");
     } else {
-      document.body.removeAttribute("data-alarm-urgent");
+      document.body.removeAttribute("data-alarm-neon");
     }
     return () => {
-      document.body.removeAttribute("data-alarm-urgent");
+      document.body.removeAttribute("data-alarm-neon");
     };
-  }, [hasUrgent]);
+  }, [showNeon]);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -106,31 +122,19 @@ export function AlarmPopover() {
     };
   }, [open, handleClose]);
 
-  const filteredAlarms =
-    filter === "all"
-      ? mockAlarms
-      : mockAlarms.filter((a) => a.severity === filter);
+  const displayAlarms = keyword
+    ? mockAlarms.filter((a) =>
+        a.message.toLowerCase().includes(keyword.toLowerCase())
+      )
+    : mockAlarms;
 
   const badgeSeverity = getHighestSeverity(mockAlarms);
+  const showUnreadBadge = hasUnread && badgeSeverity;
 
-  const handleAlarmClick = (alarm: AlarmData) => {
-    setSelectedAlarm({
-      id: alarm.id,
-      code: alarm.code,
-      severity: alarm.severity,
-      message: alarm.message,
-      robot: alarm.robot,
-      occurredAt: alarm.occurredAt,
-      clearedAt: alarm.clearedAt,
-    });
+  const handleOpenSearch = () => {
+    setOpen(false);
+    setSearchOpen(true);
   };
-
-  const filters: { key: FilterType; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "info", label: "Info" },
-    { key: "warning", label: "Warning" },
-    { key: "error", label: "Error" },
-  ];
 
   return (
     <>
@@ -142,48 +146,78 @@ export function AlarmPopover() {
           onClick={() => {
             setOpen((v) => !v);
             setHasUnread(false);
+            setNeonAcknowledged(true);
           }}
         >
-          🔔
+          <Image
+            src={iconSrc}
+            alt=""
+            width={20}
+            height={20}
+            className="alarm-trigger__icon"
+          />
         </IconButton>
-        {badgeSeverity ? (
+        {showUnreadBadge ? (
           <span className={`alarm-badge alarm-badge--${badgeSeverity}`} />
         ) : null}
 
         {open ? (
           <div className="alarm-popover">
-            <div className="alarm-popover__header">
-              <h3 className="alarm-popover__title">Alarms</h3>
-              <div className="alarm-popover__filters">
-                {filters.map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    className={
-                      filter === f.key
-                        ? "alarm-popover__filter alarm-popover__filter--active"
-                        : "alarm-popover__filter"
-                    }
-                    onClick={() => setFilter(f.key)}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
+            <div className="alarm-popover__toolbar">
+              <input
+                type="text"
+                className="alarm-popover__search-input"
+                placeholder="메시지를 입력하세요."
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+              />
+              <IconButton
+                className="alarm-popover__toolbar-btn"
+                variant="ghost"
+                aria-label="Alarm search"
+                onClick={handleOpenSearch}
+              >
+                <img
+                  src="/icon/search.png"
+                  alt=""
+                  className="alarm-popover__search-icon"
+                />
+              </IconButton>
+              <IconButton
+                className="alarm-popover__toolbar-btn"
+                variant="ghost"
+                aria-label={soundOn ? "Mute alarm sound" : "Enable alarm sound"}
+                onClick={() => setSoundOn((v) => !v)}
+              >
+                <img
+                  src={soundOn ? "/icon/sound-btn.png" : "/icon/sound-btn-off.png"}
+                  alt={soundOn ? "Sound on" : "Sound off"}
+                  className="alarm-popover__sound-icon"
+                />
+              </IconButton>
             </div>
             <div className="alarm-popover__list">
-              {filteredAlarms.length === 0 ? (
+              {displayAlarms.length === 0 ? (
                 <div className="alarm-popover__empty">No alarms</div>
               ) : (
-                filteredAlarms.map((alarm) => (
-                  <AlarmListItem
+                displayAlarms.map((alarm) => (
+                  <div
                     key={alarm.id}
-                    code={alarm.code}
-                    severity={alarm.severity}
-                    timestamp={alarm.timestamp}
-                    message={alarm.message}
-                    onClick={() => handleAlarmClick(alarm)}
-                  />
+                    className={`alarm-item alarm-item--severity-${alarm.severity}`}
+                  >
+                    <div className="alarm-item__header">
+                      <span className={`alarm-item__code-severity alarm-item__severity--${alarm.severity}`}>
+                        [{alarm.code}] {alarm.severity.charAt(0).toUpperCase() + alarm.severity.slice(1)}
+                      </span>
+                      <span className="alarm-item__timestamp">
+                        {alarm.occurredAt}
+                      </span>
+                    </div>
+                    <p className="alarm-item__message">{alarm.message}</p>
+                    {alarm.robot ? (
+                      <span className="alarm-item__robot">{alarm.robot}</span>
+                    ) : null}
+                  </div>
                 ))
               )}
             </div>
@@ -191,12 +225,11 @@ export function AlarmPopover() {
         ) : null}
       </div>
 
-      {selectedAlarm ? (
-        <AlarmDetail
-          alarm={selectedAlarm}
-          onClose={() => setSelectedAlarm(null)}
-        />
+      {searchOpen ? (
+        <AlarmSearchPopup onClose={() => setSearchOpen(false)} />
       ) : null}
     </>
   );
 }
+
+

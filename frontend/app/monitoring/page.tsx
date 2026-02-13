@@ -18,6 +18,7 @@ import { TaskRow } from "../components/ui/monitoring/TaskRow";
 import { DeviceInfoPopup } from "../components/ui/monitoring/DeviceInfoPopup";
 import { TaskInfoModal } from "../components/ui/monitoring/TaskInfoModal";
 import { CreateTaskModal } from "../components/ui/tasks/CreateTaskModal";
+import { ConfirmModal } from "../components/ui/robots/ConfirmModal";
 import { mockDevices, getDeviceCounts } from "@/lib/mock/devices";
 import { mockTasks } from "@/lib/mock/tasks";
 import type { TaskState } from "@/lib/types/monitoring";
@@ -54,6 +55,7 @@ export default function MonitoringPage() {
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   const mapViewportRef = useRef<HTMLDivElement | null>(null);
@@ -247,6 +249,25 @@ export default function MonitoringPage() {
     .filter(Boolean)
     .join(" ");
 
+  const handleStartAll = () => {
+    console.log("Start All tasks");
+  };
+
+  const hasRunningTasks = mockTasks.some((task) => task.state === "running");
+
+  const handleStopAll = () => {
+    if (hasRunningTasks) {
+      setStopConfirmOpen(true);
+      return;
+    }
+    console.log("Stop All tasks");
+  };
+
+  const handleConfirmStop = () => {
+    setStopConfirmOpen(false);
+    console.log("Stop All tasks");
+  };
+
   const filteredDevices = deviceSearch
     ? mockDevices.filter((d) =>
         d.name.toLowerCase().includes(deviceSearch.toLowerCase())
@@ -277,7 +298,7 @@ export default function MonitoringPage() {
         />
         <main className="main-content">
           <Panel
-            title="Devices"
+            title="로봇 목록"
             collapsed={leftCollapsed}
             collapsedTogglePosition="end"
             onToggle={() => setLeftCollapsed((value) => !value)}
@@ -319,7 +340,7 @@ export default function MonitoringPage() {
                 <span className="device-row__header-cell">Status</span>
               </div>
               {filteredDevices.length === 0 ? (
-                <div className="device-list__empty">No Device Data</div>
+                <div className="device-list__empty">등록된 로봇이 없습니다.</div>
               ) : (
                 filteredDevices.map((device) => (
                   <DeviceRow
@@ -339,7 +360,14 @@ export default function MonitoringPage() {
             </div>
           </Panel>
 
-          <div className="monitoring-stage">
+          <div
+            className="monitoring-stage"
+            style={
+              leftCollapsed
+                ? ({ "--overlay-anchor-left": "calc(2% + 40px + var(--overlay-devices-gap))" } as CSSProperties)
+                : undefined
+            }
+          >
             <section className={mapMode === "3d" ? "monitoring-map is-3d" : "monitoring-map"}>
               <div
                 className="center-map__canvas"
@@ -391,44 +419,61 @@ export default function MonitoringPage() {
           </div>
 
           <Panel
-            title="Tasks"
+            title="작업"
             collapsed={rightCollapsed}
             collapsedTogglePosition="start"
             onToggle={() => setRightCollapsed((value) => !value)}
             toggleIcon="left"
+            noBodyWrapper
             className="panel--overlay panel--overlay-right"
-            headerActions={<button className="btn btn--primary" onClick={() => setCreateTaskOpen(true)}>Add Task</button>}
-            subheader={
-              <>
-                <div className="tab-row">
-                  <button
-                    className={taskTab === "running" ? "tab tab--active" : "tab"}
-                    onClick={() => { setTaskTab("running"); setTaskSearch(""); setExpandedTaskId(null); }}
-                  >
-                    Running
-                  </button>
-                  <button
-                    className={taskTab === "completed" ? "tab tab--active" : "tab"}
-                    onClick={() => { setTaskTab("completed"); setTaskSearch(""); setExpandedTaskId(null); }}
-                  >
-                    Completed
-                  </button>
-                  <button
-                    className={taskTab === "error" ? "tab tab--active" : "tab"}
-                    onClick={() => { setTaskTab("error"); setTaskSearch(""); setExpandedTaskId(null); }}
-                  >
-                    Error
-                  </button>
-                </div>
-                <SearchInput
-                  key={taskTab}
-                  placeholder="로봇명을 입력하세요."
-                  onSearch={setTaskSearch}
-                />
-              </>
+            // headerActions={<button className="btn btn--primary" onClick={() => setCreateTaskOpen(true)}>Add Task</button>}
+            footer={
+              <div className="task-panel__footer-actions">
+                <button
+                  className="btn btn--primary"
+                  onClick={handleStartAll}
+                >
+                  시작
+                </button>
+                <button
+                  className="btn btn--danger"
+                  onClick={handleStopAll}
+                >
+                  종료
+                </button>
+              </div>
             }
+            // subheader={
+            //   <>
+            //     <div className="tab-row">
+            //       <button
+            //         className={taskTab === "running" ? "tab tab--active" : "tab"}
+            //         onClick={() => { setTaskTab("running"); setTaskSearch(""); setExpandedTaskId(null); }}
+            //       >
+            //         Running
+            //       </button>
+            //       <button
+            //         className={taskTab === "completed" ? "tab tab--active" : "tab"}
+            //         onClick={() => { setTaskTab("completed"); setTaskSearch(""); setExpandedTaskId(null); }}
+            //       >
+            //         Completed
+            //       </button>
+            //       <button
+            //         className={taskTab === "error" ? "tab tab--active" : "tab"}
+            //         onClick={() => { setTaskTab("error"); setTaskSearch(""); setExpandedTaskId(null); }}
+            //       >
+            //         Error
+            //       </button>
+            //     </div>
+            //     <SearchInput
+            //       key={taskTab}
+            //       placeholder="로봇명을 입력하세요."
+            //       onSearch={setTaskSearch}
+            //     />
+            //   </>
+            // }
           >
-            <div className="task-list">
+            {/* <div className="task-list">
               <div className="task-row__header">
                 <span className="task-row__header-cell">Robot</span>
                 <span className="task-row__header-cell">EndPoint</span>
@@ -451,7 +496,7 @@ export default function MonitoringPage() {
                   />
                 ))
               )}
-            </div>
+            </div> */}
           </Panel>
           <DeviceInfoPopup
             deviceId={openDeviceId}
@@ -464,6 +509,13 @@ export default function MonitoringPage() {
           <CreateTaskModal
             open={createTaskOpen}
             onClose={() => setCreateTaskOpen(false)}
+          />
+          <ConfirmModal
+            open={stopConfirmOpen}
+            title="작업 종료"
+            message="진행중인 작업이 있습니다. 작업을 중단하고 종료하시겠습니까?"
+            onConfirm={handleConfirmStop}
+            onCancel={() => setStopConfirmOpen(false)}
           />
         </main>
       </div>

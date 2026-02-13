@@ -11,6 +11,8 @@ export type PanelProps = {
   onToggle?: () => void;
   toggleIcon?: "left" | "right";
   className?: string;
+  footer?: ReactNode;
+  noBodyWrapper?: boolean;
   children?: ReactNode;
 };
 

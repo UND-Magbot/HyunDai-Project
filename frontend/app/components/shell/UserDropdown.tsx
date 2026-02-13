@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import type { UserDropdownProps } from "@/lib/types/shell";
 import "./user-dropdown.css";
 
-export function UserDropdown({ userName }: UserDropdownProps) {
+export function UserDropdown({
+  userName,
+  iconSrc = "/icon/Icon (8).png",
+}: UserDropdownProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -52,7 +56,15 @@ export function UserDropdown({ userName }: UserDropdownProps) {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="user-dropdown__icon">👤</span>
+        <span className="user-dropdown__icon" aria-hidden="true">
+          <Image
+            src={iconSrc}
+            alt=""
+            width={18}
+            height={18}
+            className="user-dropdown__icon-img"
+          />
+        </span>
         <span>{userName}</span>
         <span
           className={

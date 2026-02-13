@@ -44,3 +44,5 @@ next-env.d.ts
 spec/
 CLAUDE.md
 .codex/
+
+nul

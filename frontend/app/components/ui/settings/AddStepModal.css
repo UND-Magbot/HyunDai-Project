@@ -1,0 +1,130 @@
+.add-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.add-step__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.add-step__label {
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.add-step__required {
+  color: var(--color-error);
+}
+
+.add-step__select {
+  appearance: none;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-badge);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='rgba(255,255,255,0.52)' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-2) center;
+  padding-right: var(--space-6);
+}
+
+.add-step__select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.add-step__select option {
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+}
+
+.add-step__select--placeholder {
+  color: var(--text-secondary);
+}
+
+.add-step__select--error {
+  border-color: var(--color-error);
+}
+
+.add-step__input {
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-badge);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+}
+
+.add-step__input::placeholder {
+  color: var(--text-muted);
+}
+
+.add-step__input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* Hide number spinner */
+.add-step__input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.add-step__input[type="number"]::-webkit-outer-spin-button,
+.add-step__input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.add-step__error {
+  font-size: var(--font-size-md);
+  color: var(--color-error);
+  margin-top: var(--space-1);
+}
+
+/* Footer */
+.add-step__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+}
+
+.add-step__btn {
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-badge);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.add-step__btn--cancel {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.add-step__btn--cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.add-step__btn--confirm {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--text-on-primary);
+}
+
+.add-step__btn--confirm:hover {
+  opacity: 0.9;
+}

@@ -19,7 +19,7 @@ export function DeviceRow({
   const isRunning = status === "running";
   const isInvalidOnlineDisable = power === "online" && status === "disable";
   const effectiveStatus = isOffline ? "disable" : status;
-  const actionLabel = isOffline ? "Enable" : "Disable";
+  const actionLabel = isOffline ? "활성" : "비활성";
 
   const canSuspend = !isOffline && !isInvalidOnlineDisable && isRunning;
   const canActionButton = isOffline || (!isInvalidOnlineDisable && isRunning);
@@ -54,20 +54,20 @@ export function DeviceRow({
           onClick={(event) => event.stopPropagation()}
         >
           <IconButton aria-label="Suspend" disabled={!canSuspend}>
-            Suspend
+            정지
           </IconButton>
           <IconButton aria-label={actionLabel} disabled={!canActionButton}>
             {actionLabel}
           </IconButton>
           <IconButton aria-label="Navigate" disabled={!canNav}>
-            Nav
+            네비
           </IconButton>
           <IconButton
             aria-label="Info"
             disabled={!canInfo}
             onClick={() => onInfo?.(id)}
           >
-            Info
+            정보
           </IconButton>
         </div>
       ) : null}

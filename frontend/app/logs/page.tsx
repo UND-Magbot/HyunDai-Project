@@ -133,7 +133,7 @@ export default function LogsPage() {
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => p - 1)}
               >
-                Prev
+                이전
               </button>
               {pageNumbers.map((num) => (
                 <button
@@ -149,10 +149,10 @@ export default function LogsPage() {
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => p + 1)}
               >
-                Next
+                다음
               </button>
               <span className="pagination__info">
-                {displayLogs.length} items
+                총 {displayLogs.length}개
               </span>
             </div>
           </div>

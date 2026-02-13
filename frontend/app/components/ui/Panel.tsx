@@ -12,6 +12,8 @@ export function Panel({
   onToggle,
   toggleIcon = "left",
   className,
+  footer,
+  noBodyWrapper,
   children,
 }: PanelProps) {
   const classes = ["panel", collapsed ? "panel--collapsed" : "", className]
@@ -61,7 +63,8 @@ export function Panel({
         {headerContent}
       </div>
       {subheader ? <div className="panel__subheader">{subheader}</div> : null}
-      <div className="panel__body">{children}</div>
+      {noBodyWrapper ? children : <div className="panel__body">{children}</div>}
+      {footer ? <div className="panel__footer">{footer}</div> : null}
       {onToggle ? (
         <IconButton
           aria-label={`Collapse ${title}`}

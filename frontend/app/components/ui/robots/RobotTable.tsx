@@ -38,9 +38,9 @@ export function RobotTable({
             <th>RobotName</th>
             <th>Model</th>
             <th>RunState</th>
-            <th>Online</th>
+            <th>Power</th>
             <th>Signal</th>
-            <th>Power (%)</th>
+            <th>Battery (%)</th>
             <th>Enable</th>
             <th>Operation</th>
           </tr>

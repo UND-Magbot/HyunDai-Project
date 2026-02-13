@@ -2,7 +2,6 @@
   background: var(--bg-surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  overflow: hidden;
 }
 
 .robot-table {
@@ -41,6 +40,14 @@
   border-bottom: 1px solid var(--border-table-header);
 }
 
+.robot-table thead th:first-child {
+  border-top-left-radius: var(--radius-card);
+}
+
+.robot-table thead th:last-child {
+  border-top-right-radius: var(--radius-card);
+}
+
 .robot-table tbody td {
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-md);
@@ -55,6 +62,14 @@
 
 .robot-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.robot-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-card);
+}
+
+.robot-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-card);
 }
 
 .robot-table__row {

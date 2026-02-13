@@ -68,7 +68,7 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
       <div className="device-info">
         {/* Base Information */}
         <section className="device-info__section">
-          <h3 className="device-info__section-title">Base Information</h3>
+          <h3 className="device-info__section-title">기본 정보</h3>
           <div className="device-info__grid">
             <div className="device-info__field">
               <span className="device-info__label">SN</span>

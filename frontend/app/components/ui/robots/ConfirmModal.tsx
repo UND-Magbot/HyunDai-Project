@@ -17,10 +17,10 @@ export function ConfirmModal({
         <p className="confirm-modal__message">{message}</p>
         <div className="confirm-modal__actions">
           <button className="btn" onClick={onCancel}>
-            Cancel
+            취소
           </button>
           <button className="btn btn--primary" onClick={onConfirm}>
-            Confirm
+            확인
           </button>
         </div>
       </div>

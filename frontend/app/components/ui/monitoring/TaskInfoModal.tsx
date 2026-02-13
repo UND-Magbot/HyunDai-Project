@@ -48,7 +48,7 @@ export function TaskInfoModal({ taskId, onClose }: TaskInfoModalProps) {
     if (!task) {
       return (
         <div className="task-info__error">
-          <p>Task not found</p>
+          <p>등록된 업무가 없습니다.</p>
         </div>
       );
     }

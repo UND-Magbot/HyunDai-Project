@@ -39,7 +39,7 @@ export function LogTable({ logs }: LogTableProps) {
           {logs.length === 0 ? (
             <tr>
               <td colSpan={7} className="log-table__empty">
-                No logs found
+                조회된 로그가 없습니다.
               </td>
             </tr>
           ) : (

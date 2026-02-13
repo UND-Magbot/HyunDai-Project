@@ -2,7 +2,6 @@
   background: var(--bg-surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  overflow: hidden;
 }
 
 .log-table {
@@ -30,6 +29,14 @@
   white-space: nowrap;
 }
 
+.log-table th:first-child {
+  border-top-left-radius: var(--radius-card);
+}
+
+.log-table th:last-child {
+  border-top-right-radius: var(--radius-card);
+}
+
 .log-table td {
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-md);
@@ -44,6 +51,14 @@
 
 .log-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.log-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-card);
+}
+
+.log-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-card);
 }
 
 /* ── Error row highlight ── */

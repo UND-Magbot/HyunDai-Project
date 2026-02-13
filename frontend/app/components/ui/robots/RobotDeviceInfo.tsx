@@ -32,7 +32,7 @@ export function RobotDeviceInfo({
   };
 
   return (
-    <Modal open onClose={onClose} title="Device Info" width="760px">
+    <Modal open onClose={onClose} title="로봇 상세 정보" width="760px">
       <div className="robot-info">
         {/* Base Information */}
         <section className="robot-info__section">
@@ -128,9 +128,9 @@ export function RobotDeviceInfo({
 
         {/* Current Task */}
         <section className="robot-info__section">
-          <h3 className="robot-info__section-title">Current Task</h3>
+          <h3 className="robot-info__section-title">진행 작업</h3>
           {device.currentTask.length === 0 ? (
-            <div className="robot-info__empty">No active task</div>
+            <div className="robot-info__empty">진행중인 작업이 없습니다.</div>
           ) : (
             <div
               className={`robot-info__table-wrapper${shouldScrollTaskTable ? " robot-info__table-wrapper--scroll" : ""}`}
@@ -138,13 +138,13 @@ export function RobotDeviceInfo({
               <table className="robot-info__table">
                 <thead>
                   <tr>
-                    <th>Task ID</th>
-                    <th>State</th>
-                    <th>Type</th>
-                    <th>Create Time</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Oper</th>
+                    <th>작업명</th>
+                    <th>작업상태</th>
+                    <th>작업유형</th>
+                    <th>작업 시작 일시</th>
+                    <th>시작</th>
+                    <th>종료</th>
+                    <th>담당자</th>
                   </tr>
                 </thead>
                 <tbody>

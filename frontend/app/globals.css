@@ -61,6 +61,34 @@ body {
   box-sizing: border-box;
 }
 
+/* Custom Scrollbar */
+*::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--scrollbar-radius);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
 
 
 .panel {
@@ -113,6 +141,16 @@ body {
   flex-direction: column;
   gap: var(--space-3);
   overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel__footer {
+  border-top: 1px solid var(--border);
+  padding: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
 }
 
 
@@ -253,6 +291,12 @@ body {
 
 .btn--primary {
   background: var(--color-primary);
+  color: var(--text-on-primary);
+  border-color: transparent;
+}
+
+.btn--danger {
+  background: var(--color-error);
   color: var(--text-on-primary);
   border-color: transparent;
 }

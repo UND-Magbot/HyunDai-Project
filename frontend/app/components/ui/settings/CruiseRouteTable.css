@@ -1,32 +1,29 @@
-.settings-table-wrapper {
+.cr-table-wrapper {
   background: var(--bg-surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
 }
 
-.settings-table {
+.cr-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
-/* Column widths — Name | SN | APK | SDK | Deployment Date | Businesses | Building | Operation */
-.settings-table col:nth-child(1) { width: 12%; }
-.settings-table col:nth-child(2) { width: 18%; }
-.settings-table col:nth-child(3) { width: 10%; }
-.settings-table col:nth-child(4) { width: 9%; }
-.settings-table col:nth-child(5) { width: 13%; }
-.settings-table col:nth-child(6) { width: 13%; }
-.settings-table col:nth-child(7) { width: 12%; }
-.settings-table col:nth-child(8) { width: 13%; }
+/* Column widths — Route Name | Businesses | Number of sites | Creation Time | Operation */
+.cr-table col:nth-child(1) { width: 25%; }
+.cr-table col:nth-child(2) { width: 25%; }
+.cr-table col:nth-child(3) { width: 15%; }
+.cr-table col:nth-child(4) { width: 20%; }
+.cr-table col:nth-child(5) { width: 15%; }
 
-.settings-table thead {
+.cr-table thead {
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
-.settings-table thead th {
+.cr-table thead th {
   background: var(--bg-table-header);
   color: var(--text-muted);
   font-size: var(--font-size-sm);
@@ -39,15 +36,15 @@
   border-bottom: 1px solid var(--border-table-header);
 }
 
-.settings-table thead th:first-child {
+.cr-table thead th:first-child {
   border-top-left-radius: var(--radius-card);
 }
 
-.settings-table thead th:last-child {
+.cr-table thead th:last-child {
   border-top-right-radius: var(--radius-card);
 }
 
-.settings-table tbody td {
+.cr-table tbody td {
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-md);
   border-bottom: 1px solid var(--divider);
@@ -59,38 +56,33 @@
   vertical-align: middle;
 }
 
-.settings-table tbody tr:last-child td {
+.cr-table tbody tr:last-child td {
   border-bottom: none;
 }
 
-.settings-table tbody tr:last-child td:first-child {
+.cr-table tbody tr:last-child td:first-child {
   border-bottom-left-radius: var(--radius-card);
 }
 
-.settings-table tbody tr:last-child td:last-child {
+.cr-table tbody tr:last-child td:last-child {
   border-bottom-right-radius: var(--radius-card);
 }
 
-.settings-table__row {
+.cr-table__row {
   height: 53px;
 }
 
-.settings-table__name {
+.cr-table__name {
   font-weight: var(--font-weight-semibold);
 }
 
-.settings-table__muted {
-  color: var(--text-muted);
-  cursor: default;
-}
-
 /* Operation buttons */
-.settings-table__actions {
+.cr-table__actions {
   display: flex;
   gap: var(--space-2);
 }
 
-.settings-table__settings-btn {
+.cr-table__edit-btn {
   background: transparent;
   border: 1px solid var(--color-primary);
   border-radius: var(--radius-button);
@@ -102,29 +94,28 @@
   white-space: nowrap;
 }
 
-.settings-table__settings-btn:hover {
+.cr-table__edit-btn:hover {
   background: var(--bg-primary-subtle);
 }
 
-.settings-table__detail-btn {
+.cr-table__delete-btn {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-error);
   border-radius: var(--radius-button);
-  color: var(--text-secondary);
+  color: var(--color-error);
   font-size: var(--font-size-sm);
   padding: 4px 12px;
   cursor: pointer;
-  transition: background var(--transition-base) var(--ease-default), color var(--transition-base) var(--ease-default);
+  transition: background var(--transition-base) var(--ease-default);
   white-space: nowrap;
 }
 
-.settings-table__detail-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+.cr-table__delete-btn:hover {
+  background: var(--bg-error-subtle);
 }
 
 /* Empty state */
-.settings-table__empty {
+.cr-table__empty {
   text-align: center;
   color: var(--text-muted);
   padding: var(--space-6) 0 !important;

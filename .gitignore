@@ -15,3 +15,5 @@ frontend/.env.local
 frontend/spec/
 frontend/CLAUDE.md
 frontend/.codex/
+
+nul

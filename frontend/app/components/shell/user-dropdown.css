@@ -1,4 +1,4 @@
-/* ── User Dropdown Trigger ── */
+/* User Dropdown Trigger */
 .user-dropdown {
   position: relative;
   display: inline-flex;
@@ -30,8 +30,18 @@
 }
 
 .user-dropdown__icon {
-  font-size: var(--font-size-lg);
-  line-height: 1;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-dropdown__icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .user-dropdown__arrow {
@@ -45,7 +55,7 @@
   transform: rotate(180deg);
 }
 
-/* ── Dropdown Menu ── */
+/* Dropdown Menu */
 .user-dropdown__menu {
   position: absolute;
   top: calc(100% + var(--space-2));

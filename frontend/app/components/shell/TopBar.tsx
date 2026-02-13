@@ -25,8 +25,8 @@ export function TopBar({ dateTime, onToggleNav, navExpanded }: TopBarProps) {
       <h2 className="top-bar__center">현대 글로비스 RCS</h2>
       <div className="top-bar__right">
         <span className="top-bar__datetime">{dateTime}</span>
-        <AlarmPopover />
-        <UserDropdown userName="관리자" />
+        <AlarmPopover iconSrc="/icon/Icon_v2 (41).png" />
+        <UserDropdown userName="관리자" iconSrc="/icon/Icon (8).png" />
       </div>
     </header>
   );

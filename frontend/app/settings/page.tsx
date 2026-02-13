@@ -12,6 +12,8 @@ import {
   mockBusinesses,
   mockBuildings,
 } from "@/lib/mock/robotDevices";
+import { CustomTasksTab } from "../components/ui/settings/CustomTasksTab";
+import { CruiseRouteTab } from "../components/ui/settings/CruiseRouteTab";
 import type { RobotDevice, DeploymentPayload } from "@/lib/types/robots";
 import "./settings.css";
 
@@ -28,7 +30,7 @@ function formatDateTime() {
 const PAGE_SIZE = 10;
 const PAGE_GROUP = 5;
 
-type Tab = "all" | "operated";
+type Tab = "all" | "operated" | "custom-tasks" | "cruise-route";
 
 export default function SettingsPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
@@ -185,13 +187,25 @@ export default function SettingsPage() {
                   className={`settings-page__tab${activeTab === "all" ? " settings-page__tab--active" : ""}`}
                   onClick={() => setActiveTab("all")}
                 >
-                  All Robots
+                  전체 로봇
                 </button>
                 <button
                   className={`settings-page__tab${activeTab === "operated" ? " settings-page__tab--active" : ""}`}
                   onClick={() => setActiveTab("operated")}
                 >
-                  Operated Robots
+                  운영 로봇
+                </button>
+                <button
+                  className={`settings-page__tab${activeTab === "custom-tasks" ? " settings-page__tab--active" : ""}`}
+                  onClick={() => setActiveTab("custom-tasks")}
+                >
+                  작업 등록
+                </button>
+                <button
+                  className={`settings-page__tab${activeTab === "cruise-route" ? " settings-page__tab--active" : ""}`}
+                  onClick={() => setActiveTab("cruise-route")}
+                >
+                  경로 등록
                 </button>
               </div>
             </header>
@@ -233,7 +247,7 @@ export default function SettingsPage() {
                   disabled={allPage <= 1}
                   onClick={() => setAllPage((p) => p - 1)}
                 >
-                  Prev
+                  이전
                 </button>
                 {allPageNumbers.map((num) => (
                   <button
@@ -249,10 +263,10 @@ export default function SettingsPage() {
                   disabled={allPage >= allTotalPages}
                   onClick={() => setAllPage((p) => p + 1)}
                 >
-                  Next
+                  다음
                 </button>
                 <span className="pagination__info">
-                  {allFiltered.length} items
+                  총 {allFiltered.length}개
                 </span>
               </div>
             </section>
@@ -326,6 +340,12 @@ export default function SettingsPage() {
               </div>
             </section>
             )}
+
+            {/* ─── Custom Tasks Section ─── */}
+            {activeTab === "custom-tasks" && <CustomTasksTab />}
+
+            {/* ─── Cruise Route Section ─── */}
+            {activeTab === "cruise-route" && <CruiseRouteTab />}
           </div>
 
           <RobotSettingsModal
