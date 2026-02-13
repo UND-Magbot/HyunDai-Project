@@ -153,6 +153,11 @@
   border-left: var(--indicator-width) solid var(--indicator-color);
 }
 
+.side-nav__item--disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .side-nav--collapsed .side-nav__item--active .side-nav__link {
   border-left: 0;
   box-shadow: inset var(--indicator-width) 0 0 var(--indicator-color);

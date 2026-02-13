@@ -3,18 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LoginFormState, LoginFormErrors } from "@/lib/types/auth";
+import { apiFetch } from "@/lib/api";
 import { ForgotPasswordModal } from "./ForgotPasswordModal";
 import "./login.css";
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
 const PW_REGEX = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9\s]).{6,}$/;
-
-// 임시 계정 (API 연동 시 제거)
-const MOCK_USER = { id: "admin", password: "1234" };
 
 export default function LoginPage() {
   const router = useRouter();
-  const [form, setForm] = useState<LoginFormState>({ email: "", password: "" });
+  const [form, setForm] = useState<LoginFormState>({ loginId: "", password: "" });
   const [errors, setErrors] = useState<LoginFormErrors>({});
   const [forgotOpen, setForgotOpen] = useState(false);
 
@@ -33,10 +31,10 @@ export default function LoginPage() {
   const validate = (): boolean => {
     const newErrors: LoginFormErrors = {};
 
-    if (!form.email.trim()) {
-      newErrors.email = "이메일을 입력해주세요";
-    } else if (!EMAIL_REGEX.test(form.email)) {
-      newErrors.email = "올바른 이메일 형식을 입력해주세요";
+    if (!form.loginId.trim()) {
+      newErrors.loginId = "아이디를 입력해주세요";
+    } else if (!ID_REGEX.test(form.loginId)) {
+      newErrors.loginId = "영문 또는 영문+숫자 조합만 입력 가능합니다";
     }
 
     if (!form.password) {
@@ -50,20 +48,26 @@ export default function LoginPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // 임시 계정 체크 (유효성 검사 우회)
-    if (form.email === MOCK_USER.id && form.password === MOCK_USER.password) {
-      localStorage.setItem("auth_token", "mock_token");
-      router.push("/monitoring");
-      return;
-    }
-
     if (!validate()) return;
 
-    // TODO: API 연동 - 로그인 요청
-    setErrors({ email: "아이디 또는 비밀번호가 올바르지 않습니다" });
+    try {
+      const res = await apiFetch<{
+        access_token: string;
+        user: { login_id: string; role: number };
+      }>("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login_id: form.loginId, password: form.password }),
+      });
+      localStorage.setItem("auth_token", res.access_token);
+      localStorage.setItem("user_login_id", res.user.login_id);
+      localStorage.setItem("user_role", String(res.user.role));
+      router.push("/monitoring");
+    } catch {
+      setErrors({ loginId: "아이디 또는 비밀번호가 올바르지 않습니다" });
+    }
   };
 
   return (
@@ -72,19 +76,19 @@ export default function LoginPage() {
         <h1 className="login__title">Login</h1>
 
         <div className="login__field">
-          <label className="login__label" htmlFor="email">
-            이메일
+          <label className="login__label" htmlFor="loginId">
+            아이디
           </label>
           <input
-            id="email"
-            className={`login__input${errors.email ? " login__input--error" : ""}`}
-            type="email"
-            placeholder="이메일을 입력해주세요"
-            value={form.email}
-            onChange={(e) => updateField("email", e.target.value)}
+            id="loginId"
+            className={`login__input${errors.loginId ? " login__input--error" : ""}`}
+            type="text"
+            placeholder="아이디를 입력해주세요"
+            value={form.loginId}
+            onChange={(e) => updateField("loginId", e.target.value)}
             autoComplete="off"
           />
-          <span className="login__error">{errors.email ?? ""}</span>
+          <span className="login__error">{errors.loginId ?? ""}</span>
         </div>
 
         <div className="login__field">

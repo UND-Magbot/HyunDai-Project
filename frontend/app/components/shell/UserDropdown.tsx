@@ -7,8 +7,14 @@ import "./user-dropdown.css";
 
 export function UserDropdown({ userName }: UserDropdownProps) {
   const [open, setOpen] = useState(false);
+  const [displayName, setDisplayName] = useState(userName ?? "");
   const triggerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    const stored = localStorage.getItem("user_login_id");
+    if (stored) setDisplayName(stored);
+  }, []);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -40,6 +46,9 @@ export function UserDropdown({ userName }: UserDropdownProps) {
 
   const handleLogout = () => {
     handleClose();
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("user_login_id");
+    localStorage.removeItem("user_role");
     router.push("/auth/login");
   };
 
@@ -53,7 +62,7 @@ export function UserDropdown({ userName }: UserDropdownProps) {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="user-dropdown__icon">👤</span>
-        <span>{userName}</span>
+        <span>{displayName}</span>
         <span
           className={
             open

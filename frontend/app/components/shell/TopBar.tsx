@@ -26,7 +26,7 @@ export function TopBar({ dateTime, onToggleNav, navExpanded }: TopBarProps) {
       <div className="top-bar__right">
         <span className="top-bar__datetime">{dateTime}</span>
         <AlarmPopover />
-        <UserDropdown userName="관리자" />
+        <UserDropdown />
       </div>
     </header>
   );
