@@ -17,6 +17,7 @@ import { DeviceRow } from "../components/ui/monitoring/DeviceRow";
 import { TaskRow } from "../components/ui/monitoring/TaskRow";
 import { DeviceInfoPopup } from "../components/ui/monitoring/DeviceInfoPopup";
 import { TaskInfoModal } from "../components/ui/monitoring/TaskInfoModal";
+import { CreateTaskModal } from "../components/ui/tasks/CreateTaskModal";
 import { mockDevices, getDeviceCounts } from "@/lib/mock/devices";
 import { mockTasks } from "@/lib/mock/tasks";
 import type { TaskState } from "@/lib/types/monitoring";
@@ -52,12 +53,18 @@ export default function MonitoringPage() {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   const mapViewportRef = useRef<HTMLDivElement | null>(null);
   const panStartRef = useRef<{ x: number; y: number } | null>(null);
   const startOffsetRef = useRef({ x: 0, y: 0 });
   const deviceCounts = getDeviceCounts(mockDevices);
+
+  const taskCountByRobot = mockTasks.reduce((acc, task) => {
+    acc[task.robot] = (acc[task.robot] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   const formatDateTime = () => {
     const now = new Date();
@@ -306,6 +313,7 @@ export default function MonitoringPage() {
             <div className="device-list">
               <div className="device-row__header">
                 <span className="device-row__header-cell">Robot</span>
+                <span className="device-row__header-cell">Task</span>
                 <span className="device-row__header-cell">Power</span>
                 <span className="device-row__header-cell">Battery</span>
                 <span className="device-row__header-cell">Status</span>
@@ -318,6 +326,7 @@ export default function MonitoringPage() {
                     key={device.id}
                     id={device.id}
                     name={device.name}
+                    taskCount={taskCountByRobot[device.name] ?? 0}
                     power={device.power}
                     battery={device.battery}
                     status={device.status}
@@ -388,7 +397,7 @@ export default function MonitoringPage() {
             onToggle={() => setRightCollapsed((value) => !value)}
             toggleIcon="left"
             className="panel--overlay panel--overlay-right"
-            headerActions={<button className="btn btn--primary">Add Task</button>}
+            headerActions={<button className="btn btn--primary" onClick={() => setCreateTaskOpen(true)}>Add Task</button>}
             subheader={
               <>
                 <div className="tab-row">
@@ -451,6 +460,10 @@ export default function MonitoringPage() {
           <TaskInfoModal
             taskId={openTaskId}
             onClose={() => setOpenTaskId(null)}
+          />
+          <CreateTaskModal
+            open={createTaskOpen}
+            onClose={() => setCreateTaskOpen(false)}
           />
         </main>
       </div>

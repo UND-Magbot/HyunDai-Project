@@ -1,0 +1,82 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { UserDropdownProps } from "@/lib/types/shell";
+import "./user-dropdown.css";
+
+export function UserDropdown({ userName }: UserDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  const handleClose = useCallback(() => {
+    setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node)
+      ) {
+        handleClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [open, handleClose]);
+
+  const handleLogout = () => {
+    handleClose();
+    router.push("/auth/login");
+  };
+
+  return (
+    <div className="user-dropdown" ref={triggerRef}>
+      <button
+        type="button"
+        className="user-dropdown__trigger"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="user-dropdown__icon">👤</span>
+        <span>{userName}</span>
+        <span
+          className={
+            open
+              ? "user-dropdown__arrow user-dropdown__arrow--open"
+              : "user-dropdown__arrow"
+          }
+        >
+          ▾
+        </span>
+      </button>
+
+      {open ? (
+        <div className="user-dropdown__menu" role="menu">
+          <button
+            type="button"
+            className="user-dropdown__item"
+            role="menuitem"
+            onClick={handleLogout}
+          >
+            로그아웃
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}

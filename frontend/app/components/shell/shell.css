@@ -9,8 +9,8 @@
 
 .top-bar {
   height: var(--topbar-height);
-  background: var(--bg-surface-1);
-  border-bottom: 1px solid var(--border);
+  background: var(--bg-shell);
+  border-bottom: 1px solid var(--border-section);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -20,7 +20,7 @@
 }
 
 .top-bar__center {
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .top-bar__left {
@@ -52,16 +52,16 @@
   top: var(--topbar-height);
   left: 0;
   bottom: 0;
-  z-index: 40;
+  z-index: var(--z-sidenav);
   width: var(--sidenav-width-expanded);
-  background: var(--bg-surface-1);
-  border-right: 1px solid var(--border);
+  background: var(--bg-shell);
+  border-right: 1px solid var(--border-section);
   padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   box-shadow: var(--shadow-card);
-  transition: width 160ms ease, padding 160ms ease;
+  transition: width var(--transition-shell) var(--ease-default), padding var(--transition-shell) var(--ease-default);
 }
 
 .side-nav__header {
@@ -125,7 +125,7 @@
 .side-nav__icon {
   width: 20px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: inherit;
 }
 
@@ -133,7 +133,7 @@
   width: 40px;
   height: 40px;
   border-radius: var(--radius-control);
-  font-size: 12px;
+  font-size: var(--font-size-md);
 }
 
 .side-nav--collapsed .side-nav__link {
@@ -149,13 +149,13 @@
 }
 
 .side-nav__item--active .side-nav__link {
-  background: var(--bg-primary-subtle);
-  border-left: 3px solid var(--color-primary);
+  background: var(--bg-active-indicator);
+  border-left: var(--indicator-width) solid var(--indicator-color);
 }
 
 .side-nav--collapsed .side-nav__item--active .side-nav__link {
   border-left: 0;
-  box-shadow: inset 3px 0 0 var(--color-primary);
+  box-shadow: inset var(--indicator-width) 0 0 var(--indicator-color);
 }
 
 
@@ -164,7 +164,7 @@
   inset: var(--topbar-height) 0 0 0;
   background: var(--overlay-light);
   border: none;
-  z-index: 30;
+  z-index: var(--z-sidenav-backdrop);
 }
 
 .main-content {

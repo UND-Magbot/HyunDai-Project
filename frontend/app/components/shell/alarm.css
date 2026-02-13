@@ -8,7 +8,7 @@
 .alarm-trigger__btn {
   width: 36px;
   height: 36px;
-  font-size: 18px;
+  font-size: var(--font-size-title);
   border-radius: var(--radius-control);
   cursor: pointer;
 }
@@ -18,8 +18,8 @@
   position: absolute;
   top: 2px;
   right: 2px;
-  width: 8px;
-  height: 8px;
+  width: var(--status-dot-size);
+  height: var(--status-dot-size);
   border-radius: var(--radius-chip);
   pointer-events: none;
 }
@@ -44,10 +44,10 @@
   width: 360px;
   height: 480px;
   background: var(--bg-surface-1);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  z-index: 50;
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-popover);
   display: flex;
   flex-direction: column;
 }
@@ -55,7 +55,7 @@
 /* ── Popover header ── */
 .alarm-popover__header {
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--border-panel-header);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -79,7 +79,7 @@
   color: var(--text-secondary);
   border-radius: var(--radius-chip);
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-md);
   cursor: pointer;
 }
 
@@ -98,7 +98,7 @@
 }
 
 .alarm-popover__list::-webkit-scrollbar {
-  width: 6px;
+  width: var(--scrollbar-width);
 }
 
 .alarm-popover__list::-webkit-scrollbar-track {
@@ -107,7 +107,7 @@
 
 .alarm-popover__list::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 3px;
+  border-radius: var(--scrollbar-radius);
 }
 
 .alarm-popover__list::-webkit-scrollbar-thumb:hover {
@@ -129,7 +129,7 @@
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--divider);
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background var(--transition-fast) var(--ease-default);
   background: transparent;
   border-left: none;
   border-right: none;
@@ -166,7 +166,7 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .alarm-item__severity--info {
@@ -182,7 +182,7 @@
 }
 
 .alarm-item__timestamp {
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
   flex-shrink: 0;
 }
@@ -194,7 +194,7 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: 1.4;
+  line-height: var(--line-height-snug);
 }
 
 /* ── Alarm Detail Modal ── */
@@ -202,7 +202,7 @@
   position: fixed;
   inset: 0;
   background: var(--overlay-backdrop);
-  z-index: 60;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -210,9 +210,9 @@
 
 .alarm-detail {
   background: var(--bg-surface-1);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-md);
   width: 480px;
   max-width: 90vw;
   max-height: 80vh;
@@ -226,7 +226,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-4);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--border-panel-header);
 }
 
 .alarm-detail__title {
@@ -238,7 +238,7 @@
 .alarm-detail__close {
   width: 32px;
   height: 32px;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 
 .alarm-detail__body {
@@ -255,16 +255,16 @@
 }
 
 .alarm-detail__label {
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--letter-spacing-wider);
 }
 
 .alarm-detail__value {
   font-size: var(--font-size-base);
   color: var(--text-primary);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
 }
 
 /* ── Urgent alarm body flash ── */
@@ -278,5 +278,5 @@
 }
 
 body[data-alarm-urgent="true"] .main-content {
-  animation: alarm-urgent-pulse 2s ease-in-out infinite;
+  animation: alarm-urgent-pulse 2s var(--ease-in-out) infinite;
 }

@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   background: var(--overlay-backdrop);
-  z-index: 60;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -10,11 +10,11 @@
 
 .modal {
   background: var(--bg-surface-1);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-md);
   max-width: 90vw;
-  max-height: 80vh;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
 }
@@ -24,7 +24,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-4);
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--border-panel-header);
   flex-shrink: 0;
 }
 
@@ -39,7 +39,7 @@
   width: 24px;
   height: 24px;
   color: var(--text-secondary);
-  font-size: 18px;
+  font-size: var(--font-size-title);
 }
 
 .modal__body {

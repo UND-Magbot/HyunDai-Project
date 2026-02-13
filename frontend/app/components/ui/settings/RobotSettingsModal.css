@@ -1,0 +1,203 @@
+.robot-settings {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Sections ─── */
+.robot-settings__section {
+  margin-bottom: var(--space-5);
+}
+
+.robot-settings__section:last-child {
+  margin-bottom: 0;
+}
+
+.robot-settings__section-title {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--font-size-lg);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+  border-bottom: 1px solid var(--border-panel-header);
+  padding-bottom: var(--space-2);
+}
+
+/* ─── Readonly Grid ─── */
+.robot-settings__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+
+.robot-settings__readonly-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.robot-settings__readonly-label {
+  font-size: var(--font-size-md);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wider);
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.robot-settings__readonly-value {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+/* ─── Form Fields ─── */
+.robot-settings__form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4) var(--space-5);
+}
+
+.robot-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.robot-settings__label {
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.robot-settings__required {
+  color: var(--color-error);
+}
+
+.robot-settings__select {
+  appearance: none;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-badge);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='rgba(255,255,255,0.52)' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-2) center;
+  padding-right: var(--space-6);
+}
+
+.robot-settings__select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.robot-settings__select option {
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+}
+
+.robot-settings__select option:disabled {
+  background: var(--bg-surface-2);
+  color: var(--text-muted);
+}
+
+.robot-settings__select--placeholder {
+  color: var(--text-secondary);
+}
+
+.robot-settings__select--error {
+  border-color: var(--color-error);
+}
+
+.robot-settings__select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Date Input ─── */
+.robot-settings__date-input {
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-badge);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+}
+
+.robot-settings__date-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.robot-settings__date-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+/* ─── Status Badge ─── */
+.robot-settings__status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-badge);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  width: fit-content;
+}
+
+.robot-settings__status-badge--deployed {
+  background: var(--bg-success-subtle);
+  color: var(--color-success);
+}
+
+.robot-settings__status-badge--undeployed {
+  background: var(--bg-selected);
+  color: var(--text-secondary);
+}
+
+/* ─── Error ─── */
+.robot-settings__error {
+  font-size: var(--font-size-md);
+  color: var(--color-error);
+  margin-top: var(--space-1);
+}
+
+/* ─── Footer ─── */
+.robot-settings__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+}
+
+.robot-settings__btn {
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-badge);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.robot-settings__btn--cancel {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.robot-settings__btn--cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.robot-settings__btn--save {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--text-on-primary);
+}
+
+.robot-settings__btn--save:hover {
+  opacity: 0.9;
+}

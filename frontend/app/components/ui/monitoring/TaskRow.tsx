@@ -19,7 +19,7 @@ export function TaskRow({
     state === "running" || state === "completed" || state === "error";
 
   return (
-    <div className="task-row" onClick={onToggleExpand}>
+    <div className={`task-row${expanded ? " task-row--expanded" : ""}`} onClick={onToggleExpand}>
       <button
         type="button"
         className="task-row__summary"

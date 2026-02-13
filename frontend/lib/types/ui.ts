@@ -24,4 +24,5 @@ export type ModalProps = {
   title: string;
   children: ReactNode;
   width?: string;
+  height?: string;
 };

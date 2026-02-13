@@ -55,3 +55,7 @@ export type SideNavProps = {
   onClose?: () => void;
   onItemSelect?: () => void;
 };
+
+export type UserDropdownProps = {
+  userName: string;
+};

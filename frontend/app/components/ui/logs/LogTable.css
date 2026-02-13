@@ -1,0 +1,105 @@
+.log-table__wrapper {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.log-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.log-table th {
+  background: var(--bg-table-header);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  padding: var(--space-3) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--border-table-header);
+  white-space: nowrap;
+}
+
+.log-table td {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--divider);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 53px;
+  vertical-align: middle;
+}
+
+.log-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── Error row highlight ── */
+.log-table__row--error {
+  background: var(--bg-error-subtle);
+}
+
+/* ── Message column ── */
+.log-table__message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Data column ── */
+.log-table__data {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+}
+
+/* ── Level badges ── */
+.log-table__level {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-badge);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.log-table__level--error {
+  background: var(--bg-error-subtle);
+  color: var(--color-error);
+}
+
+.log-table__level--warning {
+  background: var(--bg-warning-subtle);
+  color: var(--color-warning);
+}
+
+.log-table__level--info {
+  background: var(--bg-primary-subtle);
+  color: var(--color-primary);
+}
+
+.log-table__level--debug {
+  background: var(--bg-selected);
+  color: var(--text-muted);
+}
+
+/* ── Empty State ── */
+.log-table__empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: var(--space-6) 0 !important;
+  font-size: var(--font-size-base);
+}

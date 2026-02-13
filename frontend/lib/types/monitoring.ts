@@ -7,6 +7,7 @@ export type TaskState = "running" | "completed" | "error";
 export type DeviceRowProps = {
   id: string;
   name: string;
+  taskCount?: number;
   power: DevicePower;
   battery: string;
   status: DeviceStatus;

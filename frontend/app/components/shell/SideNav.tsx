@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation";
 import type { NavItem, SideNavProps } from "@/lib/types/shell";
 
 export const defaultNavItems: NavItem[] = [
-  { label: "monitoring", href: "/monitoring", match: "/monitoring", icon: "M" },
-  { label: "robots", href: "/robots", match: "/robots", icon: "R" },
-  { label: "tasks", href: "/tasks", match: "/tasks", icon: "T" },
-  { label: "logs", href: "/logs", match: "/logs", icon: "L" },
-  { label: "map", href: "/map", match: "/map", icon: "P" },
-  { label: "settings", href: "/settings", match: "/settings", icon: "S" },
+  { label: "monitoring", href: "/monitoring", match: "/monitoring", icon: "/icon/Icon (9).png" },
+  { label: "robots", href: "/robots", match: "/robots", icon: "/icon/Icon (13).png" },
+  { label: "tasks", href: "/tasks", match: "/tasks", icon: "/icon/Icon (15).png" },
+  { label: "logs", href: "/logs", match: "/logs", icon: "/icon/zoom-in-w.png" },
+  { label: "map", href: "/map", match: "/map", icon: "/icon/Icon (24).png" },
+  { label: "settings", href: "/settings", match: "/settings", icon: "/icon/Icon (17).png" },
 ];
 
 export function SideNav({
@@ -60,7 +60,7 @@ export function SideNav({
                   onClick={onItemSelect}
                 >
                   <span className="side-nav__icon" aria-hidden="true">
-                    {item.icon}
+                    <img src={item.icon} alt="" width={24} height={24} />
                   </span>
                   <span className="side-nav__label">{item.label}</span>
                 </Link>

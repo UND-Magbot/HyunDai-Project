@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import { Modal } from "../Modal";
 import { getMockDeviceDetail } from "@/lib/mock/deviceDetails";
 import type {
@@ -15,18 +15,17 @@ function formatValue(value: string | number | null | undefined): string {
 }
 
 export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
-  const initialDevice = useMemo(
-    () => (deviceId ? getMockDeviceDetail(deviceId) : null),
-    [deviceId]
+  const prevDeviceIdRef = useRef(deviceId);
+  const [device, setDevice] = useState<DeviceDetail | null>(
+    deviceId ? getMockDeviceDetail(deviceId) : null
   );
-
-  const [device, setDevice] = useState<DeviceDetail | null>(initialDevice);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isTogglingEnable, setIsTogglingEnable] = useState(false);
 
-  // Sync device state when deviceId changes
-  if (initialDevice !== device && !isTogglingEnable) {
-    setDevice(initialDevice);
+  // Sync device state only when deviceId actually changes
+  if (prevDeviceIdRef.current !== deviceId) {
+    prevDeviceIdRef.current = deviceId;
+    setDevice(deviceId ? getMockDeviceDetail(deviceId) : null);
     setErrorMessage(null);
   }
 
@@ -63,6 +62,8 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
       );
     }
 
+    const shouldScrollTaskTable = device.currentTask.length > 5;
+
     return (
       <div className="device-info">
         {/* Base Information */}
@@ -88,7 +89,7 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
               </span>
             </div>
             <div className="device-info__field">
-              <span className="device-info__label">Deployment Time</span>
+              <span className="device-info__label">Deploy Time</span>
               <span className="device-info__value">
                 {formatValue(device.deploymentTime)}
               </span>
@@ -165,7 +166,9 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
           {device.currentTask.length === 0 ? (
             <div className="device-info__empty">No task data</div>
           ) : (
-            <div className="device-info__table-wrapper">
+            <div
+              className={`device-info__table-wrapper${shouldScrollTaskTable ? " device-info__table-wrapper--scroll" : ""}`}
+            >
               <table className="device-info__table">
                 <thead>
                   <tr>
@@ -179,8 +182,8 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {device.currentTask.map((task) => (
-                    <tr key={task.taskId}>
+                  {device.currentTask.map((task, idx) => (
+                    <tr key={`${task.taskId}-${idx}`}>
                       <td>{task.taskId}</td>
                       <td>
                         <span

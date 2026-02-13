@@ -29,10 +29,10 @@
 
 .device-info__section-title {
   margin: 0 0 var(--space-3) 0;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   color: var(--text-primary);
-  font-weight: 600;
-  border-bottom: 1px solid var(--divider);
+  font-weight: var(--font-weight-semibold);
+  border-bottom: 1px solid var(--border-panel-header);
   padding-bottom: var(--space-2);
 }
 
@@ -45,15 +45,18 @@
 
 .device-info__field {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .device-info__label {
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--letter-spacing-wider);
+  min-width: 120px;
+  flex-shrink: 0;
 }
 
 .device-info__value {
@@ -64,12 +67,12 @@
 /* Online Status Colors */
 .device-info__value--online {
   color: var(--color-success);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .device-info__value--offline {
   color: var(--color-error);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 /* Toggle Switch */
@@ -93,7 +96,7 @@
   background: var(--bg-surface-2);
   border: 1px solid var(--border);
   border-radius: 12px;
-  transition: background 200ms ease;
+  transition: background var(--transition-slow) var(--ease-default);
 }
 
 .device-info__toggle-slider::before {
@@ -105,7 +108,7 @@
   bottom: 3px;
   background: var(--text-muted);
   border-radius: 50%;
-  transition: transform 200ms ease, background 200ms ease;
+  transition: transform var(--transition-slow) var(--ease-default), background var(--transition-slow) var(--ease-default);
 }
 
 .device-info__toggle input:checked + .device-info__toggle-slider {
@@ -125,31 +128,69 @@
 
 /* Task Table */
 .device-info__table-wrapper {
-  overflow-x: auto;
+  overflow: hidden;
+  overflow-x: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
 }
 
+.device-info__table-wrapper--scroll {
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.device-info__table-wrapper--scroll::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+}
+
+.device-info__table-wrapper--scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.device-info__table-wrapper--scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--scrollbar-radius);
+}
+
+.device-info__table-wrapper--scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
 .device-info__table {
   width: 100%;
+  height: auto;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--font-size-md);
+  table-layout: fixed;
 }
 
 .device-info__table th {
-  background: var(--bg-surface-2);
+  background: var(--bg-table-header);
   color: var(--text-secondary);
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  font-weight: 600;
-  border-bottom: 1px solid var(--divider);
+  font-weight: var(--font-weight-semibold);
+  border-bottom: 1px solid var(--border-table-header);
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-info__table tbody tr {
+  height: 40px;
 }
 
 .device-info__table td {
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--divider);
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -157,17 +198,13 @@
   border-bottom: none;
 }
 
-.device-info__table tbody tr:hover {
-  background: var(--bg-hover);
-}
-
 /* Task State Badges */
 .device-info__task-state {
   display: inline-block;
   padding: 2px 8px;
   border-radius: var(--radius-badge);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   text-transform: capitalize;
 }
 
@@ -215,6 +252,6 @@
   border: 1px solid var(--color-error);
   border-radius: var(--radius-control);
   color: var(--color-error);
-  font-size: 13px;
+  font-size: var(--font-size-md);
   text-align: center;
 }

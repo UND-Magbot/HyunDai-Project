@@ -11,6 +11,7 @@ export function Modal({
   title,
   children,
   width = "480px",
+  height,
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -39,7 +40,7 @@ export function Modal({
     >
       <div
         className="modal"
-        style={{ width }}
+        style={{ width, height }}
         role="dialog"
         aria-modal="true"
         aria-label={title}
