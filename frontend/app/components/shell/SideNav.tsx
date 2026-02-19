@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { NavItem, SideNavProps } from "@/lib/types/shell";
@@ -13,6 +14,9 @@ export const defaultNavItems: NavItem[] = [
   { label: "settings", href: "/settings", match: "/settings", icon: "/icon/Icon (17).png" },
 ];
 
+/** User(role=2)가 접근 가능한 탭 */
+const USER_ALLOWED_LABELS = new Set(["monitoring"]);
+
 export function SideNav({
   items,
   collapsed = false,
@@ -20,6 +24,15 @@ export function SideNav({
   onItemSelect,
 }: SideNavProps) {
   const pathname = usePathname();
+  const [userRole, setUserRole] = useState<number>(1);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("user_role");
+    if (stored) setUserRole(Number(stored));
+  }, []);
+
+  const isAdmin = userRole === 1;
+
   const classes = [
     "side-nav",
     collapsed ? "side-nav--collapsed" : "",
@@ -43,27 +56,43 @@ export function SideNav({
               ? pathname.startsWith(item.match)
               : pathname === item.href;
 
+            const disabled = !isAdmin && !USER_ALLOWED_LABELS.has(item.label);
+
+            const itemClass = [
+              "side-nav__item",
+              isActive ? "side-nav__item--active" : "",
+              disabled ? "side-nav__item--disabled" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+
             return (
-              <li
-                key={item.label}
-                className={
-                  isActive
-                    ? "side-nav__item side-nav__item--active"
-                    : "side-nav__item"
-                }
-              >
-                <Link
-                  href={item.href}
-                  className="side-nav__link"
-                  aria-label={item.label}
-                  title={collapsed ? item.label : undefined}
-                  onClick={onItemSelect}
-                >
-                  <span className="side-nav__icon" aria-hidden="true">
-                    <img src={item.icon} alt="" width={24} height={24} />
+              <li key={item.label} className={itemClass}>
+                {disabled ? (
+                  <span
+                    className="side-nav__link"
+                    aria-label={item.label}
+                    title={collapsed ? item.label : undefined}
+                  >
+                    <span className="side-nav__icon" aria-hidden="true">
+                      <img src={item.icon} alt="" width={24} height={24} />
+                    </span>
+                    <span className="side-nav__label">{item.label}</span>
                   </span>
-                  <span className="side-nav__label">{item.label}</span>
-                </Link>
+                ) : (
+                  <Link
+                    href={item.href}
+                    className="side-nav__link"
+                    aria-label={item.label}
+                    title={collapsed ? item.label : undefined}
+                    onClick={onItemSelect}
+                  >
+                    <span className="side-nav__icon" aria-hidden="true">
+                      <img src={item.icon} alt="" width={24} height={24} />
+                    </span>
+                    <span className="side-nav__label">{item.label}</span>
+                  </Link>
+                )}
               </li>
             );
           })}

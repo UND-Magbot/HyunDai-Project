@@ -11,8 +11,14 @@ export function UserDropdown({
   iconSrc = "/icon/Icon (8).png",
 }: UserDropdownProps) {
   const [open, setOpen] = useState(false);
+  const [displayName, setDisplayName] = useState(userName ?? "");
   const triggerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    const stored = localStorage.getItem("user_login_id");
+    if (stored) setDisplayName(stored);
+  }, []);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -44,6 +50,9 @@ export function UserDropdown({
 
   const handleLogout = () => {
     handleClose();
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("user_login_id");
+    localStorage.removeItem("user_role");
     router.push("/auth/login");
   };
 

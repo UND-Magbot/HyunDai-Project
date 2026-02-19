@@ -59,4 +59,5 @@ export type SideNavProps = {
 export type UserDropdownProps = {
   userName: string;
   iconSrc?: string;
+
 };
