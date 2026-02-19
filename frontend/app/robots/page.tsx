@@ -7,10 +7,6 @@ import { RobotFilter } from "../components/ui/robots/RobotFilter";
 import { RobotTable } from "../components/ui/robots/RobotTable";
 import { RobotDeviceInfo } from "../components/ui/robots/RobotDeviceInfo";
 import { ConfirmModal } from "../components/ui/robots/ConfirmModal";
-import {
-  mockRobotDevices,
-  getDistinctModels,
-} from "@/lib/mock/robotDevices";
 import type { RobotFilterState, RobotDevice } from "@/lib/types/robots";
 import "./robots.css";
 
@@ -22,6 +18,12 @@ function formatDateTime() {
   const hh = String(now.getHours()).padStart(2, "0");
   const min = String(now.getMinutes()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+function getDistinctModels(devices: RobotDevice[]): string[] {
+  return Array.from(
+    new Set(devices.map((d) => d.model).filter((m): m is string => !!m))
+  ).sort();
 }
 
 const defaultFilters: RobotFilterState = {
@@ -63,14 +65,7 @@ function applyFilters(
 export default function RobotsPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(formatDateTime);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const [devices, setDevices] = useState<RobotDevice[]>(() =>
-    mockRobotDevices.map((d) => ({ ...d, currentTask: [...d.currentTask] }))
-  );
+  const [devices, setDevices] = useState<RobotDevice[]>([]);
   const [filters, setFilters] = useState<RobotFilterState>(defaultFilters);
   const [appliedFilters, setAppliedFilters] = useState<RobotFilterState>(defaultFilters);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -82,6 +77,50 @@ export default function RobotsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
   const PAGE_GROUP = 5;
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const fetchRobots = async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/api/robots/live", {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const payload = await res.json();
+
+        const mapped = (payload.items ?? []).map((r: any, idx: number) => ({
+          id: r.SN || r.IP || String(idx),
+          sn: r.SN ?? "-",
+          robotName: r.ROBOTNAME ?? "-",
+          model: r.MODEL ?? "-",
+          runState: r.RUNSTATE ?? null,
+          online: String(r.ONLINE).toLowerCase() === "online",
+          signal: r.SIGNAL ?? null,
+          power: r["POWER(%)"] ?? null,
+          enable: true,
+          deploymentTime: null,
+          apkVersion: null,
+          sdkVersion: null,
+          busiName: null,
+          buildingName: null,
+          currentTask: [],
+        }));
+
+        setDevices(mapped);
+        setErrorMessage(null);
+      } catch (e) {
+        setErrorMessage(`Failed to load robots: ${String(e)}`);
+      }
+    };
+
+    fetchRobots();
+  }, []);
 
   const models = useMemo(() => getDistinctModels(devices), [devices]);
 
@@ -101,12 +140,10 @@ export default function RobotsPage() {
     setCurrentPage(1);
   }, [appliedFilters]);
 
-  // Clamp page if data shrinks
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
 
-  // Page number group (5 unit)
   const pageGroupStart = Math.floor((currentPage - 1) / PAGE_GROUP) * PAGE_GROUP + 1;
   const pageNumbers = Array.from(
     { length: Math.min(PAGE_GROUP, totalPages - pageGroupStart + 1) },
@@ -122,14 +159,12 @@ export default function RobotsPage() {
       setTogglingDeviceId(deviceId);
       setErrorMessage(null);
 
-      // Optimistic update
       setDevices((prev) =>
         prev.map((d) =>
           d.id === deviceId ? { ...d, enable: !previousValue } : d
         )
       );
 
-      // Mock API call
       setTimeout(() => {
         if (Math.random() < 0.1) {
           setDevices((prev) =>

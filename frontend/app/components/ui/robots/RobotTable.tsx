@@ -3,13 +3,18 @@
 import type { RobotTableProps } from "@/lib/types/robots";
 import "./RobotTable.css";
 
-function PowerCell({ power }: { power: number | null }) {
+function PowerCell({ power }: { power: number | string | null }) {
   if (power == null) return <span className="robot-table__muted">-</span>;
 
-  const className =
-    power <= 30 ? "robot-table__power robot-table__power--danger" : "robot-table__power";
+  const value =
+    typeof power === "string" ? Number(power.replace("%", "").trim()) : power;
 
-  return <span className={className}>{power}%</span>;
+  if (!Number.isFinite(value)) return <span className="robot-table__muted">-</span>;
+
+  const className =
+    value <= 30 ? "robot-table__power robot-table__power--danger" : "robot-table__power";
+
+  return <span className={className}>{value}%</span>;
 }
 
 export function RobotTable({
@@ -38,9 +43,9 @@ export function RobotTable({
             <th>RobotName</th>
             <th>Model</th>
             <th>RunState</th>
-            <th>Power</th>
+            <th>Online</th>
             <th>Signal</th>
-            <th>Battery (%)</th>
+            <th>Power (%)</th>
             <th>Enable</th>
             <th>Operation</th>
           </tr>
@@ -83,14 +88,11 @@ export function RobotTable({
                   </td>
                   <td>
                     {device.signal != null ? (
-                      `${device.signal} dBm`
+                      String(device.signal).toLowerCase().includes("dbm")
+                        ? String(device.signal)
+                        : `${device.signal}`
                     ) : (
-                      <span
-                        className="robot-table__muted"
-                        title="Signal data unavailable"
-                      >
-                        N/A
-                      </span>
+                      <span className="robot-table__muted" title="Signal data unavailable">N/A</span>
                     )}
                   </td>
                   <td>

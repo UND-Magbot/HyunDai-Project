@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from app.robot_api.robot_live_service import fetch_all_robots_live
+
 
 from app.database import get_db
 from app.schemas.robot import (
@@ -21,6 +23,18 @@ from app.crud.robot import (
 )
 
 router = APIRouter(prefix="/api/robots", tags=["로봇 관리"])
+
+
+# ── 로봇 정보/Lits API 호출 ──
+ROBOTS = [
+    {"ip": "192.168.0.30", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.0.31", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.0.32", "secret": "19a11878aaab420fba94577ce3620dce"},
+]
+
+@router.get("/live")
+def api_get_robots_live():
+    return fetch_all_robots_live(ROBOTS)
 
 
 @router.post("", response_model=RobotResponse, status_code=201)
