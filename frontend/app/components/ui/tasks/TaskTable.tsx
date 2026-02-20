@@ -48,24 +48,24 @@ export function TaskTable({ tasks, onInfoClick }: TaskListTableProps) {
         </colgroup>
         <thead>
           <tr>
-            <th>Num</th>
-            <th>Robot SN</th>
-            <th>State</th>
-            <th>TaskType</th>
-            <th>Times</th>
-            <th>CreateTime</th>
-            <th>EndTime</th>
-            <th>Start</th>
-            <th>End</th>
-            <th>Passing</th>
-            <th>Operation</th>
+            <th>번호</th>
+            <th>로봇 SN</th>
+            <th>작업 상태</th>
+            <th>작업 유형</th>
+            <th>작업 시간</th>
+            <th>시작 시간</th>
+            <th>종료 시간</th>
+            <th>시작 지점</th>
+            <th>종료 지점</th>
+            <th>경유지</th>
+            <th>작업 관리</th>
           </tr>
         </thead>
         <tbody>
           {tasks.length === 0 ? (
             <tr>
               <td colSpan={11} className="task-table__empty">
-                No tasks found
+                조회된 작업이 없습니다.
               </td>
             </tr>
           ) : (
@@ -117,7 +117,7 @@ function TaskRow({
           className="task-table__info-btn"
           onClick={() => onInfoClick(task.id)}
         >
-          Info
+          상세보기
         </button>
       </td>
     </tr>

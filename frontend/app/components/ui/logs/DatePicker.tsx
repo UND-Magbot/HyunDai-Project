@@ -5,7 +5,7 @@ import { MonthYearPicker } from "../tasks/MonthYearPicker";
 import type { DatePickerProps } from "@/lib/types/logs";
 import "./DatePicker.css";
 
-const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -51,7 +51,11 @@ function buildCalendarGrid(year: number, month: number): CalendarDay[] {
   return days;
 }
 
-export function DatePicker({ value, onChange }: DatePickerProps) {
+export function DatePicker({
+  value,
+  onChange,
+  popupAlign = "left",
+}: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
   const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
@@ -146,13 +150,13 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
         type="text"
         className="dp__input"
         readOnly
-        placeholder="Select date"
+        placeholder="YY-MM-DD"
         value={value ?? ""}
         onClick={handleOpen}
       />
 
       {isOpen && (
-        <div className="dp__popup">
+        <div className={`dp__popup ${popupAlign === "right" ? "dp__popup--right" : ""}`}>
           <div className="dp__header">
             <button type="button" className="dp__nav-btn" onClick={prevMonth}>
               &lt;
@@ -192,13 +196,13 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
 
           <div className="dp__footer">
             <button type="button" className="btn" onClick={handleClear}>
-              Clear
+              초기화
             </button>
             <button type="button" className="btn" onClick={handleToday}>
-              Today
+              오늘
             </button>
             <button type="button" className="btn btn--primary" onClick={handleDone}>
-              Done
+              확인
             </button>
           </div>
 

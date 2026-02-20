@@ -36,40 +36,40 @@ export function RobotDeviceInfo({
       <div className="robot-info">
         {/* Base Information */}
         <section className="robot-info__section">
-          <h3 className="robot-info__section-title">Base Information</h3>
+          <h3 className="robot-info__section-title">기본 정보</h3>
           <div className="robot-info__grid">
             <div className="robot-info__field">
-              <span className="robot-info__label">SN</span>
+              <span className="robot-info__label">로봇 SN</span>
               <span className="robot-info__value">
                 {formatValue(device.sn)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">Robot Name</span>
+              <span className="robot-info__label">로봇 명</span>
               <span className="robot-info__value">
                 {formatValue(device.robotName)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">Model</span>
+              <span className="robot-info__label">모델</span>
               <span className="robot-info__value">
                 {formatValue(device.model)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">Deploy Time</span>
+              <span className="robot-info__label">배포일</span>
               <span className="robot-info__value">
                 {formatValue(device.deploymentTime)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">APK Version</span>
+              <span className="robot-info__label">APK 버전</span>
               <span className="robot-info__value">
                 {formatValue(device.apkVersion)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">SDK Version</span>
+              <span className="robot-info__label">SDK 버전</span>
               <span className="robot-info__value">
                 {formatValue(device.sdkVersion)}
               </span>
@@ -79,16 +79,16 @@ export function RobotDeviceInfo({
 
         {/* Operational */}
         <section className="robot-info__section">
-          <h3 className="robot-info__section-title">Operational</h3>
+          <h3 className="robot-info__section-title">운영 정보</h3>
           <div className="robot-info__grid">
             <div className="robot-info__field">
-              <span className="robot-info__label">BUSI Name</span>
+              <span className="robot-info__label">고객사</span>
               <span className="robot-info__value">
                 {formatValue(device.busiName)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">Online</span>
+              <span className="robot-info__label">전원</span>
               <span
                 className={`robot-info__value robot-info__value--${device.online ? "online" : "offline"}`}
               >
@@ -96,23 +96,23 @@ export function RobotDeviceInfo({
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">Run State</span>
+              <span className="robot-info__label">운행 상태</span>
               <span className="robot-info__value">
                 {formatValue(device.runState)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">Power</span>
+              <span className="robot-info__label">배터리</span>
               <span className="robot-info__value">{renderPower()}</span>
             </div>
             <div className="robot-info__field">
               <span className="robot-info__label">Signal</span>
               <span className="robot-info__value">
-                {device.signal != null ? `${device.signal} dBm` : "-"}
+                {device.signal != null ? `${device.signal} %` : "-"}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">Enable</span>
+              <span className="robot-info__label">활성 상태</span>
               <label className="robot-info__toggle">
                 <input
                   type="checkbox"
@@ -127,7 +127,7 @@ export function RobotDeviceInfo({
         </section>
 
         {/* Current Task */}
-        <section className="robot-info__section">
+        {/* <section className="robot-info__section">
           <h3 className="robot-info__section-title">진행 작업</h3>
           {device.currentTask.length === 0 ? (
             <div className="robot-info__empty">진행중인 작업이 없습니다.</div>
@@ -139,11 +139,11 @@ export function RobotDeviceInfo({
                 <thead>
                   <tr>
                     <th>작업명</th>
-                    <th>작업상태</th>
-                    <th>작업유형</th>
-                    <th>작업 시작 일시</th>
-                    <th>시작</th>
-                    <th>종료</th>
+                    <th>작업 상태</th>
+                    <th>작업 유형</th>
+                    <th>작업 등록일</th>
+                    <th>시작 지점</th>
+                    <th>종료 지점</th>
                     <th>담당자</th>
                   </tr>
                 </thead>
@@ -169,7 +169,7 @@ export function RobotDeviceInfo({
               </table>
             </div>
           )}
-        </section>
+        </section> */}
       </div>
     </Modal>
   );

@@ -39,6 +39,11 @@
   flex-direction: column;
 }
 
+.dp__popup--right {
+  left: auto;
+  right: 0;
+}
+
 /* ── Header ── */
 .dp__header {
   display: flex;

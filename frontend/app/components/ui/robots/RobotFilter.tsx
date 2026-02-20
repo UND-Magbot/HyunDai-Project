@@ -23,7 +23,7 @@ export function RobotFilter({
         <input
           type="text"
           className="robot-filter__input"
-          placeholder="SN or Name 입력하세요."
+          placeholder="로봇 SN 또는 로봇 명을 입력하세요."
           value={filters.searchText}
           onChange={(e) => update({ searchText: e.target.value })}
           onKeyDown={handleKeyDown}
@@ -31,13 +31,13 @@ export function RobotFilter({
       </div>
 
       <div className="robot-filter__field">
-        <label className="robot-filter__label">Model</label>
+        <label className="robot-filter__label">모델</label>
         <select
           className="robot-filter__select"
           value={filters.model}
           onChange={(e) => update({ model: e.target.value })}
         >
-          <option value="">All</option>
+          <option value="">전체</option>
           {models.map((m) => (
             <option key={m} value={m}>
               {m}
@@ -47,7 +47,7 @@ export function RobotFilter({
       </div>
 
       <div className="robot-filter__field">
-        <label className="robot-filter__label">State</label>
+        <label className="robot-filter__label">상태</label>
         <select
           className="robot-filter__select"
           value={filters.runState}
@@ -55,15 +55,15 @@ export function RobotFilter({
             update({ runState: e.target.value as RobotFilterState["runState"] })
           }
         >
-          <option value="">All</option>
-          <option value="EXECUTING">EXECUTING</option>
-          <option value="IDLE">IDLE</option>
-          <option value="CHARGING">CHARGING</option>
+          <option value="">전체</option>
+          <option value="EXECUTING">운영중</option>
+          <option value="IDLE">대기중</option>
+          <option value="CHARGING">충전중</option>
         </select>
       </div>
 
       <div className="robot-filter__field">
-        <label className="robot-filter__label">Power</label>
+        <label className="robot-filter__label">전원</label>
         <select
           className="robot-filter__select"
           value={filters.online}
@@ -71,14 +71,14 @@ export function RobotFilter({
             update({ online: e.target.value as RobotFilterState["online"] })
           }
         >
-          <option value="">All</option>
-          <option value="Online">Online</option>
-          <option value="Offline">Offline</option>
+          <option value="">전체</option>
+          <option value="Online">온라인</option>
+          <option value="Offline">오프라인</option>
         </select>
       </div>
 
       <div className="robot-filter__field">
-        <label className="robot-filter__label">Enable</label>
+        <label className="robot-filter__label">활성 상태</label>
         <select
           className="robot-filter__select"
           value={filters.enable}
@@ -86,14 +86,14 @@ export function RobotFilter({
             update({ enable: e.target.value as RobotFilterState["enable"] })
           }
         >
-          <option value="">All</option>
-          <option value="Enable">Enable</option>
-          <option value="Disabled">Disabled</option>
+          <option value="">전체</option>
+          <option value="Enable">활성</option>
+          <option value="Disabled">비활성</option>
         </select>
       </div>
 
       <button type="button" className="btn btn--primary" onClick={onSearch}>
-        검색
+        조회
       </button>
     </div>
   );

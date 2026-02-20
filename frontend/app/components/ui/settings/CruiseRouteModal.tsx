@@ -164,7 +164,7 @@ export function CruiseRouteModal({
                 onChange={(e) => updateField("businessId", e.target.value)}
               >
                 <option value="" disabled hidden>
-                  Please Choose
+                  선택해주세요.
                 </option>
                 {mockBusinesses.map((b) => (
                   <option key={b.id} value={b.id}>

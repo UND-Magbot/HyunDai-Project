@@ -84,18 +84,18 @@ export function CustomTaskModal({
 
   const validate = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!form.taskName.trim()) newErrors.taskName = "TaskName is required";
-    if (!form.business) newErrors.business = "Business is required";
+    if (!form.taskName.trim()) newErrors.taskName = "작업명을 입력하세요.";
+    if (!form.business) newErrors.business = "고객사를 선택하세요.";
     if (
       isNaN(form.speed) ||
       form.speed < SPEED_MIN ||
       form.speed > SPEED_MAX ||
       form.speed % SPEED_STEP !== 0
     ) {
-      newErrors.speed = `Speed must be ${SPEED_MIN}~${SPEED_MAX}, multiple of ${SPEED_STEP}`;
+      newErrors.speed = `속도는 ${SPEED_MIN}~${SPEED_MAX} 범위의 ${SPEED_STEP} 단위여야 합니다.`;
     }
     if (form.steps.length === 0) {
-      newErrors.steps = "At least one step is required";
+      newErrors.steps = "스텝을 하나 이상 추가하세요.";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -166,23 +166,22 @@ export function CustomTaskModal({
     <Modal
       open={open}
       onClose={handleClose}
-      title={editTask ? "Edit Task" : "Add Task"}
+      title={editTask ? "작업 수정" : "작업 등록"}
       width="720px"
     >
       <div className="ct-modal">
         {/* ─── Task Info Section ─── */}
         <section className="ct-modal__section">
-          <h3 className="ct-modal__section-title">Task Info</h3>
           <div className="ct-modal__params">
             {/* TaskName */}
             <div className="ct-modal__field">
               <span className="ct-modal__label">
-                TaskName <span className="ct-modal__required">*</span>
+                작업명 <span className="ct-modal__required">*</span>
               </span>
               <input
                 type="text"
                 className={`ct-modal__input${errors.taskName ? " ct-modal__input--error" : ""}`}
-                placeholder="Enter task name"
+                placeholder="작업명을 입력해주세요."
                 value={form.taskName}
                 onChange={(e) => updateField("taskName", e.target.value)}
               />
@@ -194,7 +193,7 @@ export function CustomTaskModal({
             {/* Business */}
             <div className="ct-modal__field">
               <span className="ct-modal__label">
-                Business <span className="ct-modal__required">*</span>
+                고객사 <span className="ct-modal__required">*</span>
               </span>
               <select
                 className={`ct-modal__select${!form.business ? " ct-modal__select--placeholder" : ""}${errors.business ? " ct-modal__select--error" : ""}`}
@@ -204,7 +203,7 @@ export function CustomTaskModal({
                 }
               >
                 <option value="" disabled hidden>
-                  Please Choose
+                  고객사를 선택해주세요.
                 </option>
                 {BUSINESS_OPTIONS.map((b) => (
                   <option key={b} value={b}>
@@ -219,7 +218,7 @@ export function CustomTaskModal({
 
             {/* RCS Tasks */}
             <div className="ct-modal__field ct-modal__field--full">
-              <span className="ct-modal__label">RCS Tasks</span>
+              <span className="ct-modal__label">RCS 작업</span>
               <select
                 className="ct-modal__select"
                 value={form.rcsTasks ? "YES" : "NO"}
@@ -227,8 +226,8 @@ export function CustomTaskModal({
                   updateField("rcsTasks", e.target.value === "YES")
                 }
               >
-                <option value="YES">YES</option>
-                <option value="NO">NO</option>
+                <option value="YES">예</option>
+                <option value="NO">아니오</option>
               </select>
             </div>
 
@@ -236,7 +235,7 @@ export function CustomTaskModal({
             {!form.rcsTasks && (
             <>
               <div className="ct-modal__field">
-                <span className="ct-modal__label">Return</span>
+                <span className="ct-modal__label">복귀 작업</span>
                 <select
                   className="ct-modal__select"
                   value={form.returnTask ? "YES" : "NO"}
@@ -244,14 +243,14 @@ export function CustomTaskModal({
                     updateField("returnTask", e.target.value === "YES")
                   }
                 >
-                  <option value="YES">YES</option>
-                  <option value="NO">NO</option>
+                  <option value="YES">예</option>
+                  <option value="NO">아니오</option>
                 </select>
               </div>
 
               <div className="ct-modal__field">
                 <span className="ct-modal__label">
-                  Speed <span className="ct-modal__required">*</span>
+                  속도 <span className="ct-modal__required">*</span>
                 </span>
                 <div
                   className={`ct-modal__stepper${errors.speed ? " ct-modal__stepper--error" : ""}`}
@@ -307,13 +306,13 @@ export function CustomTaskModal({
         {/* ─── Steps Section ─── */}
         <section className="ct-modal__section">
           <div className="ct-modal__step-header">
-            <h3 className="ct-modal__section-title">Steps</h3>
+            <h3 className="ct-modal__section-title">스텝</h3>
             <button
               type="button"
               className="ct-modal__add-step-btn"
               onClick={handleAddStep}
             >
-              + Add Step
+              + 스텝 추가
             </button>
           </div>
 
@@ -323,17 +322,17 @@ export function CustomTaskModal({
             <table className="ct-modal__step-table">
               <thead>
                 <tr>
-                  <th>Num</th>
-                  <th>Destination</th>
-                  <th>ActionType</th>
-                  <th>Operation</th>
+                  <th>번호</th>
+                  <th>목적지</th>
+                  <th>동작 유형</th>
+                  <th>관리</th>
                 </tr>
               </thead>
               <tbody>
                 {form.steps.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="ct-modal__step-empty">
-                      No steps added
+                      추가된 스텝이 없습니다.
                     </td>
                   </tr>
                 ) : (
@@ -349,14 +348,14 @@ export function CustomTaskModal({
                             className="ct-modal__step-edit-btn"
                             onClick={() => handleEditStep(step)}
                           >
-                            Edit
+                            수정
                           </button>
                           <button
                             type="button"
                             className="ct-modal__step-delete-btn"
                             onClick={() => handleDeleteStep(step.id)}
                           >
-                            Delete
+                            삭제
                           </button>
                         </div>
                       </td>
@@ -378,14 +377,14 @@ export function CustomTaskModal({
             className="ct-modal__btn ct-modal__btn--cancel"
             onClick={handleClose}
           >
-            Cancel
+            취소
           </button>
           <button
             type="button"
             className="ct-modal__btn ct-modal__btn--confirm"
             onClick={handleConfirm}
           >
-            Confirm
+            확인
           </button>
         </div>
       </div>

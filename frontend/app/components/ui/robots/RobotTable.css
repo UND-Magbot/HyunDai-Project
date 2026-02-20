@@ -34,7 +34,7 @@
   font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wide);
-  text-align: left;
+  text-align: center;
   padding: var(--space-3) var(--space-3);
   white-space: nowrap;
   border-bottom: 1px solid var(--border-table-header);
@@ -58,6 +58,7 @@
   text-overflow: ellipsis;
   height: 53px;
   vertical-align: middle;
+  text-align: center;
 }
 
 .robot-table tbody tr:last-child td {

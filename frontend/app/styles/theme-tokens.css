@@ -201,6 +201,7 @@
      ══════════════════════════════════════════ */
   --z-base: 1;
   --z-sticky: 10;
+  --z-dropdown: 15;
   --z-overlay-panel: 20;
   --z-overlay-card: 25;
   --z-sidenav-backdrop: 30;

@@ -40,17 +40,17 @@ export function TaskRow({
           onClick={(event) => event.stopPropagation()}
         >
           <IconButton aria-label="State" disabled={!canState}>
-            State
+            상태
           </IconButton>
           <IconButton aria-label="Cancel" disabled={!canCancel}>
-            Cancel
+            취소
           </IconButton>
           <IconButton
             aria-label="Info"
             disabled={!canInfo}
             onClick={canInfo ? onInfo : undefined}
           >
-            Info
+            정보
           </IconButton>
         </div>
       ) : null}

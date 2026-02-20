@@ -224,7 +224,7 @@
   display: grid;
   grid-template-columns: var(--device-grid);
   align-items: center;
-  justify-items: start;
+  justify-items: center;
   cursor: pointer;
 }
 
@@ -254,7 +254,7 @@
   padding: var(--space-1) var(--space-4);
   font-size: var(--font-size-md);
   display: grid;
-  justify-items: start;
+  justify-items: center;
 }
 
 .device-row__header-cell {
@@ -268,7 +268,7 @@
   max-height: 100%;
   overflow: auto;
   padding-right: 4px;
-  --device-grid: 2fr 0.6fr 1fr 0.8fr 1fr;
+  --device-grid: 1.3fr 1fr 0.8fr 1fr;
 }
 
 .device-row__actions {

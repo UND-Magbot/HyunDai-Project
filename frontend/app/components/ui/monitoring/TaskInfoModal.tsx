@@ -56,10 +56,10 @@ export function TaskInfoModal({ taskId, onClose }: TaskInfoModalProps) {
     return (
       <div className="task-info">
         <section className="task-info__section">
-          <h3 className="task-info__section-title">Basic Information</h3>
+          <h3 className="task-info__section-title">기본 정보</h3>
           <div className="task-info__grid">
             <div className="task-info__field">
-              <span className="task-info__label">Waybill Number</span>
+              <span className="task-info__label">운송 번호</span>
               <span
                 className="task-info__value task-info__value--ellipsis"
                 title={task.waybillNumber}
@@ -68,49 +68,49 @@ export function TaskInfoModal({ taskId, onClose }: TaskInfoModalProps) {
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Business</span>
+              <span className="task-info__label">고객사</span>
               <span className="task-info__value">
                 {formatValue(task.business)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Task Type</span>
+              <span className="task-info__label">작업 유형</span>
               <span className="task-info__value">
                 {formatValue(task.taskType)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Priority</span>
+              <span className="task-info__label">우선순위</span>
               <span className="task-info__value">
                 {formatValue(task.priority)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Start</span>
+              <span className="task-info__label">시작 지점</span>
               <span className="task-info__value">
                 {formatValue(task.start)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">End</span>
+              <span className="task-info__label">종료 지점</span>
               <span className="task-info__value">
                 {formatValue(task.end)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Pass</span>
+              <span className="task-info__label">경유지</span>
               <span className="task-info__value">
                 {formatValue(task.pass)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Time</span>
+              <span className="task-info__label">소요 시간</span>
               <span className="task-info__value">
                 {formatDuration(task.startTime, task.endTime)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Status</span>
+              <span className="task-info__label">상태</span>
               <span
                 className={`task-info__badge task-info__badge--${STATUS_CLASS[task.status] ?? "muted"}`}
               >
@@ -118,19 +118,19 @@ export function TaskInfoModal({ taskId, onClose }: TaskInfoModalProps) {
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Route Mode</span>
+              <span className="task-info__label">경로 모드</span>
               <span className="task-info__value">
                 {formatValue(task.routeMode)}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Detour Radius</span>
+              <span className="task-info__label">우회 반경</span>
               <span className="task-info__value">
                 {task.detourRadius != null ? `${task.detourRadius} m` : "-"}
               </span>
             </div>
             <div className="task-info__field">
-              <span className="task-info__label">Speed</span>
+              <span className="task-info__label">속도</span>
               <span className="task-info__value">
                 {task.speed != null ? `${task.speed} m/s` : "-"}
               </span>
@@ -139,9 +139,9 @@ export function TaskInfoModal({ taskId, onClose }: TaskInfoModalProps) {
         </section>
 
         <section className="task-info__section">
-          <h3 className="task-info__section-title">Task Log</h3>
+          <h3 className="task-info__section-title">작업 이력</h3>
           {task.logs.length === 0 ? (
-            <div className="task-info__empty">No log data</div>
+            <div className="task-info__empty">등록된 작업이 없습니다.</div>
           ) : (
             <div className="task-info__log-container">
               <ul className="task-info__timeline">
@@ -169,7 +169,7 @@ export function TaskInfoModal({ taskId, onClose }: TaskInfoModalProps) {
   };
 
   return (
-    <Modal open={!!taskId} onClose={onClose} title="Task Info" width="760px">
+    <Modal open={!!taskId} onClose={onClose} title="작업 정보" width="760px">
       {renderContent()}
     </Modal>
   );

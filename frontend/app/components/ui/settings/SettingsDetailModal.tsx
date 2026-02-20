@@ -111,7 +111,7 @@ export function SettingsDetailModal({
             <div className="settings-detail__field">
               <span className="settings-detail__label">Signal</span>
               <span className="settings-detail__value">
-                {device.signal != null ? `${device.signal} dBm` : "-"}
+                {device.signal != null ? `${device.signal} %` : "-"}
               </span>
             </div>
             <div className="settings-detail__field">

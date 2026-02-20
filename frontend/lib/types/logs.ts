@@ -42,6 +42,7 @@ export type LogFilterState = {
 export type DatePickerProps = {
   value: string | null;
   onChange: (date: string | null) => void;
+  popupAlign?: "left" | "right";
 };
 
 export type TimeRangePickerProps = {

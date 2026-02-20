@@ -6,7 +6,6 @@ import type { DeviceRowProps } from "@/lib/types/monitoring";
 export function DeviceRow({
   id,
   name,
-  taskCount,
   power,
   battery,
   status,
@@ -37,7 +36,6 @@ export function DeviceRow({
         aria-expanded={expanded}
       >
         <span className="device-row__cell device-row__cell--robot">{name}</span>
-        <span className="device-row__cell device-row__cell--task">{taskCount ?? 0}</span>
         <span className={`device-row__cell device-row__cell--power power--${power}`}>{power}</span>
         <span className="device-row__cell device-row__cell--battery">
           {battery}

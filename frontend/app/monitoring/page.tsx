@@ -308,19 +308,19 @@ export default function MonitoringPage() {
               <>
                 <div className="chip-row">
                   <button className="chip">
-                    <span className="chip__label">All</span>
+                    <span className="chip__label">전체</span>
                     <span className="chip__count">{deviceCounts.all}</span>
                   </button>
                   <button className="chip">
-                    <span className="chip__label">Online</span>
+                    <span className="chip__label">온라인</span>
                     <span className="chip__count">{deviceCounts.online}</span>
                   </button>
                   <button className="chip">
-                    <span className="chip__label">Offline</span>
+                    <span className="chip__label">오프라인</span>
                     <span className="chip__count">{deviceCounts.offline}</span>
                   </button>
                   <button className="chip">
-                    <span className="chip__label">Error</span>
+                    <span className="chip__label">오류</span>
                     <span className="chip__count">{deviceCounts.error}</span>
                   </button>
                 </div>
@@ -333,11 +333,10 @@ export default function MonitoringPage() {
           >
             <div className="device-list">
               <div className="device-row__header">
-                <span className="device-row__header-cell">Robot</span>
-                <span className="device-row__header-cell">Task</span>
-                <span className="device-row__header-cell">Power</span>
-                <span className="device-row__header-cell">Battery</span>
-                <span className="device-row__header-cell">Status</span>
+                <span className="device-row__header-cell">로봇 명</span>
+                <span className="device-row__header-cell">전원</span>
+                <span className="device-row__header-cell">배터리</span>
+                <span className="device-row__header-cell">상태</span>
               </div>
               {filteredDevices.length === 0 ? (
                 <div className="device-list__empty">등록된 로봇이 없습니다.</div>
@@ -347,7 +346,6 @@ export default function MonitoringPage() {
                     key={device.id}
                     id={device.id}
                     name={device.name}
-                    taskCount={taskCountByRobot[device.name] ?? 0}
                     power={device.power}
                     battery={device.battery}
                     status={device.status}

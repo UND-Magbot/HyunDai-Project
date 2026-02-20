@@ -77,7 +77,7 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
               </span>
             </div>
             <div className="device-info__field">
-              <span className="device-info__label">Robot Name</span>
+              <span className="device-info__label">로봇 명</span>
               <span className="device-info__value">
                 {formatValue(device.robotName)}
               </span>
@@ -120,7 +120,7 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
               </span>
             </div>
             <div className="device-info__field">
-              <span className="device-info__label">Online</span>
+              <span className="device-info__label">전원</span>
               <span
                 className={`device-info__value device-info__value--${device.online ? "online" : "offline"}`}
               >
@@ -134,7 +134,7 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
               </span>
             </div>
             <div className="device-info__field">
-              <span className="device-info__label">Power</span>
+              <span className="device-info__label">배터리</span>
               <span className="device-info__value">
                 {device.power != null ? `${device.power}%` : "-"}
               </span>
@@ -142,7 +142,7 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
             <div className="device-info__field">
               <span className="device-info__label">Signal</span>
               <span className="device-info__value">
-                {device.signal != null ? `${device.signal} dBm` : "-"}
+                {device.signal != null ? `${device.signal} %` : "-"}
               </span>
             </div>
             <div className="device-info__field">
@@ -162,9 +162,9 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
 
         {/* Current Task */}
         <section className="device-info__section">
-          <h3 className="device-info__section-title">Current Task</h3>
+          <h3 className="device-info__section-title">현재 작업</h3>
           {device.currentTask.length === 0 ? (
-            <div className="device-info__empty">No task data</div>
+            <div className="device-info__empty">작업 데이터가 없습니다.</div>
           ) : (
             <div
               className={`device-info__table-wrapper${shouldScrollTaskTable ? " device-info__table-wrapper--scroll" : ""}`}
@@ -172,13 +172,13 @@ export function DeviceInfoPopup({ deviceId, onClose }: DeviceInfoPopupProps) {
               <table className="device-info__table">
                 <thead>
                   <tr>
-                    <th>Task ID</th>
-                    <th>State</th>
-                    <th>Type</th>
-                    <th>Create Time</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Oper</th>
+                    <th>작업 ID</th>
+                    <th>상태</th>
+                    <th>유형</th>
+                    <th>등록일</th>
+                    <th>시작 지점</th>
+                    <th>종료 지점</th>
+                    <th>담당자</th>
                   </tr>
                 </thead>
                 <tbody>

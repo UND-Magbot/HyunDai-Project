@@ -26,13 +26,13 @@ export function LogTable({ logs }: LogTableProps) {
         </colgroup>
         <thead>
           <tr>
-            <th>Time</th>
-            <th>Message</th>
-            <th>User</th>
-            <th>Level</th>
-            <th>Tag</th>
-            <th>Type</th>
-            <th>Data</th>
+            <th>발생 일시</th>
+            <th>로그 메세지</th>
+            <th>사용자</th>
+            <th>로그 레벨</th>
+            <th>로그 세부 유형</th>
+            <th>로그 유형</th>
+            <th>데이터</th>
           </tr>
         </thead>
         <tbody>

@@ -24,7 +24,7 @@ export function TaskFilter({
         <input
           type="text"
           className="task-filter__input"
-          placeholder="waybill number를 입력하세요."
+          placeholder="작업 Num을 입력하세요."
           value={filters.waybillNum}
           onChange={(e) => update({ waybillNum: e.target.value })}
           onKeyDown={handleKeyDown}
@@ -32,13 +32,13 @@ export function TaskFilter({
       </div>
 
       <div className="task-filter__field">
-        <label className="task-filter__label">Robot SN</label>
+        <label className="task-filter__label">로봇 SN</label>
         <select
           className="task-filter__select"
           value={filters.robotSn}
           onChange={(e) => update({ robotSn: e.target.value })}
         >
-          <option value="">All</option>
+          <option value="">전체</option>
           {robotSns.map((sn) => (
             <option key={sn} value={sn}>
               {sn}
@@ -48,7 +48,7 @@ export function TaskFilter({
       </div>
 
       <div className="task-filter__field">
-        <label className="task-filter__label">Task Type</label>
+        <label className="task-filter__label">작업 유형</label>
         <select
           className="task-filter__select"
           value={filters.taskType}
@@ -56,17 +56,17 @@ export function TaskFilter({
             update({ taskType: e.target.value as TaskListFilterState["taskType"] })
           }
         >
-          <option value="">All</option>
-          <option value="Jacking">Jacking</option>
-          <option value="Transport">Transport</option>
-          <option value="Disinfect">Disinfect</option>
-          <option value="Charge">Charge</option>
-          <option value="Park">Park</option>
+          <option value="">전체</option>
+          <option value="Jacking">잭킹</option>
+          <option value="Transport">운송</option>
+          <option value="Disinfect">소독</option>
+          <option value="Charge">충전</option>
+          <option value="Park">주차</option>
         </select>
       </div>
 
       <div className="task-filter__field">
-        <label className="task-filter__label">State</label>
+        <label className="task-filter__label">상태</label>
         <select
           className="task-filter__select"
           value={filters.state}
@@ -74,18 +74,18 @@ export function TaskFilter({
             update({ state: e.target.value as TaskListFilterState["state"] })
           }
         >
-          <option value="">All</option>
-          <option value="FINISHED">FINISHED</option>
-          <option value="WAITING">WAITING</option>
-          <option value="InPROGRESS">InPROGRESS</option>
-          <option value="PAUSED">PAUSED</option>
-          <option value="UNROUTABLE">UNROUTABLE</option>
-          <option value="FAILED">FAILED</option>
+          <option value="">전체</option>
+          <option value="FINISHED">완료</option>
+          <option value="WAITING">대기</option>
+          <option value="InPROGRESS">진행중</option>
+          <option value="PAUSED">일시 중지</option>
+          <option value="UNROUTABLE">배차 불가</option>
+          <option value="FAILED">실패</option>
         </select>
       </div>
 
       <div className="task-filter__field">
-        <label className="task-filter__label">Date Range</label>
+        <label className="task-filter__label">조회 기간</label>
         <DateRangePicker
           startDate={filters.dateStart}
           endDate={filters.dateEnd}
@@ -94,7 +94,7 @@ export function TaskFilter({
       </div>
 
       <button type="button" className="btn btn--primary" onClick={onSearch}>
-        검색
+        조회
       </button>
     </div>
   );

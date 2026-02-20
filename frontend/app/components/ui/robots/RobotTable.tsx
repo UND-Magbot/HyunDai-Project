@@ -39,15 +39,15 @@ export function RobotTable({
         </colgroup>
         <thead>
           <tr>
-            <th>SN</th>
-            <th>RobotName</th>
-            <th>Model</th>
-            <th>RunState</th>
-            <th>Online</th>
+            <th>로봇 SN</th>
+            <th>로봇 명</th>
+            <th>모델</th>
+            <th>운행상태</th>
+            <th>전원</th>
             <th>Signal</th>
-            <th>Power (%)</th>
-            <th>Enable</th>
-            <th>Operation</th>
+            <th>배터리 (%)</th>
+            <th>활성 상태</th>
+            <th>운영사</th>
           </tr>
         </thead>
         <tbody>
@@ -114,7 +114,7 @@ export function RobotTable({
                       className="robot-table__info-btn"
                       onClick={() => onInfoClick(device.id)}
                     >
-                      Info
+                      정보
                     </button>
                   </td>
                 </tr>
