@@ -1,0 +1,195 @@
+﻿.map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-map-markers);
+  pointer-events: none;
+}
+
+.map-overlay__routes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.map-route {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-route--main {
+  stroke: rgba(25, 188, 126, 0.35);
+  stroke-width: 14;
+  filter: drop-shadow(0 0 2px rgba(23, 160, 112, 0.2));
+}
+
+.map-route--allocated {
+  stroke: rgba(33, 226, 149, 0.7);
+  stroke-width: 8;
+}
+
+.map-marker {
+  position: absolute;
+  left: var(--marker-left);
+  top: var(--marker-top);
+  translate: -50% -50%;
+  scale: var(--marker-counter-scale, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.map-marker__label {
+  margin-top: var(--marker-label-offset);
+  font-size: calc(var(--font-size-2xs) + 1px);
+  font-weight: 600;
+  color: rgba(232, 248, 255, 0.95);
+  white-space: nowrap;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
+  line-height: var(--line-height-tight);
+}
+
+.map-marker--poi .map-marker__dot {
+  width: calc(var(--marker-poi-size) - 2px);
+  height: calc(var(--marker-poi-size) - 2px);
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  background: rgba(35, 45, 55, 0.86);
+  display: grid;
+  place-items: center;
+}
+
+.map-marker--poi .map-marker__dot-core {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ff2b2b;
+  box-shadow: 0 0 5px rgba(255, 74, 74, 0.65);
+}
+
+.map-marker--poi[data-poi-type="charging"] .map-marker__dot {
+  border-color: #ffffff;
+}
+
+.map-marker--poi[data-poi-type="charging"] .map-marker__dot-core {
+  background: #ff2b2b;
+  box-shadow: 0 0 5px rgba(255, 74, 74, 0.65);
+}
+
+.map-marker--poi-triangle .map-marker__triangle {
+  position: relative;
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-bottom: 18px solid #1f6fff;
+  filter: drop-shadow(0 1px 3px rgba(8, 35, 108, 0.45));
+}
+
+.map-marker--poi-triangle .map-marker__triangle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  translate: -50% 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.map-marker--waypoint .map-marker__dot {
+  width: calc(var(--marker-waypoint-size) + 2px);
+  height: calc(var(--marker-waypoint-size) + 2px);
+  border-radius: 999px;
+  background: rgba(142, 221, 255, 0.9);
+  box-shadow: 0 0 8px rgba(138, 216, 255, 0.8);
+}
+
+.map-marker--waypoint-allocated .map-marker__dot {
+  width: calc(var(--marker-waypoint-size) - 1px);
+  height: calc(var(--marker-waypoint-size) - 1px);
+  background: rgba(170, 237, 255, 0.88);
+  box-shadow: 0 0 5px rgba(170, 237, 255, 0.65);
+}
+
+.map-marker--robot {
+  z-index: 2;
+}
+
+.map-marker--robot .map-marker__body {
+  position: relative;
+  width: 24px;
+  height: 20px;
+  rotate: var(--robot-yaw, 0deg);
+}
+
+.map-marker--robot .map-marker__robot-triangle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 0;
+  height: 0;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-bottom: 18px solid #30d99a;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
+}
+
+.map-marker--robot .map-marker__robot-ring {
+  position: absolute;
+  top: -2px;
+  left: 13px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #0a1640;
+  border: 3px solid #3d62ff;
+  box-shadow: 0 0 6px rgba(61, 98, 255, 0.55);
+}
+
+.map-marker--robot-warning .map-marker__robot-triangle {
+  border-bottom-color: #ffba24;
+}
+
+.map-marker--robot-error .map-marker__robot-triangle {
+  border-bottom-color: #ff5757;
+}
+
+.map-marker--robot .map-marker__label {
+  margin-top: 2px;
+  color: #42d8ff;
+  font-weight: 700;
+}
+
+.map-marker--robot-near_miss .map-marker__robot-ring {
+  border-color: #ffbf2d;
+  box-shadow: 0 0 8px rgba(255, 191, 45, 0.7);
+}
+
+.map-marker--robot-collision .map-marker__robot-ring {
+  border-color: #ff4343;
+  box-shadow: 0 0 10px rgba(255, 67, 67, 0.9);
+}
+
+.map-marker--robot-collision .map-marker__robot-triangle {
+  border-bottom-color: #ff6363;
+}
+
+.map-marker--poi .map-marker__label {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.map-route--virtual-wall {
+  stroke: rgba(255, 80, 80, 0.85);
+  stroke-width: 8;
+  stroke-dasharray: 16 8;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(255, 50, 50, 0.5));
+}

@@ -3,6 +3,12 @@
 import type { RobotTableProps } from "@/lib/types/robots";
 import "./RobotTable.css";
 
+const RUN_STATE_LABEL: Record<string, string> = {
+  EXECUTING: "운영중",
+  CHARGING:  "충전중",
+  IDLE:      "대기중",
+};
+
 function PowerCell({ power }: { power: number | string | null }) {
   if (power == null) return <span className="robot-table__muted">-</span>;
 
@@ -24,7 +30,7 @@ export function RobotTable({
   togglingDeviceId,
 }: RobotTableProps) {
   return (
-    <div className="robot-table-wrapper">
+    <div className="robot-table__wrapper">
       <table className="robot-table">
         <colgroup>
           <col />{/* SN */}
@@ -42,9 +48,9 @@ export function RobotTable({
             <th>로봇 SN</th>
             <th>로봇 명</th>
             <th>모델</th>
-            <th>운행상태</th>
+            <th>운행 상태</th>
             <th>전원</th>
-            <th>Signal</th>
+            <th>신호 상태</th>
             <th>배터리 (%)</th>
             <th>활성 상태</th>
             <th>운영사</th>
@@ -54,7 +60,7 @@ export function RobotTable({
           {devices.length === 0 ? (
             <tr>
               <td colSpan={9} className="robot-table__empty">
-                No devices found
+                등록된 장치가 없습니다.
               </td>
             </tr>
           ) : (
@@ -76,19 +82,19 @@ export function RobotTable({
                   <td>{device.model}</td>
                   <td>
                     <span className={runStateClass}>
-                      {device.runState ?? "-"}
+                      {device.runState ? (RUN_STATE_LABEL[device.runState] ?? device.runState) : "-"}
                     </span>
                   </td>
                   <td>
                     <span
                       className={`robot-table__online robot-table__online--${device.online ? "on" : "off"}`}
                     >
-                      {device.online ? "Online" : "Offline"}
+                      {device.online ? "온라인" : "오프라인"}
                     </span>
                   </td>
                   <td>
                     {device.signal != null ? (
-                      String(device.signal).toLowerCase().includes("dbm")
+                      String(device.signal).toLowerCase().includes("%")
                         ? String(device.signal)
                         : `${device.signal}`
                     ) : (

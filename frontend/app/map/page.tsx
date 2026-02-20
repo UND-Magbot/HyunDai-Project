@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { TopBar } from "../components/shell/TopBar";
 import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { UnderDevelopment } from "../components/ui/UnderDevelopment";
+import { LoadingScreen } from "../components/ui/LoadingScreen";
 
 function formatDateTime() {
   const now = new Date();
@@ -18,6 +19,12 @@ function formatDateTime() {
 export default function MapPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(formatDateTime);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
@@ -25,7 +32,9 @@ export default function MapPage() {
   }, []);
 
   return (
-    <div className="app-shell">
+    <>
+      {isLoading && <LoadingScreen pageName="맵 관리" />}
+      <div className="app-shell">
       <TopBar
         dateTime={currentDateTime}
         onToggleNav={() => setNavCollapsed((v) => !v)}
@@ -43,5 +52,6 @@ export default function MapPage() {
         </main>
       </div>
     </div>
+    </>
   );
 }

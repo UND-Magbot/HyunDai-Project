@@ -8,6 +8,7 @@ import { RobotTable } from "../components/ui/robots/RobotTable";
 import { RobotDeviceInfo } from "../components/ui/robots/RobotDeviceInfo";
 import { ConfirmModal } from "../components/ui/robots/ConfirmModal";
 import type { RobotFilterState, RobotDevice } from "@/lib/types/robots";
+import { LoadingScreen } from "../components/ui/LoadingScreen";
 import "./robots.css";
 
 function formatDateTime() {
@@ -70,6 +71,7 @@ export default function RobotsPage() {
   const [appliedFilters, setAppliedFilters] = useState<RobotFilterState>(defaultFilters);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [togglingDeviceId, setTogglingDeviceId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     deviceId: string;
@@ -77,6 +79,11 @@ export default function RobotsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
   const PAGE_GROUP = 5;
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
@@ -211,7 +218,9 @@ export default function RobotsPage() {
     : null;
 
   return (
-    <div className="app-shell">
+    <>
+      {isLoading && <LoadingScreen pageName="로봇 관리" />}
+      <div className="app-shell">
       <TopBar
         dateTime={currentDateTime}
         onToggleNav={() => setNavCollapsed((v) => !v)}
@@ -265,7 +274,7 @@ export default function RobotsPage() {
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => p - 1)}
               >
-                Prev
+                이전
               </button>
               {pageNumbers.map((num) => (
                 <button
@@ -281,10 +290,10 @@ export default function RobotsPage() {
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => p + 1)}
               >
-                Next
+                다음
               </button>
               <span className="pagination__info">
-                {displayDevices.length} items
+                {displayDevices.length} 개
               </span>
             </div>
           </div>
@@ -308,5 +317,6 @@ export default function RobotsPage() {
         </main>
       </div>
     </div>
+    </>
   );
 }

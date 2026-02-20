@@ -1,7 +1,9 @@
-.robot-table-wrapper {
+.robot-table__wrapper {
   background: var(--bg-surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  height: 600px;
+  overflow: hidden;
 }
 
 .robot-table {

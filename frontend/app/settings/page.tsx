@@ -15,6 +15,7 @@ import {
 import { CustomTasksTab } from "../components/ui/settings/CustomTasksTab";
 import { CruiseRouteTab } from "../components/ui/settings/CruiseRouteTab";
 import type { RobotDevice, DeploymentPayload } from "@/lib/types/robots";
+import { LoadingScreen } from "../components/ui/LoadingScreen";
 import "./settings.css";
 
 function formatDateTime() {
@@ -36,6 +37,12 @@ export default function SettingsPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(formatDateTime);
   const [activeTab, setActiveTab] = useState<Tab>("all");
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
@@ -164,7 +171,9 @@ export default function SettingsPage() {
     : null;
 
   return (
-    <div className="app-shell">
+    <>
+      {isLoading && <LoadingScreen pageName="설정" />}
+      <div className="app-shell">
       <TopBar
         dateTime={currentDateTime}
         onToggleNav={() => setNavCollapsed((v) => !v)}
@@ -363,5 +372,6 @@ export default function SettingsPage() {
         </main>
       </div>
     </div>
+    </>
   );
 }

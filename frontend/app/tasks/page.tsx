@@ -11,6 +11,7 @@ import {
   getDistinctRobotSNs,
 } from "@/lib/mock/taskList";
 import type { TaskListFilterState, TaskListItem } from "@/lib/types/tasks";
+import { LoadingScreen } from "../components/ui/LoadingScreen";
 import "./tasks.css";
 
 function formatDateTime() {
@@ -62,6 +63,12 @@ const PAGE_GROUP = 5;
 export default function TasksPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(formatDateTime);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
@@ -112,7 +119,9 @@ export default function TasksPage() {
   }, [filters]);
 
   return (
-    <div className="app-shell">
+    <>
+      {isLoading && <LoadingScreen pageName="작업 관리" />}
+      <div className="app-shell">
       <TopBar
         dateTime={currentDateTime}
         onToggleNav={() => setNavCollapsed((v) => !v)}
@@ -177,5 +186,6 @@ export default function TasksPage() {
         </main>
       </div>
     </div>
+    </>
   );
 }
