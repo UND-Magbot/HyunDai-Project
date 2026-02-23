@@ -592,20 +592,56 @@ export default function MapPage() {
     setPolygonPoints([]);
   }, [pushHistory]);
 
+  // ── SVG 좌표 → 로봇 물리계(월드) 좌표 변환 ──
+  const svgToWorld = useCallback(
+    (svgX: number, svgY: number): { worldX: number; worldY: number } | null => {
+      if (!mapMeta || !mapImageSize || mapMeta.grid_resolution <= 0) return null;
+      const ipx = svgX + mapImageSize.w / 2;
+      const ipy = svgY + mapImageSize.h / 2;
+      return {
+        worldX: ipx * mapMeta.grid_resolution + mapMeta.grid_origin_x,
+        worldY: (mapImageSize.h - ipy) * mapMeta.grid_resolution + mapMeta.grid_origin_y,
+      };
+    },
+    [mapMeta, mapImageSize]
+  );
+
   // ── Action buttons (placeholder handlers) ──
   const handleSave = useCallback(() => {
     if (!selectedMapId) {
       alert("저장할 맵을 먼저 선택해주세요.");
       return;
     }
+
+    // POI에 월드 좌표 추가
+    const poisWithWorld = pois.map((p) => {
+      const w = svgToWorld(p.x, p.y);
+      return { ...p, worldX: w?.worldX ?? null, worldY: w?.worldY ?? null };
+    });
+
+    // 라인에 양 끝 월드 좌표 추가
+    const linesWithWorld = lines.map((l) => {
+      const fromPoi = pois.find((p) => p.id === l.fromId);
+      const toPoi = pois.find((p) => p.id === l.toId);
+      const fw = fromPoi ? svgToWorld(fromPoi.x, fromPoi.y) : null;
+      const tw = toPoi ? svgToWorld(toPoi.x, toPoi.y) : null;
+      return {
+        ...l,
+        fromWorldX: fw?.worldX ?? null,
+        fromWorldY: fw?.worldY ?? null,
+        toWorldX: tw?.worldX ?? null,
+        toWorldY: tw?.worldY ?? null,
+      };
+    });
+
     apiFetch(`/api/map/maps/${selectedMapId}/elements`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pois, lines }),
+      body: JSON.stringify({ pois: poisWithWorld, lines: linesWithWorld }),
     })
       .then(() => alert("저장되었습니다."))
       .catch((err) => alert(`저장 실패: ${err.message ?? err}`));
-  }, [selectedMapId, pois, lines]);
+  }, [selectedMapId, pois, lines, svgToWorld]);
   const handleSync = () => {
     if (!selectedMappingId) {
       alert("동기화할 맵을 먼저 선택해주세요.");

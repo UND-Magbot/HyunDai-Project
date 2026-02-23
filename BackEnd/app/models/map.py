@@ -80,6 +80,8 @@ class MapPOI(Base):
     name = Column(String(200), nullable=False)
     x = Column(Float, nullable=False)
     y = Column(Float, nullable=False)
+    world_x = Column(Float, nullable=True)                                  # 로봇 물리계 X 좌표
+    world_y = Column(Float, nullable=True)                                  # 로봇 물리계 Y 좌표
     poi_type = Column(String(50), nullable=False, default="waypoint")       # waypoint / standby / charging
     phone_number = Column(String(50), nullable=True)
     angle = Column(Float, nullable=True)
@@ -102,6 +104,10 @@ class MapLine(Base):
     map_id = Column(Integer, ForeignKey("robot_maps.id", ondelete="CASCADE"), nullable=False, index=True)
     from_poi_id = Column(Integer, ForeignKey("map_pois.id", ondelete="CASCADE"), nullable=False)
     to_poi_id = Column(Integer, ForeignKey("map_pois.id", ondelete="CASCADE"), nullable=False)
+    from_world_x = Column(Float, nullable=True)                             # 시작 POI 물리계 X
+    from_world_y = Column(Float, nullable=True)                             # 시작 POI 물리계 Y
+    to_world_x = Column(Float, nullable=True)                               # 끝 POI 물리계 X
+    to_world_y = Column(Float, nullable=True)                               # 끝 POI 물리계 Y
     direction = Column(String(20), nullable=False, default="forward")       # forward / backward / bidirectional
     line_type = Column(String(20), nullable=False, default="straight")      # straight / curve
     control_points = Column(Text, nullable=True)                            # curve 제어점 JSON
