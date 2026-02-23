@@ -1,0 +1,114 @@
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, BigInteger, Text
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class Business(Base):
+    """사업장 테이블"""
+    __tablename__ = "businesses"
+
+    business_id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, unique=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    areas = relationship("Area", back_populates="business", cascade="all, delete-orphan")
+
+
+class Area(Base):
+    """영역(구역) 테이블"""
+    __tablename__ = "areas"
+
+    area_id = Column(Integer, primary_key=True, autoincrement=True)
+    business_id = Column(Integer, ForeignKey("businesses.business_id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    business = relationship("Business", back_populates="areas")
+
+
+class RobotMap(Base):
+    """매핑 결과 데이터 테이블
+    - business_id / area_id: 어느 사업장·영역의 맵인지
+    - robot_sn: 어떤 로봇으로 매핑했는지 (참조용)
+    """
+    __tablename__ = "robot_maps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    business_id = Column(Integer, ForeignKey("businesses.business_id", ondelete="SET NULL"), nullable=True, index=True)
+    area_id = Column(Integer, ForeignKey("areas.area_id", ondelete="SET NULL"), nullable=True, index=True)
+    robot_sn = Column(String(100), nullable=True)                             # 매핑한 로봇 SN (참조)
+    mapping_id = Column(Integer, nullable=True)                               # 로봇 내부 맵핑 ID
+    name = Column(String(200), nullable=True)                                 # 맵 이름 (사용자 지정)
+    continue_mapping = Column(Boolean, default=False)                         # 이어서 매핑 여부
+    thumbnail_url = Column(String(500), nullable=True)
+    image_url = Column(String(500), nullable=True)
+    grid_origin_x = Column(Float, default=0.0)
+    grid_origin_y = Column(Float, default=0.0)
+    grid_resolution = Column(Float, default=0.0)
+    url = Column(String(500), nullable=True)
+    start_time = Column(BigInteger, nullable=True)                            # unix timestamp
+    end_time = Column(BigInteger, nullable=True)                              # unix timestamp
+    state = Column(String(50), nullable=True)                                 # finished, cancelled 등
+    bag_id = Column(Integer, nullable=True)
+    bag_url = Column(String(500), nullable=True)
+    download_url = Column(String(500), nullable=True)
+    pbstream_url = Column(String(500), nullable=True)
+    trajectories_url = Column(String(500), nullable=True)
+    properties_url = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    business = relationship("Business")
+    area = relationship("Area")
+    pois = relationship("MapPOI", back_populates="robot_map", cascade="all, delete-orphan")
+    lines = relationship("MapLine", back_populates="robot_map", cascade="all, delete-orphan")
+
+
+class MapPOI(Base):
+    """맵 POI (경유지·충전소·대기지점 등) 테이블"""
+    __tablename__ = "map_pois"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    map_id = Column(Integer, ForeignKey("robot_maps.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+    poi_type = Column(String(50), nullable=False, default="waypoint")       # waypoint / standby / charging
+    phone_number = Column(String(50), nullable=True)
+    angle = Column(Float, nullable=True)
+    load_type = Column(String(20), nullable=True)                           # normal / heavy
+    robot_sns = Column(Text, nullable=True)                                 # JSON array string
+    address = Column(String(300), nullable=True)
+    docking_radius = Column(Float, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    robot_map = relationship("RobotMap", back_populates="pois")
+
+
+class MapLine(Base):
+    """맵 경로 라인 테이블"""
+    __tablename__ = "map_lines"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    map_id = Column(Integer, ForeignKey("robot_maps.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_poi_id = Column(Integer, ForeignKey("map_pois.id", ondelete="CASCADE"), nullable=False)
+    to_poi_id = Column(Integer, ForeignKey("map_pois.id", ondelete="CASCADE"), nullable=False)
+    direction = Column(String(20), nullable=False, default="forward")       # forward / backward / bidirectional
+    line_type = Column(String(20), nullable=False, default="straight")      # straight / curve
+    control_points = Column(Text, nullable=True)                            # curve 제어점 JSON
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    robot_map = relationship("RobotMap", back_populates="lines")
+    from_poi = relationship("MapPOI", foreign_keys=[from_poi_id])
+    to_poi = relationship("MapPOI", foreign_keys=[to_poi_id])
