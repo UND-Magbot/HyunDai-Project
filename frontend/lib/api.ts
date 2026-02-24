@@ -18,6 +18,17 @@ export async function apiFetch<T = unknown>(
   return res.json();
 }
 
+export async function apiPost<T = unknown>(
+  path: string,
+  body?: unknown
+): Promise<T> {
+  return apiFetch<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
 export async function apiPatch<T = unknown>(
   path: string,
   body: unknown

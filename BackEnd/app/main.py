@@ -1,13 +1,21 @@
+import logging
 
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+
+# 로깅 설정 — 백그라운드 스레드 로그도 터미널에 출력
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s  %(name)s  %(message)s",
+    datefmt="%H:%M:%S",
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
-from app.routers import user, robot, auth, map
+from app.routers import user, robot, auth, map, task
 
 # 모델 import (테이블 메타데이터 등록용)
 import app.models  # noqa: F401
@@ -40,6 +48,7 @@ app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(robot.router)
 app.include_router(map.router)
+app.include_router(task.router)
 
 
 # 정적 파일 서빙 (맵 이미지 등)

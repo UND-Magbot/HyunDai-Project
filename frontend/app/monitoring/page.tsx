@@ -26,6 +26,7 @@ import { SearchInput } from "../components/ui/SearchInput";
 import { Panel } from "../components/ui/Panel";
 import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { TopBar } from "../components/shell/TopBar";
+import { apiFetch, apiPost } from "@/lib/api";
 
 const defaultOverlayItems = [
   { label: "map base picture", checked: true },
@@ -58,6 +59,7 @@ export default function MonitoringPage() {
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
+  const [loopRunning, setLoopRunning] = useState(false);
   const mapViewportRef = useRef<HTMLDivElement | null>(null);
   const panStartRef = useRef<{ x: number; y: number } | null>(null);
   const startOffsetRef = useRef({ x: 0, y: 0 });
@@ -249,24 +251,58 @@ export default function MonitoringPage() {
     .filter(Boolean)
     .join(" ");
 
-  const handleStartAll = () => {
-    console.log("Start All tasks");
-  };
+  // ─── 무한반복 작업 제어 ───
+  const LOOP_ROBOT_ID = 7;
+  const LOOP_ENTRY_NAMES = ["ENTERPOS1", "ENTERPOS2", "ENTERPOS3"];  // 진입 경로 (충전소→작업구역, 1회만)
+  const LOOP_POI_NAMES = ["CURPOS1", "CURPOS2", "CURPOS3", "CURPOS4", "CURPOS5", "CURPOS6"];
+  const LOOP_STOP_NAMES = ["CURPOS2", "CURPOS4"];  // 작업 포인트 (정지), 나머지는 경유 (통과)
 
-  const hasRunningTasks = mockTasks.some((task) => task.state === "running");
+  const handleStartAll = async () => {
+    try {
+      await apiPost("/api/tasks/loop/start", {
+        robot_id: LOOP_ROBOT_ID,
+        poi_names: LOOP_POI_NAMES,
+        stop_names: LOOP_STOP_NAMES,
+        entry_poi_names: LOOP_ENTRY_NAMES,
+      });
+      setLoopRunning(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "시작 실패";
+      alert(msg);
+    }
+  };
 
   const handleStopAll = () => {
-    if (hasRunningTasks) {
-      setStopConfirmOpen(true);
-      return;
-    }
-    console.log("Stop All tasks");
+    setStopConfirmOpen(true);
   };
 
-  const handleConfirmStop = () => {
+  const handleConfirmStop = async () => {
     setStopConfirmOpen(false);
-    console.log("Stop All tasks");
+    try {
+      await apiPost(`/api/tasks/loop/stop/${LOOP_ROBOT_ID}`);
+    } catch {
+      /* 이미 중단된 경우 무시 */
+    }
+    setLoopRunning(false);
   };
+
+  // 루프 상태 폴링 (3초 간격)
+  useEffect(() => {
+    if (!loopRunning) return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await apiFetch<{ status: string; loop?: number; current_poi?: string }>(
+          `/api/tasks/loop/status/${LOOP_ROBOT_ID}`
+        );
+        if (res.status === "error" || res.status === "stopped") {
+          setLoopRunning(false);
+        }
+      } catch {
+        /* 무시 */
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [loopRunning]);
 
   const filteredDevices = deviceSearch
     ? mockDevices.filter((d) =>
@@ -432,8 +468,9 @@ export default function MonitoringPage() {
                 <button
                   className="btn btn--primary"
                   onClick={handleStartAll}
+                  disabled={loopRunning}
                 >
-                  시작
+                  {loopRunning ? "실행 중..." : "시작"}
                 </button>
                 <button
                   className="btn btn--danger"
