@@ -19,15 +19,23 @@
   object-fit: contain;
 }
 
-/* ── Badge ── */
+/* ── Badge (count) ── */
 .alarm-badge {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  width: var(--status-dot-size);
-  height: var(--status-dot-size);
-  border-radius: var(--radius-chip);
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-1);
+  border-radius: 9px;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
+  line-height: 1;
 }
 
 .alarm-badge--info {
@@ -61,11 +69,17 @@
 /* ── Popover toolbar (search + icons) ── */
 .alarm-popover__toolbar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-panel-header);
   flex-shrink: 0;
+}
+
+.alarm-popover__toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .alarm-popover__search-input {
@@ -94,12 +108,58 @@
   height: 32px;
   font-size: var(--font-size-base);
   flex-shrink: 0;
+  border-radius: var(--radius-button);
+  transition: background var(--transition-fast) var(--ease-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alarm-popover__toolbar-btn:hover {
+  background: var(--color-primary);
+}
+
+.alarm-popover__toolbar-btn--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.alarm-popover__action-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast) var(--ease-default),
+              color var(--transition-fast) var(--ease-default);
+}
+
+.alarm-popover__action-btn:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--text-on-primary);
+}
+
+.alarm-popover__action-btn--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .alarm-popover__search-icon {
   width: 16px;
   height: 16px;
   object-fit: contain;
+  filter: brightness(0) invert(1);
+  opacity: 0.85;
+}
+
+.alarm-popover__toolbar-btn:hover .alarm-popover__search-icon {
+  opacity: 1;
 }
 
 .alarm-popover__sound-icon {
@@ -198,7 +258,6 @@
 .alarm-item__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
 }
 
@@ -222,10 +281,70 @@
   color: var(--color-error);
 }
 
+.alarm-item__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-1);
+}
+
+.alarm-item__footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.alarm-item__read-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast) var(--ease-default),
+              color var(--transition-fast) var(--ease-default);
+}
+
+.alarm-item__read-btn:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--text-on-primary);
+}
+
 .alarm-item__timestamp {
-  font-size: var(--font-size-md);
-  color: var(--text-secondary);
-  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.alarm-item__tts-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  opacity: 0.5;
+  transition: opacity var(--transition-fast) var(--ease-default);
+  display: flex;
+  align-items: center;
+}
+
+.alarm-item__tts-btn:hover {
+  opacity: 1;
+}
+
+.alarm-item__tts-btn--disabled {
+  opacity: 0.25;
+}
+
+.alarm-item__tts-btn--disabled:hover {
+  opacity: 0.25;
+}
+
+.alarm-item__tts-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
 }
 
 .alarm-item__message {

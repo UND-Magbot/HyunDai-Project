@@ -3,6 +3,7 @@ import type {
   AlarmSearchParams,
   AlarmSearchResponse,
 } from "@/lib/types/alarm-search";
+import { getErrorTypeFromCode } from "@/lib/constants/alarm";
 
 const ROBOT_SNS = [
   "AMR-001",
@@ -50,7 +51,8 @@ const MESSAGES = [
 
 function generateMockAlarms(): AlarmSearchItem[] {
   const items: AlarmSearchItem[] = [];
-  const baseDate = new Date(2026, 1, 10, 8, 0, 0);
+  const now = new Date();
+  const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0);
 
   for (let i = 0; i < 53; i++) {
     const offsetMinutes = i * 17 + Math.floor(i * 3.7);
@@ -63,9 +65,12 @@ function generateMockAlarms(): AlarmSearchItem[] {
     const min = String(ts.getMinutes()).padStart(2, "0");
     const sec = String(ts.getSeconds()).padStart(2, "0");
 
+    const code = CODES[i % CODES.length];
+
     items.push({
       id: String(i + 1),
-      code: CODES[i % CODES.length],
+      code,
+      errorType: getErrorTypeFromCode(code),
       status: i % 3 === 0 ? "Resume" : "Warning",
       robotSn: ROBOT_SNS[i % ROBOT_SNS.length],
       message: MESSAGES[i % MESSAGES.length],
@@ -82,6 +87,19 @@ export function getDistinctAlarmRobotSNs(): string[] {
   return [...new Set(mockAlarmSearchData.map((a) => a.robotSn))].sort();
 }
 
+export function getDistinctAlarmCodes(): string[] {
+  return [...new Set(mockAlarmSearchData.map((a) => a.code))].sort();
+}
+
+export function getTodayAlarms(): AlarmSearchItem[] {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  const todayPrefix = `${yyyy}-${mm}-${dd}`;
+  return mockAlarmSearchData.filter((a) => a.timestamp.startsWith(todayPrefix));
+}
+
 export function searchAlarms(params: AlarmSearchParams): AlarmSearchResponse {
   let filtered = mockAlarmSearchData;
 
@@ -92,6 +110,14 @@ export function searchAlarms(params: AlarmSearchParams): AlarmSearchResponse {
     );
   }
 
+  if (params.errorType) {
+    filtered = filtered.filter((a) => a.errorType === params.errorType);
+  }
+
+  if (params.code) {
+    filtered = filtered.filter((a) => a.code === params.code);
+  }
+
   if (params.robotSn) {
     filtered = filtered.filter((a) => a.robotSn === params.robotSn);
   }
@@ -100,7 +126,9 @@ export function searchAlarms(params: AlarmSearchParams): AlarmSearchResponse {
     filtered = filtered.filter((a) => a.timestamp.startsWith(params.date!));
   }
 
-  if (params.startTime && params.endTime) {
+  const isDefaultTime =
+    params.startTime === "00:00" && params.endTime === "23:59";
+  if (params.startTime && params.endTime && !isDefaultTime) {
     filtered = filtered.filter((a) => {
       const time = a.timestamp.split(" ")[1]?.substring(0, 5) ?? "";
       return time >= params.startTime && time <= params.endTime;

@@ -1,10 +1,16 @@
 export type AlarmSeverity = "info" | "warning" | "error";
 
+export type AlarmErrorType = "network" | "battery" | "task";
+
 export type AlarmListItemProps = {
   code: string;
   severity: AlarmSeverity;
+  errorType: AlarmErrorType;
   timestamp: string;
   message: string;
+  robotSn: string;
+  onSpeak?: () => void;
+  onRead?: () => void;
   onClick?: () => void;
 };
 
@@ -12,8 +18,9 @@ export type AlarmDetailData = {
   id: string;
   code: string;
   severity: AlarmSeverity;
+  errorType: AlarmErrorType;
   message: string;
-  robot?: string;
+  robotSn: string;
   occurredAt: string;
   clearedAt?: string;
 };
@@ -27,9 +34,10 @@ export type AlarmData = {
   id: string;
   code: string;
   severity: AlarmSeverity;
+  errorType: AlarmErrorType;
   timestamp: string;
   message: string;
-  robot?: string;
+  robotSn: string;
   occurredAt: string;
   clearedAt?: string;
 };

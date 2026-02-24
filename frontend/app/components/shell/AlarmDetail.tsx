@@ -2,13 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { IconButton } from "../ui/IconButton";
-import type { AlarmSeverity, AlarmDetailProps } from "@/lib/types/shell";
-
-const severityLabels: Record<AlarmSeverity, string> = {
-  info: "Info",
-  warning: "Warning",
-  error: "Error",
-};
+import { ALARM_ERROR_TYPE_LABELS } from "@/lib/constants/alarm";
+import type { AlarmDetailProps } from "@/lib/types/shell";
 
 export function AlarmDetail({ alarm, onClose }: AlarmDetailProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -35,7 +30,7 @@ export function AlarmDetail({ alarm, onClose }: AlarmDetailProps) {
         <div className="alarm-detail__header">
           <h2 className="alarm-detail__title">
             <span className={`alarm-item__severity--${alarm.severity}`}>
-              [{alarm.code}] {severityLabels[alarm.severity]}
+              [{alarm.code}] {ALARM_ERROR_TYPE_LABELS[alarm.errorType]}
             </span>
           </h2>
           <IconButton
@@ -52,12 +47,10 @@ export function AlarmDetail({ alarm, onClose }: AlarmDetailProps) {
             <span className="alarm-detail__label">Message</span>
             <span className="alarm-detail__value">{alarm.message}</span>
           </div>
-          {alarm.robot ? (
-            <div className="alarm-detail__row">
-              <span className="alarm-detail__label">Related Robot</span>
-              <span className="alarm-detail__value">{alarm.robot}</span>
-            </div>
-          ) : null}
+          <div className="alarm-detail__row">
+            <span className="alarm-detail__label">로봇 SN</span>
+            <span className="alarm-detail__value">{alarm.robotSn}</span>
+          </div>
           <div className="alarm-detail__row">
             <span className="alarm-detail__label">Occurred</span>
             <span className="alarm-detail__value">{alarm.occurredAt}</span>

@@ -113,13 +113,13 @@ export default function LoginPage() {
           로그인
         </button>
 
-        <button
+        {/* <button
           className="login__forgot"
           type="button"
           onClick={() => setForgotOpen(true)}
         >
           비밀번호 찾기
-        </button>
+        </button> */}
       </form>
 
       <ForgotPasswordModal

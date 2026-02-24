@@ -56,9 +56,9 @@ export function DeviceRow({
           <IconButton aria-label="Charge" disabled={!canCharge}>
             충전소 이동
           </IconButton>
-          <IconButton aria-label="Navigate" disabled={!canNav}>
+          {/* <IconButton aria-label="Navigate" disabled={!canNav}>
             네비
-          </IconButton>
+          </IconButton> */}
           <IconButton
             aria-label="Info"
             disabled={!canInfo}

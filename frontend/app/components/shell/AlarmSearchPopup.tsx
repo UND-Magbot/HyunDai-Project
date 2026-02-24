@@ -8,7 +8,9 @@ import { AlarmSearchPagination } from "./AlarmSearchPagination";
 import {
   searchAlarms,
   getDistinctAlarmRobotSNs,
+  getDistinctAlarmCodes,
 } from "@/lib/mock/alarmSearch";
+import { ALARM_ERROR_TYPE_LABELS } from "@/lib/constants/alarm";
 import type {
   AlarmSearchFilterState,
   AlarmSearchResponse,
@@ -21,6 +23,8 @@ type AlarmSearchPopupProps = {
 
 const defaultFilters: AlarmSearchFilterState = {
   message: "",
+  errorType: "",
+  code: "",
   robotSn: "",
   date: null,
   startTime: "00:00",
@@ -32,16 +36,25 @@ export function AlarmSearchPopup({ onClose }: AlarmSearchPopupProps) {
   const [appliedFilters, setAppliedFilters] =
     useState<AlarmSearchFilterState>(defaultFilters);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(6);
   const [results, setResults] = useState<AlarmSearchResponse>({
     items: [],
     total: 0,
     page: 1,
-    pageSize: 20,
+    pageSize: 6,
   });
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const robotSns = useMemo(() => getDistinctAlarmRobotSNs(), []);
+  const codes = useMemo(() => getDistinctAlarmCodes(), []);
+  const errorTypes = useMemo(
+    () =>
+      Object.entries(ALARM_ERROR_TYPE_LABELS).map(([value, label]) => ({
+        value,
+        label,
+      })),
+    []
+  );
 
   const doSearch = useCallback(
     (f: AlarmSearchFilterState, p: number, ps: number) => {
@@ -80,6 +93,12 @@ export function AlarmSearchPopup({ onClose }: AlarmSearchPopupProps) {
     setPage(1);
   };
 
+  const handleReset = () => {
+    setFilters(defaultFilters);
+    setAppliedFilters(defaultFilters);
+    setPage(1);
+  };
+
   const handlePageSizeChange = (newSize: number) => {
     setPageSize(newSize);
     setPage(1);
@@ -89,7 +108,7 @@ export function AlarmSearchPopup({ onClose }: AlarmSearchPopupProps) {
     <div className="alarm-search__overlay" onMouseDown={handleOverlayClick}>
       <div className="alarm-search" ref={dialogRef} role="dialog" aria-label="Alarm search">
         <div className="alarm-search__header">
-          <h2 className="alarm-search__title">Alarm search</h2>
+          <h2 className="alarm-search__title">알람 검색</h2>
           <IconButton
             className="alarm-search__close"
             variant="ghost"
@@ -103,13 +122,16 @@ export function AlarmSearchPopup({ onClose }: AlarmSearchPopupProps) {
         <AlarmSearchFilter
           filters={filters}
           robotSns={robotSns}
+          errorTypes={errorTypes}
+          codes={codes}
           onFilterChange={setFilters}
           onSearch={handleSearch}
+          onReset={handleReset}
         />
 
         <div className="alarm-search__list">
           {results.items.length === 0 ? (
-            <div className="alarm-search__empty">No alarms found</div>
+            <div className="alarm-search__empty">검색 결과가 없습니다.</div>
           ) : (
             results.items.map((item) => (
               <AlarmSearchItem key={item.id} item={item} />
@@ -117,13 +139,15 @@ export function AlarmSearchPopup({ onClose }: AlarmSearchPopupProps) {
           )}
         </div>
 
-        <AlarmSearchPagination
-          page={page}
-          pageSize={pageSize}
-          total={results.total}
-          onPageChange={setPage}
-          onPageSizeChange={handlePageSizeChange}
-        />
+        {results.total > 0 ? (
+          <AlarmSearchPagination
+            page={page}
+            pageSize={pageSize}
+            total={results.total}
+            onPageChange={setPage}
+            onPageSizeChange={handlePageSizeChange}
+          />
+        ) : null}
       </div>
     </div>
   );
