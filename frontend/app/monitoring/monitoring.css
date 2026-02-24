@@ -36,14 +36,26 @@
 .center-map__viewport {
   position: relative;
   width: 100%;
-  max-height: 100%;
-  aspect-ratio: 16 / 9;
+  height: 100%;
   background: var(--bg-map);
   overflow: visible;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: default;
+}
+
+.center-map__scene {
+  position: relative;
+  aspect-ratio: var(--map-ar, 563 / 682);
+  max-width: 100%;
+  max-height: 100%;
+  transition: transform var(--transition-fast) var(--ease-out);
+  transform-origin: center;
+}
+
+.center-map__viewport.is-panning .center-map__scene {
+  transition: none;
 }
 
 .center-map__viewport.is-pannable {
@@ -55,17 +67,11 @@
 }
 
 .center-map__image {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  transform: scale(var(--map-scale, 1));
-  transition: transform var(--transition-fast) var(--ease-out);
   user-select: none;
   pointer-events: none;
-}
-
-.center-map__viewport.is-panning .center-map__image {
-  transition: none;
 }
 
 .panel--overlay {
@@ -113,7 +119,7 @@
 .overlay-card {
   position: absolute;
   left: var(--overlay-anchor-left);
-  bottom: 9%;
+  bottom: 11%;
   transition: left 0.3s ease;
   width: 180px;
   background: var(--bg-surface-1);
@@ -221,10 +227,12 @@
   border: 0;
   background: transparent;
   color: inherit;
+  padding: 0;
+  width: 100%;
   display: grid;
   grid-template-columns: var(--device-grid);
   align-items: center;
-  justify-items: start;
+  justify-items: center;
   cursor: pointer;
 }
 
@@ -254,7 +262,7 @@
   padding: var(--space-1) var(--space-4);
   font-size: var(--font-size-md);
   display: grid;
-  justify-items: start;
+  justify-items: center;
 }
 
 .device-row__header-cell {
@@ -268,13 +276,18 @@
   max-height: 100%;
   overflow: auto;
   padding-right: 4px;
-  --device-grid: 2fr 0.6fr 1fr 0.8fr 1fr;
+  --device-grid: 2fr 1fr 1fr 1fr;
 }
 
 .device-row__actions {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-1);
+}
+
+.device-row__actions .icon-btn {
+  font-size: var(--font-size-xs);
+  width: 90px;
 }
 
 .device-row__actions .icon-btn:disabled {
@@ -424,16 +437,18 @@
 
 .task-panel__footer-actions {
   width: 100%;
-  height: 100%;
+  /* height: 100%;
   display: grid;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: 1fr 1fr; */
   gap: var(--space-2);
+  height: 20%;
+  display: flex;
 }
 
 .task-panel__footer-actions .btn {
   width: 100%;
   height: 100%;
-  font-size: calc(var(--font-size-lg) + 3px);
+  font-size: calc(var(--font-size-2xl) + 3px);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.02em;
 }

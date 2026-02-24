@@ -54,7 +54,7 @@ export function LogFilter({
         <input
           type="text"
           className="log-filter__input"
-          placeholder="message를 입력하세요."
+          placeholder="로그 메세지를 입력하세요."
           value={filters.message}
           onChange={(e) => update({ message: e.target.value })}
           onKeyDown={handleKeyDown}
@@ -62,7 +62,7 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">Robot SN</label>
+        <label className="log-filter__label">로봇 SN</label>
         <select
           className="log-filter__select"
           value={filters.robotSn}
@@ -78,7 +78,7 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">Log Type</label>
+        <label className="log-filter__label">로그 유형</label>
         <select
           className="log-filter__select"
           value={filters.logType}
@@ -86,7 +86,7 @@ export function LogFilter({
             update({ logType: e.target.value as LogFilterState["logType"] })
           }
         >
-          <option value="">All</option>
+          <option value="">전체</option>
           {LOG_TYPES.map((t) => (
             <option key={t} value={t}>
               {t}
@@ -96,7 +96,7 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">Log Tag</label>
+        <label className="log-filter__label">로그 세부 유형</label>
         <select
           className="log-filter__select"
           value={filters.logTag}
@@ -104,7 +104,7 @@ export function LogFilter({
             update({ logTag: e.target.value as LogFilterState["logTag"] })
           }
         >
-          <option value="">All</option>
+          <option value="">전체</option>
           {LOG_TAGS.map((t) => (
             <option key={t} value={t}>
               {t}
@@ -114,7 +114,7 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">Date</label>
+        <label className="log-filter__label">조회 날짜</label>
         <DatePicker
           value={filters.date}
           onChange={(date) => update({ date })}
@@ -122,7 +122,7 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">Time</label>
+        <label className="log-filter__label">조회 시간</label>
         <TimeRangePicker
           startTime={filters.startTime}
           endTime={filters.endTime}
@@ -131,7 +131,7 @@ export function LogFilter({
       </div>
 
       <button type="button" className="btn btn--primary" onClick={onSearch}>
-        검색
+        조회
       </button>
     </div>
   );

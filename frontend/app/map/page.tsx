@@ -25,6 +25,7 @@ import type {
   MapMeta,
 } from "@/lib/types/map";
 import { apiFetch } from "@/lib/api";
+import { LoadingScreen } from "../components/ui/LoadingScreen";
 import "./map.css";
 
 type BusinessItem = {
@@ -74,6 +75,7 @@ function syncNextId(ids: string[]) {
 export default function MapPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(formatDateTime);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Map state
   const [pois, setPois] = useState<POI[]>([]);
@@ -152,6 +154,11 @@ export default function MapPage() {
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(t);
   }, []);
 
   // Esc 키 → select 모드로 복귀
@@ -686,7 +693,9 @@ export default function MapPage() {
   const handleRemoteControl = () => console.log("Remote Control");
 
   return (
-    <div className="app-shell">
+    <>
+      {isLoading && <LoadingScreen pageName="맵 관리" />}
+      <div className="app-shell">
       <TopBar
         dateTime={currentDateTime}
         onToggleNav={() => setNavCollapsed((v) => !v)}
@@ -857,5 +866,6 @@ export default function MapPage() {
         </main>
       </div>
     </div>
+    </>
   );
 }

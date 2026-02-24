@@ -110,39 +110,39 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
     const newErrors: Record<string, string> = {};
 
     if (!form.taskType) {
-      newErrors.taskType = "Task Type is required";
+      newErrors.taskType = "작업 유형을 선택하세요.";
     }
 
     if (!form.mode) {
-      newErrors.mode = "Mode is required";
+      newErrors.mode = "모드를 선택하세요.";
     }
 
     if (isNaN(form.maxSpeed) || form.maxSpeed < SPEED_MIN || form.maxSpeed > SPEED_MAX) {
-      newErrors.maxSpeed = `MaxSpeed must be ${SPEED_MIN}~${SPEED_MAX}`;
+      newErrors.maxSpeed = `최대 속도는 ${SPEED_MIN}~${SPEED_MAX} 범위여야 합니다.`;
     }
 
     if (isDetourEnabled) {
       const validDetourValues = [0, 0.4, 0.8, 1.2, 1.6, 2.0];
       if (isNaN(form.detourR) || !validDetourValues.includes(roundDetour(form.detourR))) {
-        newErrors.detourR = "DetourR must be 0, 0.4, 0.8, 1.2, 1.6, or 2.0";
+        newErrors.detourR = "우회 반경은 0, 0.4, 0.8, 1.2, 1.6, 2.0 중 하나여야 합니다.";
       }
     }
 
     if (isNaN(form.cycles) || form.cycles < 1 || !Number.isInteger(form.cycles)) {
-      newErrors.cycles = "Cycles must be an integer ≥ 1";
+      newErrors.cycles = "반복 횟수는 1 이상의 정수여야 합니다.";
     }
 
     if (!form.robot) {
-      newErrors.robot = "Robot is required";
+      newErrors.robot = "로봇을 선택하세요.";
     } else if (form.robot !== "Auto") {
       const device = mockDevices.find((d) => d.id === form.robot);
       if (device && device.power !== "online") {
-        newErrors.robot = "Selected robot is offline";
+        newErrors.robot = "선택한 로봇이 오프라인 상태입니다.";
       }
     }
 
     if (form.selectedRoutes.length === 0) {
-      newErrors.selectedRoutes = "At least one route must be selected";
+      newErrors.selectedRoutes = "경로를 하나 이상 선택하세요.";
     }
 
     setErrors(newErrors);
@@ -167,15 +167,15 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="CreateTask" width="760px">
+    <Modal open={open} onClose={handleClose} title="작업 생성" width="760px">
       <div className="create-task">
         {/* ─── Task Params ─── */}
         <section className="create-task__frist-box">
-          <h3 className="create-task__section-title">Task Params</h3>
+          <h3 className="create-task__section-title">작업 설정</h3>
           <div className="create-task__params">
             {/* Task Type */}
             <div className="create-task__field">
-              <span className="create-task__label">Task Type <span className="create-task__required">*</span></span>
+              <span className="create-task__label">작업 유형 <span className="create-task__required">*</span></span>
               <select
                 className={`create-task__select ${!form.taskType ? "create-task__select--placeholder" : ""} ${errors.taskType ? "create-task__select--error" : ""}`}
                 value={form.taskType}
@@ -184,7 +184,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
                 }
               >
                 <option value="" disabled hidden>
-                  Please Choose
+                  선택해주세요.
                 </option>
                 {TASK_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -206,7 +206,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
                 onChange={(e) => updateField("robot", e.target.value)}
               >
                 <option value="" disabled hidden>
-                  Please Choose
+                  선택해주세요.
                 </option>
                 <option value="Auto">Auto</option>
                 {onlineDevices.map((d) => (
@@ -278,7 +278,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
                 }
               >
                 <option value="" disabled hidden>
-                  Please Choose
+                  선택해주세요.
                 </option>
                 {MODE_OPTIONS.map((m) => (
                   <option key={m.value} value={m.value}>

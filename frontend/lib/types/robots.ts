@@ -68,6 +68,7 @@ export type DeploymentStatus = "DEPLOYED" | "UNDEPLOYED";
 export type Business = {
   id: string;
   name: string;
+  value?: string;
 };
 
 export type Building = {

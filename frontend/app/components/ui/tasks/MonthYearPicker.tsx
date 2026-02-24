@@ -4,8 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import "./MonthYearPicker.css";
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "1월", "2월", "3월", "4월", "5월", "6월",
+  "7월", "8월", "9월", "10월", "11월", "12월",
 ];
 
 const YEAR_RANGE = 10;
@@ -65,14 +65,14 @@ export function MonthYearPicker({ year, month, onApply, onCancel }: MonthYearPic
 
       <div className="my-picker__footer">
         <button type="button" className="btn" onClick={onCancel}>
-          Cancel
+          취소
         </button>
         <button
           type="button"
           className="btn btn--primary"
           onClick={() => onApply(selYear, selMonth)}
         >
-          Done
+          확인
         </button>
       </div>
     </div>

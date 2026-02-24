@@ -12,7 +12,7 @@ export type CustomTaskStep = {
   destination: string;
   actionType: string;
   audio?: string;
-  waitTime?: number;
+  volume?: number;
 };
 
 export type CustomTask = {
@@ -39,7 +39,7 @@ export type StepFormState = {
   actionType: string;
   destination: string;
   audio: string;
-  waitTime: string;
+  volume: string;
 };
 
 export type CustomTasksTableProps = {

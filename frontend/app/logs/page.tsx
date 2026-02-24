@@ -7,6 +7,7 @@ import { LogFilter } from "../components/ui/logs/LogFilter";
 import { LogTable } from "../components/ui/logs/LogTable";
 import { mockLogList, getDistinctRobotSNs } from "@/lib/mock/logList";
 import type { LogFilterState, LogItem } from "@/lib/types/logs";
+import { LoadingScreen } from "../components/ui/LoadingScreen";
 import "./logs.css";
 
 function formatDateTime() {
@@ -58,6 +59,12 @@ const PAGE_GROUP = 5;
 export default function LogsPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(formatDateTime);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
@@ -99,7 +106,9 @@ export default function LogsPage() {
   };
 
   return (
-    <div className="app-shell">
+    <>
+      {isLoading && <LoadingScreen pageName="로그 관리" />}
+      <div className="app-shell">
       <TopBar
         dateTime={currentDateTime}
         onToggleNav={() => setNavCollapsed((v) => !v)}
@@ -159,5 +168,6 @@ export default function LogsPage() {
         </main>
       </div>
     </div>
+    </>
   );
 }

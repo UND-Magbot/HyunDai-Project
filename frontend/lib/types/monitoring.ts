@@ -7,7 +7,6 @@ export type TaskState = "running" | "completed" | "error";
 export type DeviceRowProps = {
   id: string;
   name: string;
-  taskCount?: number;
   power: DevicePower;
   battery: string;
   status: DeviceStatus;
@@ -69,11 +68,6 @@ export type DeviceDetail = DeviceBaseInfo &
   DeviceOperational & {
     currentTask: DeviceTask[];
   };
-
-export type DeviceInfoPopupProps = {
-  deviceId: string | null;
-  onClose: () => void;
-};
 
 export type OverlayItem = {
   label: string;

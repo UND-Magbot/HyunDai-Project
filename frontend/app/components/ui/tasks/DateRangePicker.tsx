@@ -5,7 +5,7 @@ import { MonthYearPicker } from "./MonthYearPicker";
 import type { DateRangePickerProps } from "@/lib/types/tasks";
 import "./DateRangePicker.css";
 
-const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -177,7 +177,7 @@ export function DateRangePicker({ startDate, endDate, onChange }: DateRangePicke
         type="text"
         className="drp__input"
         readOnly
-        placeholder="Select date range"
+        placeholder="날짜 범위를 선택하세요."
         value={displayValue}
         onClick={handleOpen}
       />
@@ -223,13 +223,13 @@ export function DateRangePicker({ startDate, endDate, onChange }: DateRangePicke
 
           <div className="drp__footer">
             <button type="button" className="btn" onClick={handleClear}>
-              Clear
+              초기화
             </button>
             <button type="button" className="btn" onClick={handleToday}>
-              Today
+              오늘
             </button>
             <button type="button" className="btn btn--primary" onClick={handleDone}>
-              Done
+              확인
             </button>
           </div>
 

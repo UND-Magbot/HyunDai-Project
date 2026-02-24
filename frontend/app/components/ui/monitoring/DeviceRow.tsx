@@ -6,7 +6,6 @@ import type { DeviceRowProps } from "@/lib/types/monitoring";
 export function DeviceRow({
   id,
   name,
-  taskCount,
   power,
   battery,
   status,
@@ -19,15 +18,14 @@ export function DeviceRow({
   const isRunning = status === "running";
   const isInvalidOnlineDisable = power === "online" && status === "disable";
   const effectiveStatus = isOffline ? "disable" : status;
-  const actionLabel = isOffline ? "활성" : "비활성";
 
   const canSuspend = !isOffline && !isInvalidOnlineDisable && isRunning;
-  const canActionButton = isOffline || (!isInvalidOnlineDisable && isRunning);
+  const canCharge = !isOffline && !isInvalidOnlineDisable;
   const canNav = !isOffline && !isInvalidOnlineDisable;
   const canInfo = !isInvalidOnlineDisable;
 
   return (
-    <div 
+    <div
       className={`device-row${expanded ? " device-row--expanded" : ""}`}
       onClick={() => onToggleExpand?.(id)}
     >
@@ -37,7 +35,6 @@ export function DeviceRow({
         aria-expanded={expanded}
       >
         <span className="device-row__cell device-row__cell--robot">{name}</span>
-        <span className="device-row__cell device-row__cell--task">{taskCount ?? 0}</span>
         <span className={`device-row__cell device-row__cell--power power--${power}`}>{power}</span>
         <span className="device-row__cell device-row__cell--battery">
           {battery}
@@ -56,8 +53,8 @@ export function DeviceRow({
           <IconButton aria-label="Suspend" disabled={!canSuspend}>
             정지
           </IconButton>
-          <IconButton aria-label={actionLabel} disabled={!canActionButton}>
-            {actionLabel}
+          <IconButton aria-label="Charge" disabled={!canCharge}>
+            충전소 이동
           </IconButton>
           <IconButton aria-label="Navigate" disabled={!canNav}>
             네비

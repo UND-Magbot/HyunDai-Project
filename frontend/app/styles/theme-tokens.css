@@ -158,6 +158,13 @@
   /* Map */
   --bg-map: #A0A0A0;
 
+  /* Map Markers */
+  --marker-poi-size: 20px;
+  --marker-waypoint-size: 10px;
+  --marker-robot-size: 28px;
+  --marker-label-offset: 4px;
+  --z-map-markers: 5;
+
   /* Layout - Panels */
   --panel-width-min: 320px;
   --panel-width-max: 380px;
@@ -201,6 +208,7 @@
      ══════════════════════════════════════════ */
   --z-base: 1;
   --z-sticky: 10;
+  --z-dropdown: 15;
   --z-overlay-panel: 20;
   --z-overlay-card: 25;
   --z-sidenav-backdrop: 30;

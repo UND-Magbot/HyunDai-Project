@@ -45,7 +45,7 @@ export const mockCustomTasks: CustomTask[] = [
     speed: 60,
     steps: [
       { id: "s-003", num: 1, destination: "input", actionType: "Pickup" },
-      { id: "s-004", num: 2, destination: "discharge", actionType: "Dropoff", waitTime: 30 },
+      { id: "s-004", num: 2, destination: "discharge", actionType: "Dropoff", volume: 30 },
     ],
     createTime: "2026-02-10 10:15",
   },
@@ -71,7 +71,7 @@ export const mockCustomTasks: CustomTask[] = [
     returnTask: false,
     speed: 40,
     steps: [
-      { id: "s-008", num: 1, destination: "input", actionType: "Wait", waitTime: 60 },
+      { id: "s-008", num: 1, destination: "input", actionType: "Wait", volume: 60 },
       { id: "s-009", num: 2, destination: "point1", actionType: "Pickup" },
     ],
     createTime: "2026-02-10 13:00",
@@ -151,7 +151,7 @@ export const mockCustomTasks: CustomTask[] = [
     speed: 80,
     steps: [
       { id: "s-021", num: 1, destination: "point1", actionType: "Pickup", audio: "alert.mp3" },
-      { id: "s-022", num: 2, destination: "discharge", actionType: "Wait", waitTime: 45 },
+      { id: "s-022", num: 2, destination: "discharge", actionType: "Wait", volume: 45 },
     ],
     createTime: "2026-02-11 14:15",
   },

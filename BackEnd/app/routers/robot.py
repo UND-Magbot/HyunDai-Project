@@ -11,6 +11,7 @@ from app.schemas.robot import (
     RobotListResponse,
     RobotStatusUpdate,
     RobotStatusResponse,
+    MinBatteryUpdate,
 )
 from app.crud.robot import (
     create_robot,
@@ -20,6 +21,8 @@ from app.crud.robot import (
     delete_robot,
     update_robot_status,
     get_robot_status,
+    get_min_battery_by_sn,
+    update_min_battery_by_sn,
 )
 
 router = APIRouter(prefix="/api/robots", tags=["로봇 관리"])
@@ -47,11 +50,26 @@ def api_create_robot(data: RobotCreate, db: Session = Depends(get_db)):
 def api_get_robots(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    business_id: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """로봇 목록 조회"""
-    items = get_robots(db, skip=skip, limit=limit)
+    items = get_robots(db, skip=skip, limit=limit, business_id=business_id)
     return RobotListResponse(total=len(items), items=items)
+
+
+# ── 최소 배터리 (SN 기반) ──
+
+@router.get("/sn/{sn}/min-battery")
+def api_get_min_battery(sn: str, db: Session = Depends(get_db)):
+    """SN 기반 최소 배터리 조회"""
+    return get_min_battery_by_sn(db, sn)
+
+
+@router.patch("/sn/{sn}/min-battery")
+def api_update_min_battery(sn: str, data: MinBatteryUpdate, db: Session = Depends(get_db)):
+    """SN 기반 최소 배터리 수정"""
+    return update_min_battery_by_sn(db, sn, data)
 
 
 @router.get("/{robot_id}", response_model=RobotResponse)

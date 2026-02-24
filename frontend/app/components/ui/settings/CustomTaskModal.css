@@ -277,7 +277,7 @@
   border-bottom: none;
 }
 
-.ct-modal__step-empty {
+.ct-modal__step-table td.ct-modal__step-empty {
   text-align: center;
   color: var(--text-muted);
   padding: var(--space-4) 0 !important;

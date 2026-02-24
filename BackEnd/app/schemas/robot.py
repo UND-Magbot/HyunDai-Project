@@ -31,6 +31,11 @@ class RobotUpdate(BaseModel):
     ip_address: Optional[str] = Field(None, max_length=45)
 
 
+class MinBatteryUpdate(BaseModel):
+    """최소 배터리 수정 요청"""
+    min_battery: int = Field(..., ge=0, le=100)
+
+
 class RobotStatusUpdate(BaseModel):
     """RB-04 로봇 상태 수집 — SDK/API로부터 수신한 데이터를 업데이트"""
     battery_level: Optional[int] = Field(None, ge=0, le=100)
@@ -69,6 +74,7 @@ class RobotResponse(BaseModel):
     max_battery: int
     min_battery: int
     is_active: bool
+    business_id: Optional[str] = None
     status: Optional[RobotStatusResponse]
     created_at: datetime
     updated_at: datetime

@@ -1,0 +1,45 @@
+export type MapPixelCoord = {
+  x: number;
+  y: number;
+};
+
+export type PoiMarkerData = {
+  id: string;
+  label: string;
+  position: MapPixelCoord;
+  type: "workstation" | "charging" | "pickup" | "dropoff";
+  renderKind?: "circle" | "triangle";
+  angle?: number;
+  dockingRadius?: number;
+};
+
+export type WaypointMarkerData = {
+  id: string;
+  label: string;
+  position: MapPixelCoord;
+};
+
+export type RobotMarkerData = {
+  robotId: string;
+  robotName: string;
+  position: MapPixelCoord;
+  yaw: number;
+  status: "idle" | "running" | "error" | "warning" | "disable";
+  power: "online" | "offline";
+  collisionState?: "none" | "near_miss" | "collision";
+};
+
+export type RouteSegment = {
+  id: string;
+  from: MapPixelCoord;
+  to: MapPixelCoord;
+  direction: "forward" | "backward" | "bidirectional";
+  lineType: "straight" | "curve";
+  controlPoints?: MapPixelCoord[];
+};
+
+export type VirtualWallData = {
+  id: string;
+  start: MapPixelCoord;
+  end: MapPixelCoord;
+};

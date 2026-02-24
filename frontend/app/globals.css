@@ -8,6 +8,7 @@
 
 @import "./styles/theme-tokens.css";
 @import "./components/ui/under-development.css";
+@import "./components/ui/loading-screen.css";
 
 /* @import "tailwindcss"; */
 
