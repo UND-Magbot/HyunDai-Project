@@ -23,7 +23,7 @@ export function RobotFilter({
         <input
           type="text"
           className="robot-filter__input"
-          placeholder="로봇 SN 또는 로봇 명을 입력하세요."
+          placeholder="로봇 SN / 로봇 명"
           value={filters.searchText}
           onChange={(e) => update({ searchText: e.target.value })}
           onKeyDown={handleKeyDown}

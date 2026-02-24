@@ -89,6 +89,9 @@
 
 .panel--overlay-right {
   right: 2%;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
 }
 
 .panel--overlay.panel--collapsed {
@@ -104,9 +107,7 @@
 }
 
 .panel--overlay-right:not(.panel--collapsed) .panel__footer {
-  flex: 1;
   align-items: stretch;
-  min-height: 0;
 }
 
 .overlay-card-layer {
@@ -437,17 +438,13 @@
 
 .task-panel__footer-actions {
   width: 100%;
-  /* height: 100%;
-  display: grid;
-  grid-template-rows: 1fr 1fr; */
   gap: var(--space-2);
-  height: 20%;
   display: flex;
 }
 
 .task-panel__footer-actions .btn {
   width: 100%;
-  height: 100%;
+  height: 52px;
   font-size: calc(var(--font-size-2xl) + 3px);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.02em;

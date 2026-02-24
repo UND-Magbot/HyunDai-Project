@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 import type { NavItem, SideNavProps } from "@/lib/types/shell";
 
 export const defaultNavItems: NavItem[] = [
-  { label: "monitoring", href: "/monitoring", match: "/monitoring", icon: "/icon/Icon (9).png" },
-  { label: "robots", href: "/robots", match: "/robots", icon: "/icon/Icon (13).png" },
+  { label: "모니터링", href: "/monitoring", match: "/monitoring", icon: "/icon/Icon (9).png" },
+  { label: "로봇관리", href: "/robots", match: "/robots", icon: "/icon/Icon (13).png" },
   // { label: "tasks", href: "/tasks", match: "/tasks", icon: "/icon/Icon (15).png" },
   // { label: "logs", href: "/logs", match: "/logs", icon: "/icon/zoom-in-w.png" },
-  { label: "map", href: "/map", match: "/map", icon: "/icon/Icon (24).png" },
+  { label: "맵관리", href: "/map", match: "/map", icon: "/icon/Icon (24).png" },
   // { label: "settings", href: "/settings", match: "/settings", icon: "/icon/Icon (17).png" },
 ];
 

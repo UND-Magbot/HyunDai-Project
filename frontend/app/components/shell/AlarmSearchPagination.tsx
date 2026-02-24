@@ -27,7 +27,7 @@ export function AlarmSearchPagination({
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
       >
-        Prev
+        이전
       </button>
       {pageNumbers.map((num) => (
         <button
@@ -45,9 +45,9 @@ export function AlarmSearchPagination({
         disabled={page >= totalPages}
         onClick={() => onPageChange(page + 1)}
       >
-        Next
+        다음
       </button>
-      <span className="pagination__info">{total} items</span>
+      <span className="pagination__info">총 {total} 개</span>
     </div>
   );
 }

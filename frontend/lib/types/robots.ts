@@ -51,6 +51,7 @@ export type RobotDeviceInfoProps = {
   onClose: () => void;
   onEnableToggle: (deviceId: string) => void;
   togglingDeviceId: string | null;
+  showChargingStation?: boolean;
 };
 
 export type ConfirmModalProps = {

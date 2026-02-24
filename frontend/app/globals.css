@@ -302,6 +302,17 @@ body {
   border-color: transparent;
 }
 
+.btn--outline {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.btn--outline:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* Pagination */
 .pagination {
   display: flex;
@@ -323,7 +334,6 @@ body {
 
 .pagination__btn:disabled {
   opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .pagination__num {

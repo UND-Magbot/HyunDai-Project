@@ -1019,6 +1019,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
               onClose={() => setOpenDeviceId(null)}
               onEnableToggle={handleDeviceEnableToggle}
               togglingDeviceId={togglingDeviceId}
+              showChargingStation={false}
             />
           )}
           <TaskInfoModal

@@ -1,8 +1,11 @@
 export type AlarmSearchStatus = "Warning" | "Resume";
 
+import type { AlarmErrorType } from "@/lib/types/shell";
+
 export type AlarmSearchItem = {
   id: string;
   code: string;
+  errorType: AlarmErrorType;
   status: AlarmSearchStatus;
   robotSn: string;
   message: string;
@@ -11,6 +14,8 @@ export type AlarmSearchItem = {
 
 export type AlarmSearchFilterState = {
   message: string;
+  errorType: string;
+  code: string;
   robotSn: string;
   date: string | null;
   startTime: string;
@@ -32,8 +37,11 @@ export type AlarmSearchResponse = {
 export type AlarmSearchFilterProps = {
   filters: AlarmSearchFilterState;
   robotSns: string[];
+  errorTypes: { value: string; label: string }[];
+  codes: string[];
   onFilterChange: (filters: AlarmSearchFilterState) => void;
   onSearch: () => void;
+  onReset: () => void;
 };
 
 export type AlarmSearchItemProps = {

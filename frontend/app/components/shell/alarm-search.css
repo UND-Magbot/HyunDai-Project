@@ -43,6 +43,7 @@
   width: 32px;
   height: 32px;
   font-size: var(--font-size-lg);
+  border: none;
 }
 
 /* ── Filter Bar ── */
@@ -69,18 +70,32 @@
   flex: 0 1 auto;
 }
 
-.alarm-search-filter__field--search {
+.alarm-search-filter__field--half {
   flex: 1 1 50%;
   min-width: 0;
 }
 
-.alarm-search-filter__field--sn {
-  flex: 1 1 50%;
-  min-width: 0;
-}
-
-.alarm-search-filter__field--search .alarm-search-filter__input {
+.alarm-search-filter__field--half .alarm-search-filter__input,
+.alarm-search-filter__field--grow .alarm-search-filter__input {
   flex: 1;
+}
+
+.alarm-search-filter__field--quarter {
+  flex: 0 1 25%;
+  min-width: 0;
+}
+
+.alarm-search-filter__group--half {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+.alarm-search-filter__field--grow {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .alarm-search-filter__label {
@@ -226,6 +241,5 @@
 /* ── Pagination (uses global .pagination classes from globals.css) ── */
 .alarm-search .pagination {
   padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-panel-header);
   flex-shrink: 0;
 }
