@@ -117,6 +117,9 @@ type LiveRobot = {
   SN: string;
   ROBOTNAME: string;
   MODEL: string;
+  NICKNAME: string | null;
+  AXBOT_VERSION: string | null;
+  PLATFORM: string | null;
   RUNSTATE: string;
   ONLINE: string;
   SIGNAL: string;
@@ -709,7 +712,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
     const timer = setInterval(async () => {
       try {
         const res = await apiFetch<{ status: string }>(`/api/tasks/loop/status/${LOOP_ROBOT_ID}`);
-        if (res.status === "error" || res.status === "stopped" || res.status === "idle") {
+        if (res.status === "error" || res.status === "stopped" || res.status === "idle" || res.status === "charging") {
           setLoopRunning(false);
           setLoopStopping(false);
           setIsRunning(false);
@@ -795,9 +798,9 @@ export function MonitoringClient({ initialDateTime }: Props) {
         ? parseInt(live["POWER(%)"], 10) || null
         : robot.status?.battery_level ?? null,
       enable: robot.is_active,
-      deploymentTime: null,
-      apkVersion: null,
-      sdkVersion: null,
+      nickname: live?.NICKNAME ?? null,
+      axbotVersion: live?.AXBOT_VERSION ?? null,
+      platform: live?.PLATFORM ?? null,
       busiName: null,
       buildingName: null,
       currentTask: [],

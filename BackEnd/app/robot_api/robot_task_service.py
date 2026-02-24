@@ -32,6 +32,8 @@ _confirm_events: dict[int, threading.Event] = {} # {robot_id: threading.Event} �
 _run_info: dict[int, dict] = {}                 # {robot_id: 실행 상태 정보}
 _move_locks: dict[int, threading.Lock] = {}     # {robot_id: 이동 명령 잠금} — 동시 이동 방지
 _sessions: dict[str, requests.Session] = {}     # {robot_ip: requests.Session} — TCP 연결 재사용
+_charging_robots: set[int] = set()              # 배터리 부족으로 충전소 이동한 로봇 ID
+_stuck_states: dict[int, bool] = {}             # {robot_id: True=장애물 감지}
 
 
 # ─── 로봇별 HTTP 세션 / 이동 잠금 ────────────────────────────────────────────
@@ -397,11 +399,13 @@ def _create_planning_ws(ip: str):
 
 
 def _wait_for_move_ws(ws, move_id: int, ip: str,
-                      stop_event: threading.Event) -> tuple[str, str]:
+                      stop_event: threading.Event,
+                      robot_id: int | None = None) -> tuple[str, str]:
     """WebSocket /planning_state로 이동 완료 대기 → (result, detail)
     result: succeeded / failed / cancelled / timeout / ws_error
     - HTTP 폴링 없음! WebSocket 메시지만 읽음
     - action_id로 우리 이동인지 필터링
+    - robot_id 지정 시 stuck_state를 _stuck_states에 추적
     """
     start = time.time()
     last_state = ""
@@ -411,6 +415,9 @@ def _wait_for_move_ws(ws, move_id: int, ip: str,
     while (time.time() - start) < MOVE_TIMEOUT:
         if stop_event.is_set():
             cancel_current_move(ip)
+            if robot_id is not None:
+                with _lock:
+                    _stuck_states[robot_id] = False
             return "cancelled", ""
 
         # WebSocket 무응답 감지 — 일정 시간 메시지 없으면 연결 끊김 판단
@@ -444,6 +451,12 @@ def _wait_for_move_ws(ws, move_id: int, ip: str,
         remaining = pkt.get("remaining_distance")
         stuck = pkt.get("stuck_state", "")
 
+        # stuck_state 추적 (robot_id가 있을 때만)
+        if robot_id is not None:
+            is_stuck = bool(stuck) and str(stuck) not in ("0", "", "none", "None")
+            with _lock:
+                _stuck_states[robot_id] = is_stuck
+
         # 상태 변경 시 로그
         if state != last_state or remaining != last_remaining:
             logger.info(f"[Move {move_id}] WS: {last_state or '(시작)'} → {state} "
@@ -457,14 +470,23 @@ def _wait_for_move_ws(ws, move_id: int, ip: str,
 
         # 종료 상태 처리
         if state == "succeeded":
+            if robot_id is not None:
+                with _lock:
+                    _stuck_states[robot_id] = False
             return "succeeded", ""
         elif state == "failed":
             reason = pkt.get("fail_reason", -1)
             reason_text = FAIL_REASONS.get(reason, f"코드 {reason}")
             detail = f"[{reason}] {reason_text}"
             logger.error(f"[Move {move_id}] WS 실패: {detail}")
+            if robot_id is not None:
+                with _lock:
+                    _stuck_states[robot_id] = False
             return "failed", detail
         elif state == "cancelled":
+            if robot_id is not None:
+                with _lock:
+                    _stuck_states[robot_id] = False
             return "cancelled", ""
 
     logger.warning(f"[Move {move_id}] WS 타임아웃 ({MOVE_TIMEOUT}초)")
@@ -512,6 +534,145 @@ def _wait_for_move_http(ip: str, move_id: int,
 
     cancel_current_move(ip)
     return "timeout", ""
+
+
+# ─── 배터리 잔량 조회 ──────────────────────────────────────────────────────────
+
+def _get_battery_percentage(ip: str, timeout: float = 5.0) -> float | None:
+    """WebSocket으로 로봇의 현재 배터리 잔량(%) 조회
+    반환: 0~100 범위의 float, 실패 시 None
+    """
+    ws = None
+    try:
+        ws_url = f"ws://{ip}:{PORT}/ws/v2/topics"
+        ws = create_connection(ws_url, timeout=5)
+        ws.send(json.dumps({"enable_topic": "/battery_state"}))
+        ws.send(json.dumps({"enable_topic": "/detailed_battery_state"}))
+        ws.settimeout(3.0)
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                raw = ws.recv()
+                pkt = json.loads(raw)
+                topic = pkt.get("topic")
+                if topic in ("/detailed_battery_state", "/battery_state"):
+                    percentage = pkt.get("percentage")
+                    if isinstance(percentage, (int, float)):
+                        if percentage <= 1:
+                            percentage = percentage * 100
+                        return float(percentage)
+            except (WebSocketException, TimeoutError, OSError):
+                continue
+
+        return None
+    except Exception as e:
+        logger.warning(f"[{ip}] 배터리 조회 실패: {e}")
+        return None
+    finally:
+        if ws:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+
+# ─── 충전 설정 조회 ───────────────────────────────────────────────────────────
+
+def _get_charging_config(db, robot_id: int) -> tuple[int, "MapPOI | None"]:
+    """DB에서 로봇의 min_battery 및 충전소 POI 조회"""
+    robot = db.query(Robot).filter(Robot.id == robot_id).first()
+    if not robot:
+        return 20, None
+
+    charging_poi = None
+    if robot.charging_id:
+        charging_poi = db.query(MapPOI).filter(
+            MapPOI.id == robot.charging_id,
+            MapPOI.is_active == True,
+        ).first()
+
+    return robot.min_battery, charging_poi
+
+
+# ─── 배터리 부족 시 충전소 이동 ───────────────────────────────────────────────
+
+def _navigate_to_charger(robot_id: int, robot_ip: str,
+                         charging_poi, entry_poi_names: list[str] | None,
+                         db, ws, move_lock: threading.Lock,
+                         stop_event: threading.Event) -> bool:
+    """배터리 부족 시 충전소까지 이동 후 충전 명령
+    경로: entry_poi_names 역순 → 충전소
+    반환: True(성공) / False(실패)
+    """
+    # 1. 충전 경로 구성: entry_poi_names 역순
+    route_pois = []
+    if entry_poi_names:
+        reversed_names = list(reversed(entry_poi_names))
+        for name in reversed_names:
+            poi = db.query(MapPOI).filter(
+                MapPOI.name == name,
+                MapPOI.is_active == True,
+            ).first()
+            if poi:
+                route_pois.append(poi)
+
+    # 2. route_coordinates 생성 (경유 POI들 + 충전소 POI)
+    coords_parts = []
+    for p in route_pois:
+        px = p.world_x if p.world_x is not None else p.x
+        py = p.world_y if p.world_y is not None else p.y
+        coords_parts.extend([str(px), str(py)])
+
+    cx = charging_poi.world_x if charging_poi.world_x is not None else charging_poi.x
+    cy = charging_poi.world_y if charging_poi.world_y is not None else charging_poi.y
+    c_angle = charging_poi.angle if charging_poi.angle is not None else 0.0
+    coords_parts.extend([str(cx), str(cy)])
+    route_coords = ",".join(coords_parts) if len(coords_parts) > 2 else ""
+
+    route_desc = " → ".join([p.name for p in route_pois] + [charging_poi.name])
+    logger.info(f"[Robot {robot_id}] 배터리 부족 → 충전소 이동: {route_desc}")
+
+    # 3. 상태 업데이트
+    with _lock:
+        _run_info[robot_id] = {
+            "status": "low_battery_charging",
+            "message": f"배터리 부족 — 충전소 이동 중 ({route_desc})",
+        }
+
+    # 4. 이동 명령 전송
+    with move_lock:
+        ok, move_id, err = send_move(robot_ip, cx, cy, c_angle, route_coords=route_coords)
+        if not ok:
+            logger.error(f"[Robot {robot_id}] 충전소 이동 명령 실패: {err}")
+            return False
+
+        logger.info(f"[Robot {robot_id}] 충전소 이동 Move {move_id} 전송")
+
+        if ws:
+            try:
+                result, detail = _wait_for_move_ws(ws, move_id, robot_ip, stop_event)
+            except (WebSocketException, OSError):
+                result, detail = _wait_for_move_http(robot_ip, move_id, stop_event)
+        else:
+            result, detail = _wait_for_move_http(robot_ip, move_id, stop_event)
+
+    if result != "succeeded":
+        logger.error(f"[Robot {robot_id}] 충전소 이동 실패: {result} {detail}")
+        return False
+
+    # 5. 충전소 도착 → 충전 명령
+    time.sleep(1)
+    ok, msg = send_charge(robot_ip)
+    logger.info(f"[Robot {robot_id}] 충전 명령 전송: ok={ok}, {msg}")
+
+    with _lock:
+        _run_info[robot_id] = {
+            "status": "charging",
+            "message": "배터리 부족 — 충전 중",
+        }
+
+    return ok
 
 
 # ─── 충전 상태 확인 ────────────────────────────────────────────────────────────
@@ -784,6 +945,94 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
             loop += 1
             logger.info(f"[Robot {robot_id}] ── 루프 {loop}회 시작 ──")
 
+            # ── 배터리 체크 (2회차 루프부터) ──
+            # 배터리 부족 시: CURPOS1 복귀 → ENTERPOS 역순 → 충전소
+            if loop > 1:
+                battery_pct = _get_battery_percentage(robot_ip)
+                if battery_pct is not None:
+                    min_bat, charging_poi = _get_charging_config(db, robot_id)
+                    logger.info(f"[Robot {robot_id}] 배터리: {battery_pct:.1f}% (최소: {min_bat}%)")
+
+                    if battery_pct <= min_bat:
+                        logger.warning(f"[Robot {robot_id}] 배터리 부족! "
+                                       f"{battery_pct:.1f}% <= {min_bat}%")
+
+                        if charging_poi:
+                            with _lock:
+                                _charging_robots.add(robot_id)
+
+                            # 1단계: CURPOS1(pois[0])으로 먼저 복귀
+                            home_poi = pois[0]
+                            logger.info(f"[Robot {robot_id}] 배터리 부족 — {home_poi.name}으로 복귀 중")
+
+                            home_coords_parts = []
+                            for wp in trailing_waypoints:
+                                wx = wp.world_x if wp.world_x is not None else wp.x
+                                wy = wp.world_y if wp.world_y is not None else wp.y
+                                home_coords_parts.extend([str(wx), str(wy)])
+                            hx = home_poi.world_x if home_poi.world_x is not None else home_poi.x
+                            hy = home_poi.world_y if home_poi.world_y is not None else home_poi.y
+                            h_angle = home_poi.angle if home_poi.angle is not None else 0.0
+                            home_coords_parts.extend([str(hx), str(hy)])
+                            home_route = ",".join(home_coords_parts) if len(home_coords_parts) > 2 else ""
+
+                            with _lock:
+                                _run_info[robot_id] = {
+                                    "status": "low_battery_charging",
+                                    "loop": loop,
+                                    "current_poi": home_poi.name,
+                                    "message": f"배터리 부족 — {home_poi.name}으로 복귀 중",
+                                }
+
+                            home_ok = False
+                            with move_lock:
+                                ok, move_id, err = send_move(robot_ip, hx, hy, h_angle, route_coords=home_route)
+                                if ok:
+                                    if ws:
+                                        try:
+                                            h_result, h_detail = _wait_for_move_ws(ws, move_id, robot_ip, stop_event, robot_id=robot_id)
+                                        except (WebSocketException, OSError):
+                                            h_result, h_detail = _wait_for_move_http(robot_ip, move_id, stop_event)
+                                    else:
+                                        h_result, h_detail = _wait_for_move_http(robot_ip, move_id, stop_event)
+                                    home_ok = (h_result == "succeeded")
+                                    logger.info(f"[Robot {robot_id}] {home_poi.name} 복귀 결과: {h_result}")
+                                else:
+                                    logger.error(f"[Robot {robot_id}] {home_poi.name} 복귀 이동 실패: {err}")
+
+                            if not home_ok:
+                                logger.error(f"[Robot {robot_id}] {home_poi.name} 복귀 실패 — 현재 위치에서 충전소 이동 시도")
+
+                            # 2단계: ENTERPOS 역순 → 충전소 이동
+                            _navigate_to_charger(
+                                robot_id, robot_ip, charging_poi,
+                                entry_poi_names, db, ws, move_lock, stop_event
+                            )
+
+                            # 모든 활성 로봇이 충전소로 갔는지 확인
+                            with _lock:
+                                active_robots = set(_stop_events.keys())
+                                all_charging = active_robots.issubset(_charging_robots)
+
+                            if all_charging and len(active_robots) > 0:
+                                logger.info(f"모든 로봇({active_robots})이 충전소 이동 → 전체 작업 종료")
+                                with _lock:
+                                    for rid in active_robots:
+                                        ev = _stop_events.get(rid)
+                                        if ev:
+                                            ev.set()
+
+                            with _lock:
+                                _run_info[robot_id] = {
+                                    "status": "charging",
+                                    "message": "배터리 부족 — 충전 중 (작업 종료)",
+                                }
+                            return
+                        else:
+                            logger.warning(f"[Robot {robot_id}] charging_id 미설정 — 충전소 이동 불가, 계속 작업")
+                else:
+                    logger.warning(f"[Robot {robot_id}] 배터리 정보 조회 실패 — 스킵")
+
             for seg_idx, seg in enumerate(segments):
                 if stop_event.is_set():
                     break
@@ -866,7 +1115,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                         if ws:
                             try:
                                 result, detail = _wait_for_move_ws(
-                                    ws, move_id, robot_ip, stop_event)
+                                    ws, move_id, robot_ip, stop_event, robot_id=robot_id)
                                 if result == "ws_error":
                                     logger.warning(f"[Robot {robot_id}] WS 무응답 — 연결 재설정")
                                     try:
@@ -1000,6 +1249,8 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
             _stop_events.pop(robot_id, None)
             _confirm_events.pop(robot_id, None)
             _graceful_stop_events.pop(robot_id, None)
+            _charging_robots.discard(robot_id)
+            _stuck_states.pop(robot_id, None)
         logger.info(f"[Robot {robot_id}] 스레드 종료")
 
 
@@ -1026,6 +1277,7 @@ def start_loop(robot_id: int, robot_ip: str, poi_names: list[str],
         stop_event = threading.Event()
         _stop_events[robot_id] = stop_event
         _run_info[robot_id] = {"status": "starting", "poi_list": poi_names}
+        _charging_robots.discard(robot_id)
 
     # 새 작업 시작 전 로봇의 잔여 이동 취소 + 확인
     cancel_and_verify(robot_ip)
@@ -1086,11 +1338,16 @@ def get_loop_status(robot_id: int) -> dict:
     with _lock:
         running = robot_id in _stop_events
         info = _run_info.get(robot_id)
+        stuck = _stuck_states.get(robot_id, False)
+    result = {}
     if running:
-        return info if info else {"status": "running"}
-    if info:
-        return info
-    return {"status": "idle"}
+        result = info.copy() if info else {"status": "running"}
+    elif info:
+        result = info.copy()
+    else:
+        result = {"status": "idle"}
+    result["stuck"] = stuck
+    return result
 
 
 def is_running(robot_id: int) -> bool:

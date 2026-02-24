@@ -41,9 +41,9 @@ export type DeviceBaseInfo = {
   sn: string;
   robotName: string | null;
   model: string | null;
-  deploymentTime: string | null;
-  apkVersion: string | null;
-  sdkVersion: string | null;
+  nickname: string | null;
+  axbotVersion: string | null;
+  platform: string | null;
 };
 
 export type DeviceOperational = {

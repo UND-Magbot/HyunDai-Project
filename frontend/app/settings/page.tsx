@@ -151,7 +151,7 @@ export default function SettingsPage() {
           d.id === deviceId
             ? {
                 ...d,
-                deploymentTime: data.deploymentDate,
+                nickname: d.nickname,
                 busiName: business?.name ?? d.busiName,
                 buildingName: building?.name ?? d.buildingName,
               }

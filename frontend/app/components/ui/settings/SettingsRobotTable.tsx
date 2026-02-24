@@ -51,11 +51,11 @@ export function SettingsRobotTable({
               <tr key={device.id} className="settings-table__row">
                 <td className="settings-table__name">{device.robotName}</td>
                 <td>{device.sn}</td>
-                <td>{device.apkVersion ?? <span className="settings-table__muted">-</span>}</td>
-                <td>{device.sdkVersion ?? <span className="settings-table__muted">-</span>}</td>
+                <td>{device.axbotVersion ?? <span className="settings-table__muted">-</span>}</td>
+                <td>{device.platform ?? <span className="settings-table__muted">-</span>}</td>
                 <td>
-                  {device.deploymentTime ?? (
-                    <span className="settings-table__muted">Undeployed</span>
+                  {device.nickname ?? (
+                    <span className="settings-table__muted">-</span>
                   )}
                 </td>
                 <td>{device.busiName ?? <span className="settings-table__muted">-</span>}</td>

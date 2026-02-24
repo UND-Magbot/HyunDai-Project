@@ -123,23 +123,26 @@ def tablet_page(robot_id: int):
 body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
         display:flex; flex-direction:column; align-items:center; justify-content:center;
         height:100vh; overflow:hidden; }}
-.status-box {{ text-align:center; width:90%; max-width:500px; }}
-.poi-name {{ font-size:3rem; font-weight:700; margin-bottom:0.5rem; color:#e94560; }}
-.status-text {{ font-size:1.4rem; margin-bottom:2rem; color:#aaa; }}
-.loop-info {{ font-size:1.1rem; color:#666; margin-bottom:1rem; }}
+.status-box {{ text-align:center; width:90%; max-width:900px;
+               display:flex; flex-direction:column; align-items:center; gap:1.5vh; }}
+.poi-name {{ font-size:clamp(3rem,10vw,7rem); font-weight:800; line-height:1.2;
+             color:#e94560; word-break:keep-all; }}
+.status-text {{ font-size:clamp(1.6rem,5vw,3rem); line-height:1.4; color:#aaa;
+                word-break:keep-all; }}
+.loop-info {{ font-size:clamp(1.2rem,3.5vw,2rem); line-height:1.3; color:#666; }}
 
 #btn-confirm {{
-  display:none; width:80vw; max-width:400px; height:100px;
-  font-size:2.2rem; font-weight:700; border:none; border-radius:20px;
+  display:none; width:80vw; max-width:560px; height:clamp(80px,18vh,160px);
+  font-size:clamp(2rem,6vw,3.5rem); font-weight:800; border:none; border-radius:24px;
   background:linear-gradient(135deg,#e94560,#c23152); color:#fff;
-  cursor:pointer; box-shadow:0 8px 30px rgba(233,69,96,0.4);
+  cursor:pointer; box-shadow:0 12px 40px rgba(233,69,96,0.5);
   transition:transform .1s,box-shadow .1s;
-  margin:0 auto;
   justify-content:center; align-items:center;
+  margin-top:1vh;
 }}
 #btn-confirm:active {{
   transform:scale(0.95);
-  box-shadow:0 4px 15px rgba(233,69,96,0.3);
+  box-shadow:0 6px 20px rgba(233,69,96,0.3);
 }}
 #btn-confirm.show {{ display:flex; }}
 
@@ -151,14 +154,30 @@ body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
 .moving {{ color:#a29bfe; }}
 
 .spinner {{
-  display:inline-block; width:20px; height:20px;
-  border:3px solid rgba(255,255,255,0.2); border-top-color:#fff;
-  border-radius:50%; animation:spin 0.8s linear infinite; margin-right:8px;
+  display:inline-block; width:clamp(20px,4vw,36px); height:clamp(20px,4vw,36px);
+  border:4px solid rgba(255,255,255,0.2); border-top-color:#fff;
+  border-radius:50%; animation:spin 0.8s linear infinite; margin-right:10px;
+  vertical-align:middle;
 }}
 @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+
+.stuck-banner {{
+  display:none; position:fixed; top:0; left:0; right:0;
+  background:linear-gradient(135deg,#e94560,#c23152); color:#fff;
+  text-align:center; font-size:clamp(1.6rem,5vw,2.8rem); font-weight:800;
+  padding:clamp(12px,3vh,28px) 20px; z-index:1000;
+  animation:pulse 1.5s ease-in-out infinite;
+}}
+.stuck-banner.show {{ display:block; }}
+@keyframes pulse {{
+  0%,100% {{ opacity:1; }}
+  50% {{ opacity:0.6; }}
+}}
 </style>
 </head>
 <body>
+
+<div class="stuck-banner" id="stuckBanner">장애물 감지 — 작업중입니다. 비켜주세요!</div>
 
 <div class="status-box">
   <div class="poi-name" id="poiName">-</div>
@@ -170,7 +189,37 @@ body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
 <script>
 const ROBOT_ID = {robot_id};
 const API = window.location.origin + '/api/tasks';
+const AUDIO_URL = window.location.origin + '/static/audio/please_move.mp3';
 let polling = null;
+let stuckAudio = null;
+let wasStuck = false;
+let audioPlaying = false;
+
+// 음성 재생 (장애물 감지 시)
+function playStuckAudio() {{
+  if (audioPlaying) return;
+  if (!stuckAudio) {{
+    stuckAudio = new Audio(AUDIO_URL);
+    stuckAudio.addEventListener('ended', () => {{ audioPlaying = false; }});
+    stuckAudio.addEventListener('error', () => {{ audioPlaying = false; }});
+  }}
+  audioPlaying = true;
+  stuckAudio.currentTime = 0;
+  stuckAudio.play().catch(() => {{ audioPlaying = false; }});
+}}
+
+function handleStuck(isStuck) {{
+  const banner = document.getElementById('stuckBanner');
+  if (isStuck) {{
+    banner.classList.add('show');
+    if (!wasStuck) {{
+      playStuckAudio();
+    }}
+  }} else {{
+    banner.classList.remove('show');
+  }}
+  wasStuck = isStuck;
+}}
 
 // POI 이름 → 표시명 매핑
 const poiDisplayName = {{
@@ -187,6 +236,7 @@ const statusMap = {{
   'error': ['오류 발생', 'error'],
   'charging_route': ['충전소 이동 중', 'charging'],
   'charging': ['충전 중', 'charging'],
+  'low_battery_charging': ['배터리 부족 → 충전소 이동 중', 'charging'],
   'moving_to_start': ['작업 시작 위치로 이동 중', 'moving'],
 }};
 
@@ -202,6 +252,9 @@ async function fetchStatus() {{
 }}
 
 function render(d) {{
+  // 장애물 감지 처리
+  handleStuck(!!d.stuck);
+
   const poi = d.current_poi || '-';
   const [label, cls] = statusMap[d.status] || [d.status, 'idle'];
   const btn = document.getElementById('btn-confirm');
@@ -221,7 +274,7 @@ function render(d) {{
     btn.classList.remove('show');
     loopEl.textContent = '';
     return;
-  }} else if (d.status === 'charging_route' || d.status === 'charging') {{
+  }} else if (d.status === 'charging_route' || d.status === 'charging' || d.status === 'low_battery_charging') {{
     poiEl.textContent = label;
     poiEl.style.color = '#00d2d3';
     statusEl.style.display = '';
@@ -246,7 +299,7 @@ function render(d) {{
   }}
 
   if (d.status === 'error' && d.message) {{
-    statusEl.innerHTML += '<br><small style="color:#999">' + d.message + '</small>';
+    statusEl.innerHTML += '<br><span style="color:#999;font-size:0.7em">' + d.message + '</span>';
   }}
 
   if (d.loop) {{

@@ -16,9 +16,9 @@ export type RobotDevice = {
   signal: number | null;
   power: number | null;
   enable: boolean;
-  deploymentTime: string | null;
-  apkVersion: string | null;
-  sdkVersion: string | null;
+  nickname: string | null;
+  axbotVersion: string | null;
+  platform: string | null;
   busiName: string | null;
   buildingName: string | null;
   currentTask: DeviceTask[];

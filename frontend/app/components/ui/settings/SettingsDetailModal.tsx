@@ -53,15 +53,15 @@ export function SettingsDetailModal({
               </span>
             </div>
             <div className="settings-detail__field">
-              <span className="settings-detail__label">APK Version</span>
+              <span className="settings-detail__label">소프트웨어 버전</span>
               <span className="settings-detail__value">
-                {formatValue(device.apkVersion)}
+                {formatValue(device.axbotVersion)}
               </span>
             </div>
             <div className="settings-detail__field">
-              <span className="settings-detail__label">SDK Version</span>
+              <span className="settings-detail__label">플랫폼</span>
               <span className="settings-detail__value">
-                {formatValue(device.sdkVersion)}
+                {formatValue(device.platform)}
               </span>
             </div>
           </div>
@@ -72,9 +72,9 @@ export function SettingsDetailModal({
           <h3 className="settings-detail__section-title">Deployment</h3>
           <div className="settings-detail__grid">
             <div className="settings-detail__field">
-              <span className="settings-detail__label">Deployment Date</span>
+              <span className="settings-detail__label">닉네임</span>
               <span className="settings-detail__value">
-                {formatValue(device.deploymentTime)}
+                {formatValue(device.nickname)}
               </span>
             </div>
             <div className="settings-detail__field">

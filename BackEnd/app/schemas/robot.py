@@ -32,8 +32,9 @@ class RobotUpdate(BaseModel):
 
 
 class MinBatteryUpdate(BaseModel):
-    """최소 배터리 수정 요청"""
+    """최소 배터리 + 충전소 수정 요청"""
     min_battery: int = Field(..., ge=0, le=100)
+    charging_id: Optional[int] = None
 
 
 class RobotStatusUpdate(BaseModel):

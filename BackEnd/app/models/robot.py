@@ -20,6 +20,7 @@ class Robot(Base):
     area_id = Column(String(100), nullable=True)
     max_battery = Column(Integer, nullable=False, default=100)
     min_battery = Column(Integer, nullable=False, default=20)
+    charging_id = Column(Integer, ForeignKey("map_pois.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)  # Soft Delete용
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

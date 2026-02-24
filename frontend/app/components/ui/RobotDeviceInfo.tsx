@@ -10,6 +10,20 @@ function formatValue(value: string | number | null | undefined): string {
   return String(value);
 }
 
+const MODEL_NAME_MAP: Record<string, string> = {
+  "餐厅": "식당용",
+  "酒店": "호텔용",
+  "配送": "배송용",
+  "清洁": "청소용",
+  "巡检": "순찰용",
+  "仓库": "창고용",
+};
+
+function translateModel(model: string | null | undefined): string {
+  if (!model) return "-";
+  return MODEL_NAME_MAP[model] ?? model;
+}
+
 export function RobotDeviceInfo({
   device,
   onClose,
@@ -20,8 +34,8 @@ export function RobotDeviceInfo({
   const [initialMinBattery, setInitialMinBattery] = useState<number | null>(null);
   const [minBattery, setMinBattery] = useState(20);
   const [chargingPois, setChargingPois] = useState<{ id: number; name: string }[]>([]);
-  const [initialChargingPoiId, setInitialChargingPoiId] = useState<number | null>(null);
-  const [chargingPoiId, setChargingPoiId] = useState<number | null>(null);
+  const [initialChargingId, setInitialChargingId] = useState<number | null>(null);
+  const [chargingId, setChargingId] = useState<number | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [chargingDropdownOpen, setChargingDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -37,17 +51,17 @@ export function RobotDeviceInfo({
       { signal: controller.signal }
     )
       .then((res) => res.json())
-      .then((data: { min_battery: number; charging_poi_id: number | null }) => {
+      .then((data: { min_battery: number; charging_id: number | null }) => {
         setInitialMinBattery(data.min_battery);
         setMinBattery(data.min_battery);
-        setInitialChargingPoiId(data.charging_poi_id ?? null);
-        setChargingPoiId(data.charging_poi_id ?? null);
+        setInitialChargingId(data.charging_id ?? null);
+        setChargingId(data.charging_id ?? null);
       })
       .catch(() => {
         setInitialMinBattery(20);
         setMinBattery(20);
-        setInitialChargingPoiId(null);
-        setChargingPoiId(null);
+        setInitialChargingId(null);
+        setChargingId(null);
       });
 
     return () => controller.abort();
@@ -94,25 +108,25 @@ export function RobotDeviceInfo({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ min_battery: minBattery, charging_poi_id: chargingPoiId }),
+          body: JSON.stringify({ min_battery: minBattery, charging_id: chargingId }),
         }
       );
       if (res.ok) {
-        const data: { min_battery: number; charging_poi_id: number | null } = await res.json();
+        const data: { min_battery: number; charging_id: number | null } = await res.json();
         setInitialMinBattery(data.min_battery);
-        setInitialChargingPoiId(data.charging_poi_id ?? null);
+        setInitialChargingId(data.charging_id ?? null);
       }
     } finally {
       setIsApplying(false);
     }
-  }, [device, minBattery, chargingPoiId, isApplying]);
+  }, [device, minBattery, chargingId, isApplying]);
 
   if (!device) return null;
 
   const isToggleDisabled = togglingDeviceId === device.id;
   const isChanged =
     (initialMinBattery !== null && minBattery !== initialMinBattery) ||
-    (showChargingStation && initialChargingPoiId !== null && chargingPoiId !== initialChargingPoiId);
+    (showChargingStation && chargingId !== initialChargingId);
 
   const shouldScrollTaskTable = device.currentTask.length > 5;
 
@@ -148,25 +162,25 @@ export function RobotDeviceInfo({
             <div className="robot-info__field">
               <span className="robot-info__label">모델</span>
               <span className="robot-info__value">
-                {formatValue(device.model)}
+                {translateModel(device.model)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">배포일</span>
+              <span className="robot-info__label">닉네임</span>
               <span className="robot-info__value">
-                {formatValue(device.deploymentTime)}
+                {formatValue(device.nickname)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">APK 버전</span>
+              <span className="robot-info__label">소프트웨어 버전</span>
               <span className="robot-info__value">
-                {formatValue(device.apkVersion)}
+                {formatValue(device.axbotVersion)}
               </span>
             </div>
             <div className="robot-info__field">
-              <span className="robot-info__label">SDK 버전</span>
+              <span className="robot-info__label">플랫폼</span>
               <span className="robot-info__value">
-                {formatValue(device.sdkVersion)}
+                {formatValue(device.platform)}
               </span>
             </div>
           </div>
@@ -179,7 +193,7 @@ export function RobotDeviceInfo({
             <div className="robot-info__field">
               <span className="robot-info__label">고객사</span>
               <span className="robot-info__value">
-                {formatValue(device.busiName)}
+                현대 글로비스
               </span>
             </div>
             <div className="robot-info__field">
@@ -252,9 +266,9 @@ export function RobotDeviceInfo({
                     setChargingDropdownOpen((v) => !v);
                   }}
                 >
-                  <span className={chargingPoiId == null ? "robot-info__dropdown-placeholder" : ""}>
-                    {chargingPoiId != null
-                      ? chargingPois.find((p) => p.id === chargingPoiId)?.name ?? "충전소를 선택해주세요."
+                  <span className={chargingId == null ? "robot-info__dropdown-placeholder" : ""}>
+                    {chargingId != null
+                      ? chargingPois.find((p) => p.id === chargingId)?.name ?? "충전소를 선택해주세요."
                       : "충전소를 선택해주세요."}
                   </span>
                   <svg
@@ -276,8 +290,8 @@ export function RobotDeviceInfo({
                       <li key={poi.id}>
                         <button
                           type="button"
-                          className={`robot-info__dropdown-option${chargingPoiId === poi.id ? " robot-info__dropdown-option--selected" : ""}`}
-                          onClick={() => { setChargingPoiId(poi.id); setChargingDropdownOpen(false); }}
+                          className={`robot-info__dropdown-option${chargingId === poi.id ? " robot-info__dropdown-option--selected" : ""}`}
+                          onClick={() => { setChargingId(poi.id); setChargingDropdownOpen(false); }}
                         >
                           {poi.name}
                         </button>

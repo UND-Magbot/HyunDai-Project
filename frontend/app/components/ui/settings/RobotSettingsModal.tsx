@@ -34,7 +34,7 @@ export function RobotSettingsModal({
     if (device && open) {
       setBusinessId("");
       setBuildingId("");
-      setDeploymentDate(device.deploymentTime ?? todayString());
+      setDeploymentDate(todayString());
       setErrors({});
     }
   }, [device, open]);
@@ -118,15 +118,15 @@ export function RobotSettingsModal({
               </span>
             </div>
             <div className="robot-settings__readonly-field">
-              <span className="robot-settings__readonly-label">APK</span>
+              <span className="robot-settings__readonly-label">소프트웨어</span>
               <span className="robot-settings__readonly-value">
-                {formatValue(device.apkVersion)}
+                {formatValue(device.axbotVersion)}
               </span>
             </div>
             <div className="robot-settings__readonly-field">
-              <span className="robot-settings__readonly-label">SDK</span>
+              <span className="robot-settings__readonly-label">플랫폼</span>
               <span className="robot-settings__readonly-value">
-                {formatValue(device.sdkVersion)}
+                {formatValue(device.platform)}
               </span>
             </div>
           </div>

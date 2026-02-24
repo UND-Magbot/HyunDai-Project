@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.robot_api.robot_live_service import fetch_all_robots_live
-
+from app.robot_api.robot_task_service import get_loop_status
 
 from app.database import get_db
+from app.models.robot import Robot
+from app.models.map import RobotMap, MapPOI
 from app.schemas.robot import (
     RobotCreate,
     RobotUpdate,
@@ -36,8 +38,25 @@ ROBOTS = [
 ]
 
 @router.get("/live")
-def api_get_robots_live():
-    return fetch_all_robots_live(ROBOTS)
+def api_get_robots_live(db: Session = Depends(get_db)):
+    result = fetch_all_robots_live(ROBOTS)
+
+    # 작업 서비스 상태가 충전 관련이면 RUNSTATE를 CHARGING으로 오버라이드
+    # (로봇이 충전소로 이동 중일 때 move_state=moving → EXECUTING 반환 문제 해결)
+    CHARGING_STATUSES = {"charging", "charging_route", "low_battery_charging"}
+    ip_to_robot_id: dict[str, int] = {}
+    robots = db.query(Robot).filter(Robot.is_active == True, Robot.ip_address.isnot(None)).all()
+    for r in robots:
+        ip_to_robot_id[r.ip_address] = r.id
+
+    for item in result.get("items", []):
+        robot_id = ip_to_robot_id.get(item.get("IP"))
+        if robot_id is not None and item.get("RUNSTATE") == "EXECUTING":
+            task_status = get_loop_status(robot_id).get("status", "")
+            if task_status in CHARGING_STATUSES:
+                item["RUNSTATE"] = "CHARGING"
+
+    return result
 
 
 @router.post("", response_model=RobotResponse, status_code=201)
@@ -70,6 +89,43 @@ def api_get_min_battery(sn: str, db: Session = Depends(get_db)):
 def api_update_min_battery(sn: str, data: MinBatteryUpdate, db: Session = Depends(get_db)):
     """SN 기반 최소 배터리 수정"""
     return update_min_battery_by_sn(db, sn, data)
+
+
+@router.get("/sn/{sn}/charging-pois")
+def api_get_charging_pois(sn: str, db: Session = Depends(get_db)):
+    """SN 기반 충전소 POI 조회 — 로봇이 속한 영역의 맵에서 충전소 검색"""
+    robot = db.query(Robot).filter(Robot.serial_number == sn, Robot.is_active == True).first()
+    if not robot or not robot.area_id:
+        return []
+
+    try:
+        area_id = int(robot.area_id)
+    except (ValueError, TypeError):
+        return []
+
+    maps = (
+        db.query(RobotMap)
+        .filter(RobotMap.area_id == area_id, RobotMap.is_active == True)
+        .all()
+    )
+    if not maps:
+        return []
+
+    result = []
+    for m in maps:
+        pois = (
+            db.query(MapPOI)
+            .filter(
+                MapPOI.map_id == m.id,
+                MapPOI.poi_type == "charging",
+                MapPOI.is_active == True,
+            )
+            .all()
+        )
+        for poi in pois:
+            result.append({"id": poi.id, "name": poi.name})
+
+    return result
 
 
 @router.get("/{robot_id}", response_model=RobotResponse)
