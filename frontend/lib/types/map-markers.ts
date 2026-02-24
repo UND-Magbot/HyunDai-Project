@@ -24,7 +24,7 @@ export type RobotMarkerData = {
   robotName: string;
   position: MapPixelCoord;
   yaw: number;
-  status: "idle" | "running" | "error" | "warning" | "disable";
+  status: "idle" | "running" | "charging" | "error" | "warning" | "disable";
   power: "online" | "offline";
   collisionState?: "none" | "near_miss" | "collision";
 };

@@ -10,6 +10,7 @@
   font-size: var(--font-size-base);
   color: var(--text-secondary);
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 .confirm-modal__actions {

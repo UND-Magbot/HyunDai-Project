@@ -1,6 +1,6 @@
 export type DevicePower = "online" | "offline";
 
-export type DeviceStatus = "idle" | "running" | "error" | "warning" | "disable";
+export type DeviceStatus = "idle" | "running" | "charging" | "error" | "warning" | "disable";
 
 export type TaskState = "running" | "completed" | "error";
 
@@ -13,6 +13,7 @@ export type DeviceRowProps = {
   isExpanded?: boolean;
   onToggleExpand?: (deviceId: string) => void;
   onInfo?: (deviceId: string) => void;
+  onCharge?: (deviceId: string) => void;
 };
 
 export type MockDevice = DeviceRowProps & { id: string };

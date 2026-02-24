@@ -5,7 +5,7 @@ import pymysql
 # MariaDB 접속 정보
 DB_USER = "root"
 DB_PASSWORD = "1234"
-DB_HOST = "192.168.0.11"
+DB_HOST = "192.168.0.200"
 DB_PORT = 3306
 DB_NAME = "rcs_db"
 

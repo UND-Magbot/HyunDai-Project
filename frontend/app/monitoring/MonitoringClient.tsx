@@ -159,12 +159,13 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [togglingDeviceId, setTogglingDeviceId] = useState<string | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [mapSrc, setMapSrc] = useState("");
+  const [mapSrc, setMapSrc] = useState(`${process.env.NEXT_PUBLIC_API_URL}/static/maps/map_img_e420e1e52e6c.png`);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [alertModal, setAlertModal] = useState<{ title: string; message: string } | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [loopRunning, setLoopRunning] = useState(false);
+  const [loopStopping, setLoopStopping] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   const [simulatedRobots, setSimulatedRobots] = useState<RobotMarkerData[]>([]);
@@ -205,7 +206,11 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const initialLoadRef = useRef(true);
 
   // 로봇 실시간 위치 (다중 로봇)
-  const [mapMeta, setMapMeta] = useState<MapMeta>(null);
+  const [mapMeta, setMapMeta] = useState<MapMeta>({
+    grid_origin_x: -28.6,
+    grid_origin_y: -5.75,
+    grid_resolution: 0.05,
+  });
   const [apiRobots, setApiRobots] = useState<ApiRobot[]>([]);
   const [robotPoses, setRobotPoses] = useState<Map<string, { pos: [number, number]; ori: number }>>(new Map());
   const poseWsRefs = useRef<Map<string, WebSocket>>(new Map());
@@ -250,7 +255,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       .then((data) => {
         setAreas(data.items);
         if (initialLoadRef.current) {
-          const defaultArea = data.items.find((a) => a.name === "area-B001");
+          const defaultArea = data.items.find((a) => a.name === "area-O002");
           if (defaultArea) {
             setSelectedArea(String(defaultArea.area_id));
             initialLoadRef.current = false;
@@ -271,14 +276,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
     if (!selectedArea) {
       setAreaMaps([]);
       setSelectedMapId(null);
-      setMapSrc("");
+      setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}/static/maps/map_img_e420e1e52e6c.png`);
       setRawApiElements(null);
       setApiPois([]);
       setApiWaypoints([]);
       setApiRouteWaypoints([]);
       setApiRouteSegments([]);
       setMapImageSize(null);
-      setMapMeta(null);
+      setMapMeta({ grid_origin_x: -28.6, grid_origin_y: -5.75, grid_resolution: 0.05 });
       return;
     }
     apiFetch<{ total: number; items: MapItem[] }>(
@@ -310,8 +315,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
             .catch(() => setRawApiElements(null));
         } else {
           setSelectedMapId(null);
-          setMapSrc("");
-          setMapMeta(null);
+          setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}/static/maps/map_img_e420e1e52e6c.png`);
+          setMapMeta({ grid_origin_x: -28.6, grid_origin_y: -5.75, grid_resolution: 0.05 });
           setRawApiElements(null);
           setApiPois([]);
           setApiWaypoints([]);
@@ -359,7 +364,11 @@ export function MonitoringClient({ initialDateTime }: Props) {
     const convertedPois: PoiMarkerData[] = [];
     const convertedWaypoints: WaypointMarkerData[] = [];
 
+    const hiddenPoiNames = new Set(["CHARGING1", "ENTERPOS1", "ENTERPOS2", "ENTERPOS3"]);
+
     for (const p of rawApiElements.pois) {
+      if (hiddenPoiNames.has(p.name)) continue;
+
       const px = p.x + halfW;
       const py = p.y + halfH;
 
@@ -457,18 +466,10 @@ export function MonitoringClient({ initialDateTime }: Props) {
     return biz?.value ?? selectedBusiness;
   }, [businessesForSelectBox, selectedBusiness]);
 
-  // ── 로봇 목록 API 로드 (selectedBusinessValue 변경 시) ──
-  // selectedBusinessValue: Business.value (Robot.business_id와 매칭되는 값)
+  // ── 로봇 목록 API 로드 ──
+  // TODO: DB business_id 정리 후 selectedBusinessValue 필터 복원
   useEffect(() => {
-    if (!selectedBusinessValue) {
-      setApiRobotsFull([]);
-      setApiRobots([]);
-      return;
-    }
-
-    apiFetch<{ total: number; items: ApiRobotFull[] }>(
-      `/api/robots?business_id=${selectedBusinessValue}`
-    )
+    apiFetch<{ total: number; items: ApiRobotFull[] }>("/api/robots")
       .then((data) => {
         setApiRobotsFull(data.items);
         setApiRobots(
@@ -485,7 +486,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
         setApiRobotsFull([]);
         setApiRobots([]);
       });
-  }, [selectedBusinessValue]);
+  }, []);
 
   // ── 다중 로봇 실시간 위치 WS 연결 ──
   useEffect(() => {
@@ -673,6 +674,21 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
   };
 
+  const CHARGE_ROUTE_NAMES = ["ENTERPOS3", "ENTERPOS2", "ENTERPOS1"];
+
+  const handleCharge = async (deviceId: string) => {
+    const robot = apiRobotsFull.find((r) => String(r.id) === deviceId);
+    if (!robot) return;
+    try {
+      await apiPost(`/api/tasks/charge/${robot.id}`, {
+        route_poi_names: CHARGE_ROUTE_NAMES,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "충전소 이동 실패";
+      setAlertModal({ title: "충전소 이동 실패", message: msg });
+    }
+  };
+
   const handleStopAll = () => {
     setStopConfirmOpen(true);
   };
@@ -681,21 +697,21 @@ export function MonitoringClient({ initialDateTime }: Props) {
     setStopConfirmOpen(false);
     try {
       await apiPost(`/api/tasks/loop/stop/${LOOP_ROBOT_ID}`);
+      setLoopStopping(true);
     } catch {
       /* 이미 중단된 경우 무시 */
     }
-    setLoopRunning(false);
-    setIsRunning(false);
   };
 
   // 루프 상태 폴링 (3초 간격)
   useEffect(() => {
-    if (!loopRunning) return;
+    if (!loopRunning && !loopStopping) return;
     const timer = setInterval(async () => {
       try {
         const res = await apiFetch<{ status: string }>(`/api/tasks/loop/status/${LOOP_ROBOT_ID}`);
-        if (res.status === "error" || res.status === "stopped") {
+        if (res.status === "error" || res.status === "stopped" || res.status === "idle") {
           setLoopRunning(false);
+          setLoopStopping(false);
           setIsRunning(false);
         }
       } catch {
@@ -703,7 +719,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       }
     }, 3000);
     return () => clearInterval(timer);
-  }, [loopRunning]);
+  }, [loopRunning, loopStopping]);
 
   // ── API 로봇 → DeviceRow 형식 변환 ──
   const deviceList = useMemo(() => {
@@ -712,7 +728,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
       let power: "online" | "offline";
       let battery: string;
-      let status: "idle" | "running" | "error" | "warning" | "disable";
+      let status: "idle" | "running" | "charging" | "error" | "warning" | "disable";
 
       if (live) {
         power = mapLiveOnlineToPower(live.ONLINE);
@@ -885,6 +901,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
                     isExpanded={expandedDeviceId === device.id}
                     onToggleExpand={handleDeviceToggle}
                     onInfo={setOpenDeviceId}
+                    onCharge={handleCharge}
                   />
                 ))
               )}
@@ -960,16 +977,16 @@ export function MonitoringClient({ initialDateTime }: Props) {
                 <button
                   className="btn btn--primary"
                   onClick={handleStartAll}
-                  disabled={loopRunning}
+                  disabled={loopRunning || loopStopping}
                 >
-                  {loopRunning ? "실행 중..." : "시작"}
+                  {loopRunning || loopStopping ? "작업중" : "시작"}
                 </button>
                 <button
                   className="btn btn--danger"
                   onClick={handleStopAll}
-                  disabled={!isRunning}
+                  disabled={!isRunning || loopStopping}
                 >
-                  종료
+                  {loopStopping ? "종료중..." : "종료"}
                 </button>
               </div>
             }
@@ -1048,7 +1065,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
           <ConfirmModal
             open={stopConfirmOpen}
             title="작업 종료"
-            message="진행중인 작업이 있습니다. 작업을 중단하고 종료하시겠습니까?"
+            message={"현재 진행 중인 작업을 마친 후 종료됩니다.\n종료하시겠습니까?"}
             onConfirm={handleConfirmStop}
             onCancel={() => setStopConfirmOpen(false)}
           />

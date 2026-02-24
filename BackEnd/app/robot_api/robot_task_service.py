@@ -27,6 +27,7 @@ RECOVERY_DELAY = 3.0     # cancel 후 새 이동 전 물리적 복구 대기 (�
 # 스레드 안전한 공유 상태 관리
 _lock = threading.Lock()                        # 아래 딕셔너리 접근 보호
 _stop_events: dict[int, threading.Event] = {}   # {robot_id: threading.Event}
+_graceful_stop_events: dict[int, threading.Event] = {}  # {robot_id: threading.Event} — CURPOS1 도착 후 정지
 _confirm_events: dict[int, threading.Event] = {} # {robot_id: threading.Event} — 작업 포인트 확인 대기
 _run_info: dict[int, dict] = {}                 # {robot_id: 실행 상태 정보}
 _move_locks: dict[int, threading.Lock] = {}     # {robot_id: 이동 명령 잠금} — 동시 이동 방지
@@ -67,6 +68,171 @@ def is_move_locked(robot_id: int) -> bool:
 
 def _base_url(ip: str) -> str:
     return f"http://{ip}:{PORT}"
+
+
+def send_charge(ip: str, retry_count: int = 3) -> tuple[bool, str]:
+    """충전소 이동 명령 전송 → (success, message)"""
+    session = _get_session(ip)
+    body = {
+        "creator": "rcs",
+        "type": "charge",
+        "charge_retry_count": retry_count,
+    }
+    try:
+        r = session.post(f"{_base_url(ip)}/chassis/moves", json=body, timeout=5)
+        if r.status_code in (200, 201):
+            move_id = r.json().get("id", -1)
+            return True, f"충전소 이동 시작 (move_id={move_id})"
+        return False, f"HTTP {r.status_code}: {r.text}"
+    except Exception as e:
+        return False, str(e)
+
+
+def start_charge_route(robot_id: int, robot_ip: str,
+                       route_poi_names: list[str]) -> tuple[bool, str]:
+    """충전소 이동 (경유 경로 포함) — 백그라운드 스레드 시작"""
+    t = threading.Thread(
+        target=_charge_route_runner,
+        args=(robot_id, robot_ip, route_poi_names),
+        daemon=True,
+        name=f"charge-robot-{robot_id}",
+    )
+    t.start()
+    logger.info(f"[Robot {robot_id}] 충전 경로 스레드 시작: {route_poi_names}")
+    return True, "충전소 이동 경로 시작"
+
+
+def _charge_route_runner(robot_id: int, robot_ip: str,
+                         route_poi_names: list[str]):
+    """백그라운드: 경유 POI 순차 이동 → 충전 명령"""
+    db = None
+    ws = None
+    move_lock = _get_move_lock(robot_id)
+    stop_event = threading.Event()  # 충전 경로는 취소 미지원 (더미)
+
+    try:
+        db = SessionLocal()
+
+        # POI 좌표 조회
+        route_pois = []
+        for name in route_poi_names:
+            poi = db.query(MapPOI).filter(
+                MapPOI.name == name, MapPOI.is_active == True
+            ).first()
+            if not poi:
+                logger.error(f"[Robot {robot_id}] 충전 경로 POI '{name}' 없음")
+                return
+            route_pois.append(poi)
+
+        if not route_pois:
+            send_charge(robot_ip)
+            return
+
+        # WebSocket 연결
+        try:
+            ws = _create_planning_ws(robot_ip)
+        except Exception as e:
+            logger.warning(f"[Robot {robot_id}] 충전 경로 WS 연결 실패: {e}")
+
+        # route_coordinates로 마지막 POI까지 한 번에 이동
+        target = route_pois[-1]
+        coords_parts = []
+        for p in route_pois:
+            px = p.world_x if p.world_x is not None else p.x
+            py = p.world_y if p.world_y is not None else p.y
+            coords_parts.extend([str(px), str(py)])
+
+        tx = target.world_x if target.world_x is not None else target.x
+        ty = target.world_y if target.world_y is not None else target.y
+        t_angle = target.angle if target.angle is not None else 0.0
+        route_coords = ",".join(coords_parts) if len(coords_parts) > 2 else ""
+
+        logger.info(f"[Robot {robot_id}] 충전 경로 이동: "
+                    f"{'→'.join(p.name for p in route_pois)}")
+
+        with _lock:
+            _run_info[robot_id] = {
+                "status": "charging_route",
+                "message": "충전소 이동 중",
+            }
+
+        with move_lock:
+            ok, move_id, err = send_move(
+                robot_ip, tx, ty, t_angle, route_coords=route_coords)
+            if not ok:
+                logger.error(f"[Robot {robot_id}] 충전 경로 이동 명령 실패: {err}")
+                return
+
+            logger.info(f"[Robot {robot_id}] 충전 경로 Move {move_id} 전송")
+
+            if ws:
+                try:
+                    result, detail = _wait_for_move_ws(
+                        ws, move_id, robot_ip, stop_event)
+                    if result == "ws_error":
+                        try:
+                            ws.close()
+                        except Exception:
+                            pass
+                        ws = None
+                except (WebSocketException, OSError) as e:
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+                    ws = None
+                    result = "ws_error"
+                    detail = str(e)
+            else:
+                result, detail = _wait_for_move_http(
+                    robot_ip, move_id, stop_event)
+
+        logger.info(f"[Robot {robot_id}] 충전 경로 이동 결과: {result} {detail}")
+
+        if result != "succeeded":
+            logger.error(f"[Robot {robot_id}] 충전 경로 실패 — 충전 명령 취소")
+            with _lock:
+                _run_info[robot_id] = {
+                    "status": "error",
+                    "message": f"충전 경로 이동 실패: {result}",
+                }
+            return
+
+        # 경로 도착 → 충전 명령 전송
+        with _lock:
+            _run_info[robot_id] = {
+                "status": "charging",
+                "message": "충전 중",
+            }
+
+        time.sleep(1)
+        ok, msg = send_charge(robot_ip)
+        logger.info(f"[Robot {robot_id}] 충전 명령: ok={ok}, {msg}")
+
+        if ok:
+            with _lock:
+                _run_info[robot_id] = {
+                    "status": "charging",
+                    "message": "충전 중",
+                }
+        else:
+            with _lock:
+                _run_info[robot_id] = {
+                    "status": "error",
+                    "message": f"충전 명령 실패: {msg}",
+                }
+
+    except Exception as e:
+        logger.exception(f"[Robot {robot_id}] 충전 경로 예외: {e}")
+    finally:
+        if ws:
+            try:
+                ws.close()
+            except Exception:
+                pass
+        if db:
+            db.close()
+        logger.info(f"[Robot {robot_id}] 충전 경로 스레드 종료")
 
 
 def send_move(ip: str, x: float, y: float, orientation: float,
@@ -480,6 +646,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
     ws = None
     move_lock = _get_move_lock(robot_id)
     stop_set = set(stop_names) if stop_names else set()
+    graceful_stop = threading.Event()
+    with _lock:
+        _graceful_stop_events[robot_id] = graceful_stop
 
     try:
         db = SessionLocal()
@@ -519,11 +688,13 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                     return
                 entry_pois.append(poi)
 
-            logger.info(f"[Robot {robot_id}] 진입 경로 시작: {[p.name for p in entry_pois]}")
+            # 진입 경로 → CURPOS1(pois[0])까지 이어서 이동 (ENTERPOS3에서 멈추지 않음)
+            first_loop_poi = pois[0]
+            logger.info(f"[Robot {robot_id}] 진입 경로 시작: "
+                        f"{'→'.join(p.name for p in entry_pois)}→{first_loop_poi.name}")
 
-            # 진입 POI를 순서대로 경유하여 마지막 진입 POI까지 이동
-            # route_coordinates: 모든 진입 POI 좌표를 이어서 한 번에 이동
-            entry_target = entry_pois[-1]
+            # route_coordinates: 진입 POI들 + CURPOS1 좌표를 이어서 한 번에 이동
+            entry_target = first_loop_poi
             entry_coords_parts = []
             for ep in entry_pois:
                 ex = ep.world_x if ep.world_x is not None else ep.x
@@ -533,13 +704,14 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
             etx = entry_target.world_x if entry_target.world_x is not None else entry_target.x
             ety = entry_target.world_y if entry_target.world_y is not None else entry_target.y
             et_angle = entry_target.angle if entry_target.angle is not None else 0.0
+            entry_coords_parts.extend([str(etx), str(ety)])
             entry_route_coords = ",".join(entry_coords_parts) if len(entry_coords_parts) > 2 else ""
 
             with _lock:
                 _run_info[robot_id] = {
-                    "status": "running",
+                    "status": "moving_to_start",
                     "current_poi": entry_target.name,
-                    "message": "진입 경로 이동 중",
+                    "message": "작업 시작 위치로 진입 중",
                 }
 
             with move_lock:
@@ -615,6 +787,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
             for seg_idx, seg in enumerate(segments):
                 if stop_event.is_set():
                     break
+                # 그레이스풀 정지: 현재 구간 이동 중에는 중단하지 않음 (확인 대기 중이면 스킵)
 
                 target = seg["target"]
                 waypoints = seg["waypoints"]
@@ -747,7 +920,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                             "poi_list": [p.name for p in pois],
                         }
 
-                    # 확인 또는 정지 신호 대기 (1초 간격 체크)
+                    # 확인 또는 즉시정지 신호 대기 (그레이스풀 정지 중에도 확인은 받음)
                     while not confirm_event.is_set():
                         if stop_event.is_set():
                             break
@@ -761,8 +934,53 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
 
                     logger.info(f"[Robot {robot_id}] 작업 포인트 '{target.name}' 확인 완료 — 다음 구간 진행")
 
+            else:
+                # for 루프가 break 없이 정상 완료 (모든 구간 수행 완료)
+                if graceful_stop.is_set():
+                    # ── CURPOS1으로 귀환 후 정지 ──
+                    home_poi = pois[0]  # CURPOS1
+                    logger.info(f"[Robot {robot_id}] 그레이스풀 정지 — {home_poi.name}으로 귀환 중")
+
+                    # trailing_waypoints + home_poi 경로 생성
+                    home_coords_parts = []
+                    for wp in trailing_waypoints:
+                        wx = wp.world_x if wp.world_x is not None else wp.x
+                        wy = wp.world_y if wp.world_y is not None else wp.y
+                        home_coords_parts.extend([str(wx), str(wy)])
+                    hx = home_poi.world_x if home_poi.world_x is not None else home_poi.x
+                    hy = home_poi.world_y if home_poi.world_y is not None else home_poi.y
+                    h_angle = home_poi.angle if home_poi.angle is not None else 0.0
+                    home_coords_parts.extend([str(hx), str(hy)])
+                    home_route = ",".join(home_coords_parts) if len(home_coords_parts) > 2 else ""
+
+                    with _lock:
+                        _run_info[robot_id] = {
+                            "status": "moving_to_start",
+                            "loop": loop,
+                            "current_poi": home_poi.name,
+                            "message": "작업 시작 위치로 복귀 중",
+                        }
+
+                    with move_lock:
+                        ok, move_id, err = send_move(robot_ip, hx, hy, h_angle, route_coords=home_route)
+                        if ok:
+                            if ws:
+                                try:
+                                    result, detail = _wait_for_move_ws(ws, move_id, robot_ip, stop_event)
+                                except Exception:
+                                    result, detail = _wait_for_move_http(robot_ip, move_id, stop_event)
+                            else:
+                                result, detail = _wait_for_move_http(robot_ip, move_id, stop_event)
+                            logger.info(f"[Robot {robot_id}] 귀환 결과: {result}")
+
+                    logger.info(f"[Robot {robot_id}] {home_poi.name} 도착 — 정지")
+                    with _lock:
+                        _run_info[robot_id] = {"status": "stopped", "loop": loop}
+                    return
+                continue  # 다음 루프 반복
+
         # stop_event로 중단됨
-        logger.info(f"[Robot {robot_id}] 사용자 정지 — {loop}회 완료")
+        logger.info(f"[Robot {robot_id}] 즉시 정지 — {loop}회차 중단")
         with _lock:
             _run_info[robot_id] = {"status": "stopped", "loop": loop}
 
@@ -781,6 +999,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
         with _lock:
             _stop_events.pop(robot_id, None)
             _confirm_events.pop(robot_id, None)
+            _graceful_stop_events.pop(robot_id, None)
         logger.info(f"[Robot {robot_id}] 스레드 종료")
 
 
@@ -839,7 +1058,7 @@ def confirm_loop(robot_id: int) -> tuple[bool, str]:
 
 
 def stop_loop(robot_id: int, robot_ip: str = "") -> tuple[bool, str]:
-    """실행 중인 무한반복 정지 (스레드 안전)"""
+    """실행 중인 무한반복 → CURPOS1 도착 후 정지 (그레이스풀 정지)"""
     with _lock:
         event = _stop_events.get(robot_id)
         if not event:
@@ -849,10 +1068,16 @@ def stop_loop(robot_id: int, robot_ip: str = "") -> tuple[bool, str]:
             if robot_ip:
                 cancel_current_move(robot_ip)
             return False, "실행 중인 작업이 없습니다"
+        graceful = _graceful_stop_events.get(robot_id)
+    if graceful:
+        graceful.set()
+        logger.info(f"[Robot {robot_id}] 그레이스풀 정지 요청 — CURPOS1 도착 후 종료")
+        return True, "현재 루프 완료 후 CURPOS1에서 정지합니다"
+    # graceful event가 없으면 즉시 정지 (폴백)
     event.set()
     if robot_ip:
         cancel_current_move(robot_ip)
-    logger.info(f"[Robot {robot_id}] 정지 요청 전송 + 이동 취소")
+    logger.info(f"[Robot {robot_id}] 즉시 정지 요청")
     return True, "정지 요청을 전송했습니다"
 
 

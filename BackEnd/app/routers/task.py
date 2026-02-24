@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.robot import Robot
-from app.robot_api.robot_task_service import start_loop, stop_loop, get_loop_status, confirm_loop
+from app.robot_api.robot_task_service import start_loop, stop_loop, get_loop_status, confirm_loop, send_charge, start_charge_route
+from app.robot_api.robot_live_service import _collect_ws_topics, _to_runstate
 
 router = APIRouter(prefix="/api/tasks", tags=["작업 관리"])
 
@@ -69,9 +70,41 @@ def api_confirm_loop(robot_id: int):
 
 
 @router.get("/loop/status/{robot_id}")
-def api_loop_status(robot_id: int):
-    """무한반복 작업 상태 조회"""
-    return {"robot_id": robot_id, **get_loop_status(robot_id)}
+def api_loop_status(robot_id: int, db: Session = Depends(get_db)):
+    """무한반복 작업 상태 조회 (idle일 때 실제 충전 상태 반영)"""
+    status = get_loop_status(robot_id)
+
+    if status.get("status") in ("idle", "stopped"):
+        robot = db.query(Robot).filter(Robot.id == robot_id, Robot.is_active == True).first()
+        if robot and robot.ip_address:
+            try:
+                ws_data, _ = _collect_ws_topics(robot.ip_address, ["/planning_state", "/detailed_battery_state", "/battery_state"], timeout_sec=3)
+                planning = ws_data.get("/planning_state", {})
+                battery = ws_data.get("/detailed_battery_state", {}) or ws_data.get("/battery_state", {})
+                runstate = _to_runstate(planning, battery, online=True)
+                if runstate == "CHARGING":
+                    status = {"status": "charging", "message": "충전 중"}
+            except Exception:
+                pass
+
+    return {"robot_id": robot_id, **status}
+
+
+class ChargeRequest(BaseModel):
+    route_poi_names: list[str] = Field(default=[], description="충전소까지 경유할 POI 이름 목록 (예: ENTERPOS3→ENTERPOS2→ENTERPOS1)")
+
+
+@router.post("/charge/{robot_id}")
+def api_charge(robot_id: int, req: ChargeRequest = None, db: Session = Depends(get_db)):
+    """로봇을 충전소로 이동 (경유 경로 지정 가능)"""
+    ip = _get_robot_ip(db, robot_id)
+    if req and req.route_poi_names:
+        ok, msg = start_charge_route(robot_id, ip, req.route_poi_names)
+    else:
+        ok, msg = send_charge(ip)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"message": msg, "robot_id": robot_id}
 
 
 # ─── 로봇 태블릿용 확인 페이지 ──────────────────────────────────────────────────
@@ -114,6 +147,8 @@ body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
 .waiting {{ color:#ffc048; }}
 .error {{ color:#e94560; }}
 .idle {{ color:#666; }}
+.charging {{ color:#00d2d3; }}
+.moving {{ color:#a29bfe; }}
 
 .spinner {{
   display:inline-block; width:20px; height:20px;
@@ -150,6 +185,9 @@ const statusMap = {{
   'waiting_confirmation': ['작업 확인 대기', 'waiting'],
   'stopped': ['정지됨', 'idle'],
   'error': ['오류 발생', 'error'],
+  'charging_route': ['충전소 이동 중', 'charging'],
+  'charging': ['충전 중', 'charging'],
+  'moving_to_start': ['작업 시작 위치로 이동 중', 'moving'],
 }};
 
 async function fetchStatus() {{
@@ -175,13 +213,30 @@ function render(d) {{
     poiEl.textContent = label;
     statusEl.style.display = 'none';
     btn.classList.remove('show');
+  }} else if (d.status === 'moving_to_start') {{
+    poiEl.textContent = label;
+    poiEl.style.color = '#a29bfe';
+    statusEl.style.display = '';
+    statusEl.innerHTML = '<span class="moving"><span class="spinner"></span>' + (d.message || '') + '</span>';
+    btn.classList.remove('show');
+    loopEl.textContent = '';
+    return;
+  }} else if (d.status === 'charging_route' || d.status === 'charging') {{
+    poiEl.textContent = label;
+    poiEl.style.color = '#00d2d3';
+    statusEl.style.display = '';
+    statusEl.innerHTML = '<span class="charging"><span class="spinner"></span>' + (d.message || '') + '</span>';
+    btn.classList.remove('show');
+    loopEl.textContent = '';
+    return;
   }} else {{
+    poiEl.style.color = '#e94560';
     poiEl.textContent = poiDisplayName[poi] || poi;
     statusEl.style.display = '';
     if (d.status === 'waiting_confirmation') {{
       statusEl.innerHTML = '<span class="waiting">' + label + '</span>';
       btn.classList.add('show');
-    }} else if (d.status === 'running') {{
+    }} else if (d.status === 'running' || d.status === 'charging_route' || d.status === 'charging') {{
       statusEl.innerHTML = '<span class="' + cls + '"><span class="spinner"></span>' + label + '</span>';
       btn.classList.remove('show');
     }} else {{

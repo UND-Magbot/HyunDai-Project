@@ -73,9 +73,17 @@ def _to_runstate(planning: dict, battery: dict, online: bool) -> str:
     if move_state == "moving":
         return "EXECUTING"
 
-    # 충전 판정 완화
+    # 충전 판정: power_supply_status(BMS)를 우선 확인
+    # discharging/not_charging → 충전 아님 (이전 charge 액션이 남아있어도 무시)
+    if power_supply_status in {"discharging", "not_charging"}:
+        if move_state in {"idle", "failed", "cancelled", "succeeded"} or waiting_for_dest:
+            return "IDLE"
+        return "IDLE"
+
     if power_supply_status in {"charging", "full"}:
         return "CHARGING"
+
+    # power_supply_status 정보 없을 때만 action_type 폴백
     if action_type == "charge" and move_state in {"idle", "none", "succeeded"}:
         return "CHARGING"
 

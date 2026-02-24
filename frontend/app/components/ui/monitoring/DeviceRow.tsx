@@ -12,6 +12,7 @@ export function DeviceRow({
   isExpanded = false,
   onToggleExpand,
   onInfo,
+  onCharge,
 }: DeviceRowProps) {
   const expanded = isExpanded;
   const isOffline = power === "offline";
@@ -53,7 +54,7 @@ export function DeviceRow({
           <IconButton aria-label="Suspend" disabled={!canSuspend}>
             정지
           </IconButton>
-          <IconButton aria-label="Charge" disabled={!canCharge}>
+          <IconButton aria-label="Charge" disabled={!canCharge} onClick={() => onCharge?.(id)}>
             충전소 이동
           </IconButton>
           {/* <IconButton aria-label="Navigate" disabled={!canNav}>

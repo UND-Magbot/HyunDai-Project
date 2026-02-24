@@ -18,7 +18,7 @@ export function mapBackendStatusToDeviceStatus(
     case 1:
       return "running";
     case 2:
-      return "idle";
+      return "charging";
     case 3:
       return "error";
     case 4:
@@ -43,7 +43,7 @@ export function mapLiveRunStateToDeviceStatus(runState: string): DeviceStatus {
     case "IDLE":
       return "idle";
     case "CHARGING":
-      return "idle";
+      return "charging";
     case "OFFLINE":
       return "disable";
     default:

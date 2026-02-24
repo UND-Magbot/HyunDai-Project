@@ -335,6 +335,11 @@
   color: var(--color-warning);
 }
 
+.status-chip--charging {
+  color: #00d2d3;
+  border-color: #00d2d3;
+}
+
 .status-chip--disable {
   color: var(--text-muted);
   border-color: var(--divider);
