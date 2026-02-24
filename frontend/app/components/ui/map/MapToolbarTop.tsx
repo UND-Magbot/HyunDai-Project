@@ -3,12 +3,10 @@
 import type { MapToolbarTopProps } from "@/lib/types/map";
 
 const toolbarItems = [
-  { key: "undo", icon: "↩", label: "Undo" },
-  { key: "absorb", icon: "⊕", label: "Absorb" },
-  { key: "edit", icon: "✎", label: "Edit" },
-  { key: "angle", icon: "∠", label: "Angle" },
-  { key: "charging", icon: "⚡", label: "Charging Pile" },
-  { key: "location", icon: "◎", label: "Current Location" },
+  { key: "undo", icon: "↩", label: "되돌리기" },
+  { key: "edit", icon: "✎", label: "편집" },
+  { key: "charging", icon: "⚡", label: "충전소" },
+  { key: "location", icon: "◎", label: "현재 위치" },
 ];
 
 export function MapToolbarTop({
@@ -31,7 +29,7 @@ export function MapToolbarTop({
       <button
         className="map-toolbar-top__fullscreen"
         onClick={onFullscreen}
-        title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        title={isFullscreen ? "전체화면 해제" : "전체화면"}
       >
         {isFullscreen ? "⊡" : "⊞"}
       </button>

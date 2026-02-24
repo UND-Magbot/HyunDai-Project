@@ -89,6 +89,7 @@ class MapPOI(Base):
     robot_sns = Column(Text, nullable=True)                                 # JSON array string
     address = Column(String(300), nullable=True)
     docking_radius = Column(Float, nullable=True)
+    area_name = Column(String(200), nullable=True)                             # 소속 영역 이름
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -108,9 +109,12 @@ class MapLine(Base):
     from_world_y = Column(Float, nullable=True)                             # 시작 POI 물리계 Y
     to_world_x = Column(Float, nullable=True)                               # 끝 POI 물리계 X
     to_world_y = Column(Float, nullable=True)                               # 끝 POI 물리계 Y
+    from_ori = Column(Float, nullable=True)                                 # 시작 POI orientation (rad)
+    to_ori = Column(Float, nullable=True)                                   # 끝 POI orientation (rad)
     direction = Column(String(20), nullable=False, default="forward")       # forward / backward / bidirectional
     line_type = Column(String(20), nullable=False, default="straight")      # straight / curve
     control_points = Column(Text, nullable=True)                            # curve 제어점 JSON
+    area_name = Column(String(200), nullable=True)                             # 소속 영역 이름
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

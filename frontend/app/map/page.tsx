@@ -14,6 +14,7 @@ import { MappingModal } from "../components/ui/map/MappingModal";
 import { MapSyncModal } from "../components/ui/map/MapSyncModal";
 import { POIEditPopup } from "../components/ui/map/POIEditPopup";
 import { LineDirectionPopup } from "../components/ui/map/LineDirectionPopup";
+import { LineEditPopup } from "../components/ui/map/LineEditPopup";
 import type {
   MapTool,
   POI,
@@ -122,6 +123,7 @@ export default function MapPage() {
 
   // Popups
   const [editingPOI, setEditingPOI] = useState<POI | null>(null);
+  const [editingLine, setEditingLine] = useState<PathLine | null>(null);
   const [lineDirectionPopup, setLineDirectionPopup] = useState<{
     fromId: string;
     toId: string;
@@ -168,6 +170,7 @@ export default function MapPage() {
         setActiveTool("select");
         setSelectedPOI(null);
         setEditingPOI(null);
+        setEditingLine(null);
         setLineStartPOI(null);
         setLineDirectionPopup(null);
       }
@@ -453,9 +456,34 @@ export default function MapPage() {
       if (activeTool === "del") {
         pushHistory();
         setLines((prev) => prev.filter((l) => l.id !== id));
+        return;
+      }
+      if (activeTool === "select") {
+        const line = lines.find((l) => l.id === id);
+        if (line) setEditingLine(line);
       }
     },
-    [activeTool, pushHistory]
+    [activeTool, lines, pushHistory]
+  );
+
+  // ── Line Edit Handlers ──
+  const handleLineUpdate = useCallback(
+    (id: string, data: Partial<PathLine>) => {
+      pushHistory();
+      setLines((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, ...data } : l))
+      );
+    },
+    [pushHistory]
+  );
+
+  const handleLineDelete = useCallback(
+    (id: string) => {
+      pushHistory();
+      setLines((prev) => prev.filter((l) => l.id !== id));
+      setEditingLine(null);
+    },
+    [pushHistory]
   );
 
   // ── Polygon Click Handler ──
@@ -550,6 +578,7 @@ export default function MapPage() {
         y: svgY,
         name: isCharging ? `CHARGE${pois.length + 1}` : `CURPOS${pois.length + 1}`,
         type: isCharging ? "charging" : "waypoint",
+        angle: robotPose.ori,
       };
       setPois((prev) => [...prev, newPOI]);
       setEditingPOI(newPOI);
@@ -616,7 +645,7 @@ export default function MapPage() {
   // ── Action buttons (placeholder handlers) ──
   const handleSave = useCallback(() => {
     if (!selectedMapId) {
-      alert("저장할 맵을 먼저 선택해주세요.");
+      alert("저장할 맵을 먼저 선택해 주세요.");
       return;
     }
 
@@ -626,7 +655,7 @@ export default function MapPage() {
       return { ...p, worldX: w?.worldX ?? null, worldY: w?.worldY ?? null };
     });
 
-    // 라인에 양 끝 월드 좌표 추가
+    // 라인에 양 끝 월드 좌표 + ori 추가
     const linesWithWorld = lines.map((l) => {
       const fromPoi = pois.find((p) => p.id === l.fromId);
       const toPoi = pois.find((p) => p.id === l.toId);
@@ -638,6 +667,8 @@ export default function MapPage() {
         fromWorldY: fw?.worldY ?? null,
         toWorldX: tw?.worldX ?? null,
         toWorldY: tw?.worldY ?? null,
+        fromOri: fromPoi?.angle ?? null,
+        toOri: toPoi?.angle ?? null,
       };
     });
 
@@ -651,7 +682,7 @@ export default function MapPage() {
   }, [selectedMapId, pois, lines, svgToWorld]);
   const handleSync = () => {
     if (!selectedMappingId) {
-      alert("동기화할 맵을 먼저 선택해주세요.");
+      alert("동기화할 맵을 먼저 선택해 주세요.");
       return;
     }
     setSyncModalOpen(true);
@@ -778,27 +809,27 @@ export default function MapPage() {
 
               {/* Bottom Left: Zoom, Rotate, Reset */}
               <div className="map-bottom-left">
-                <button className="map-bottom-left__btn" onClick={handleZoomIn} title="Zoom In">
+                <button className="map-bottom-left__btn" onClick={handleZoomIn} title="확대">
                   <span className="map-bottom-left__icon">+</span>
-                  <span className="map-bottom-left__label">In</span>
+                  <span className="map-bottom-left__label">확대</span>
                 </button>
-                <button className="map-bottom-left__btn" onClick={handleZoomOut} title="Zoom Out">
+                <button className="map-bottom-left__btn" onClick={handleZoomOut} title="축소">
                   <span className="map-bottom-left__icon">−</span>
-                  <span className="map-bottom-left__label">Out</span>
+                  <span className="map-bottom-left__label">축소</span>
                 </button>
                 <div className="map-bottom-left__divider" />
-                <button className="map-bottom-left__btn" onClick={handleRotateLeft} title="Rotate Left">
+                <button className="map-bottom-left__btn" onClick={handleRotateLeft} title="좌회전">
                   <span className="map-bottom-left__icon">↺</span>
-                  <span className="map-bottom-left__label">Left</span>
+                  <span className="map-bottom-left__label">좌회전</span>
                 </button>
-                <button className="map-bottom-left__btn" onClick={handleRotateRight} title="Rotate Right">
+                <button className="map-bottom-left__btn" onClick={handleRotateRight} title="우회전">
                   <span className="map-bottom-left__icon">↻</span>
-                  <span className="map-bottom-left__label">Right</span>
+                  <span className="map-bottom-left__label">우회전</span>
                 </button>
                 <div className="map-bottom-left__divider" />
-                <button className="map-bottom-left__btn" onClick={handleResetBearing} title="Reset">
+                <button className="map-bottom-left__btn" onClick={handleResetBearing} title="초기화">
                   <span className="map-bottom-left__icon">⊙</span>
-                  <span className="map-bottom-left__label">Reset</span>
+                  <span className="map-bottom-left__label">초기화</span>
                 </button>
               </div>
 
@@ -812,6 +843,18 @@ export default function MapPage() {
                     setEditingPOI(null);
                     setSelectedPOI(null);
                   }}
+                />
+              )}
+
+              {/* Line Edit Popup */}
+              {editingLine && (
+                <LineEditPopup
+                  line={editingLine}
+                  fromPoiName={pois.find((p) => p.id === editingLine.fromId)?.name ?? "알 수 없음"}
+                  toPoiName={pois.find((p) => p.id === editingLine.toId)?.name ?? "알 수 없음"}
+                  onUpdate={handleLineUpdate}
+                  onDelete={handleLineDelete}
+                  onClose={() => setEditingLine(null)}
                 />
               )}
 
@@ -856,11 +899,13 @@ export default function MapPage() {
           />
 
           {/* Map Sync Modal (맵을 복수 로봇에 로드) */}
-          {selectedMappingId && (
+          {selectedMappingId && selectedMapId && (
             <MapSyncModal
               open={syncModalOpen}
               onClose={() => setSyncModalOpen(false)}
               mappingId={selectedMappingId}
+              mapId={selectedMapId}
+              areaName={areas.find((a) => String(a.area_id) === selectedArea)?.name ?? ""}
             />
           )}
         </main>

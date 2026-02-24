@@ -22,6 +22,8 @@ export function MapSyncModal({
   open,
   onClose,
   mappingId,
+  mapId,
+  areaName,
   onSyncComplete,
 }: MapSyncModalProps) {
   const [search, setSearch] = useState("");
@@ -97,34 +99,20 @@ export function MapSyncModal({
       );
 
       try {
-        // 1) 맵 로드 (이미 존재하면 무시)
-        try {
-          await apiFetch(`/api/map/${robot.ip_address}/maps`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              map_name: `From Mapping ${mappingId}`,
-              mapping_id: mappingId,
-            }),
-          });
-        } catch {
-          // 이미 로드된 맵이 있으면 무시하고 진행
-        }
-
-        // 2) 초기 포즈 설정 (맵 원점 기준)
-        await apiFetch(`/api/map/${robot.ip_address}/chassis/pose`, {
+        // 백엔드에서 맵 데이터 업로드 + current-map 설정 + 포즈 설정 일괄 처리
+        await apiFetch(`/api/map/maps/${mapId}/sync-to-robot`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            position: [0, 0, 0],
-            ori: 1.57,
+            robot_ip: robot.ip_address,
+            area_name: areaName,
           }),
         });
 
         setResults((prev) =>
           prev.map((r) =>
             r.sn === robot.sn
-              ? { ...r, status: "success" as const, message: "맵 로드 + 포즈 설정 완료" }
+              ? { ...r, status: "success" as const, message: "맵 업로드 + 지도 적용 완료" }
               : r
           )
         );
@@ -135,7 +123,7 @@ export function MapSyncModal({
               ? {
                   ...r,
                   status: "error" as const,
-                  message: err.message ?? "포즈 설정 실패",
+                  message: err.message ?? "동기화 실패",
                 }
               : r
           )
@@ -274,7 +262,7 @@ export function MapSyncModal({
             onClick={handleSync}
             disabled={selectedSns.size === 0 || syncing}
           >
-            {syncing ? "동기화 중..." : `Sync (${selectedSns.size}대)`}
+            {syncing ? "동기화 중..." : `동기화 (${selectedSns.size}대)`}
           </button>
         )}
       </div>

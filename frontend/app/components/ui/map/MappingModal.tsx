@@ -494,7 +494,7 @@ export function MappingModal({
     <Modal
       open={open}
       onClose={handleClose}
-      title="Mapping"
+      title="맵핑"
       width="90vw"
       height="85vh"
     >
@@ -502,22 +502,22 @@ export function MappingModal({
         {/* Info bar */}
         <div className="mapping-modal__info">
           <span className="mapping-modal__info-item">
-            <strong>Area:</strong> {areaName}
+            <strong>영역:</strong> {areaName}
           </span>
           {connectedRobot && (
             <span className="mapping-modal__info-item">
-              <strong>Robot:</strong> {connectedRobot.name} ({connectedRobot.ip})
+              <strong>로봇:</strong> {connectedRobot.name} ({connectedRobot.ip})
             </span>
           )}
           {status === "mapping" && (
             <span className="mapping-modal__status mapping-modal__status--active">
               <span className="mapping-modal__status-dot" />
-              Mapping in progress...
+              맵핑 진행 중...
             </span>
           )}
           {status === "finished" && (
             <span className="mapping-modal__status mapping-modal__status--done">
-              Mapping completed
+              맵핑 완료
             </span>
           )}
         </div>
@@ -533,7 +533,7 @@ export function MappingModal({
                 <path d="M3 9l6 6 4-4 8 8" />
                 <circle cx="15" cy="7" r="2" />
               </svg>
-              <span>Click Start to begin mapping</span>
+              <span>시작 버튼을 눌러 맵핑을 시작하세요</span>
             </div>
           )}
 
@@ -547,7 +547,7 @@ export function MappingModal({
                 <div className="mapping-modal__scan-ring" />
                 <div className="mapping-modal__scan-ring mapping-modal__scan-ring--delay" />
               </div>
-              <span>Waiting for map data...</span>
+              <span>맵 데이터 수신 대기 중...</span>
             </div>
           )}
         </div>
@@ -559,7 +559,7 @@ export function MappingModal({
             onClick={handleCancel}
             disabled={status === "finished" || saving}
           >
-            Cancel
+            취소
           </button>
           <div className="mapping-modal__actions-right">
             {status === "idle" && (
@@ -569,7 +569,7 @@ export function MappingModal({
                 disabled={!connectedRobot}
                 title={!connectedRobot ? "로봇을 먼저 연결하세요" : ""}
               >
-                Start
+                시작
               </button>
             )}
             {status === "mapping" && (
@@ -578,7 +578,7 @@ export function MappingModal({
                 onClick={handleStop}
                 disabled={saving}
               >
-                {saving ? "Saving..." : "Stop"}
+                {saving ? "저장 중..." : "중지"}
               </button>
             )}
             {status === "finished" && (
@@ -586,7 +586,7 @@ export function MappingModal({
                 className="mapping-modal__btn mapping-modal__btn--confirm"
                 onClick={handleClose}
               >
-                Done
+                완료
               </button>
             )}
           </div>

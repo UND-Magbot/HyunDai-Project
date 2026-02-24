@@ -33,15 +33,10 @@ export default function LoginPage() {
 
     if (!form.loginId.trim()) {
       newErrors.loginId = "아이디를 입력해주세요";
-    } else if (!ID_REGEX.test(form.loginId)) {
-      newErrors.loginId = "영문 또는 영문+숫자 조합만 입력 가능합니다";
     }
 
     if (!form.password) {
       newErrors.password = "비밀번호를 입력해주세요";
-    } else if (!PW_REGEX.test(form.password)) {
-      newErrors.password =
-        "비밀번호는 영문, 숫자, 특수문자 조합 6자 이상이어야 합니다";
     }
 
     setErrors(newErrors);
@@ -65,8 +60,15 @@ export default function LoginPage() {
       localStorage.setItem("user_login_id", res.user.login_id);
       localStorage.setItem("user_role", String(res.user.role));
       router.push("/monitoring");
-    } catch {
-      setErrors({ loginId: "아이디 또는 비밀번호가 올바르지 않습니다" });
+    } catch (err: any) {
+      const msg = err?.message ?? "";
+      if (msg.includes("아이디")) {
+        setErrors({ loginId: msg });
+      } else if (msg.includes("비밀번호")) {
+        setErrors({ password: msg });
+      } else {
+        setErrors({ loginId: "로그인에 실패했습니다" });
+      }
     }
   };
 

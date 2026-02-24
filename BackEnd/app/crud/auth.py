@@ -46,7 +46,7 @@ def authenticate_user(db: Session, login_id: str, password: str) -> tuple[User, 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="아이디 또는 비밀번호가 올바르지 않습니다",
+            detail="존재하지 않는 아이디입니다",
         )
 
     if not user.is_active:
@@ -58,7 +58,7 @@ def authenticate_user(db: Session, login_id: str, password: str) -> tuple[User, 
     if not bcrypt.verify(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="아이디 또는 비밀번호가 올바르지 않습니다",
+            detail="비밀번호가 올바르지 않습니다",
         )
 
     role_code = user.role.role if user.role else 2
