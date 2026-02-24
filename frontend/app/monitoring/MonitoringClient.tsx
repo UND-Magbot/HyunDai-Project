@@ -1,113 +1,127 @@
 ﻿"use client";
 
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
-  type MouseEvent,
-  type WheelEvent,
 } from "react";
-import { usePathname } from "next/navigation";
 import { OverlayCard } from "../components/ui/monitoring/OverlayCard";
 import { LayerButton } from "../components/ui/monitoring/LayerButton";
 import { MapModeButton } from "../components/ui/monitoring/MapModeButton";
 import { DeviceRow } from "../components/ui/monitoring/DeviceRow";
 // import { TaskRow } from "../components/ui/monitoring/TaskRow";
-import { DeviceInfoPopup } from "../components/ui/monitoring/DeviceInfoPopup";
+import { RobotDeviceInfo } from "../components/ui/RobotDeviceInfo";
+import type { RobotDevice, RunState } from "@/lib/types/robots";
+import {
+  mapBackendStatusToDeviceStatus,
+  mapBackendStatusToPower,
+  mapLiveRunStateToDeviceStatus,
+  mapLiveOnlineToPower,
+  formatBattery,
+  formatLiveBattery,
+} from "@/lib/utils/robotStatus";
 import { TaskInfoModal } from "../components/ui/monitoring/TaskInfoModal";
 import { CreateTaskModal } from "../components/ui/tasks/CreateTaskModal";
 import { ConfirmModal } from "../components/ui/robots/ConfirmModal";
-import { mockDevices, getDeviceCounts } from "@/lib/mock/devices";
+import { Modal } from "../components/ui/Modal";
 import { mockTasks } from "@/lib/mock/tasks";
 import type { TaskState } from "@/lib/types/monitoring";
 import { SearchInput } from "../components/ui/SearchInput";
 import { Panel } from "../components/ui/Panel";
 import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { TopBar } from "../components/shell/TopBar";
-import { useImageBackgroundColor } from "@/lib/hooks/useImageBackgroundColor";
-import { useMapImageNaturals } from "@/lib/hooks/useMapImageNaturals";
-import { MapOverlay } from "../components/ui/monitoring/MapOverlay";
+import { MonitoringMapCanvas } from "../components/ui/monitoring/MonitoringMapCanvas";
 import {
-  mockPois,
-  mockWaypoints,
-  mockRobotPositions,
   mockVirtualWalls,
 } from "@/lib/mock/mapMarkers";
-import type { MapPixelCoord, RobotMarkerData, WaypointMarkerData } from "@/lib/types/map-markers";
+import type { PoiMarkerData, RobotMarkerData, RouteSegment, WaypointMarkerData } from "@/lib/types/map-markers";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
+import { BusinessSelectBox } from "../components/ui/monitoring/BusinessSelectBox";
+import { apiFetch } from "@/lib/api";
+import type { Business } from "@/lib/types/robots";
+import type { MapMeta } from "@/lib/types/map";
 
-const SIMULATION_TICK_MS = 120;
-const NODE_SNAPSHOT_TICK_MS = 700;
-const NODE_TRAIL_LIMIT = 80;
-const NEAR_THRESHOLD_PX = 40;
-const COLLISION_THRESHOLD_PX = 24;
-const EVENT_COOLDOWN_MS = 3000;
-const COLLISION_EVENT_LIMIT = 60;
-
-type CollisionEventType =
-  | "near_miss_detected"
-  | "collision_detected"
-  | "emergency_stop_triggered"
-  | "collision_cleared";
-
-type MonitoringCollisionEvent = {
-  eventId: string;
-  type: CollisionEventType;
-  pairKey: string;
-  robotIds: [string, string];
-  distancePx: number;
-  timestamp: string;
+type BusinessItem = {
+  business_id: number;
+  name: string;
 };
 
-type RobotRouteState = {
-  route: MapPixelCoord[];
-  segmentIndex: number;
-  progress: number;
-  speed: number;
+type AreaItem = {
+  area_id: number;
+  name: string;
 };
 
-const mockRobotRoutes: Record<string, MapPixelCoord[]> = {
-  a01: [
-    { x: 150, y: 300 },
-    { x: 250, y: 300 },
-    { x: 350, y: 300 },
-    { x: 350, y: 420 },
-    { x: 250, y: 420 },
-    { x: 150, y: 300 },
-  ],
-  c07: [
-    { x: 360, y: 280 },
-    { x: 420, y: 250 },
-    { x: 430, y: 330 },
-    { x: 360, y: 420 },
-    { x: 300, y: 360 },
-    { x: 360, y: 280 },
-  ],
-  f15: [
-    { x: 180, y: 500 },
-    { x: 220, y: 560 },
-    { x: 300, y: 520 },
-    { x: 320, y: 450 },
-    { x: 240, y: 430 },
-    { x: 180, y: 500 },
-  ],
+type MapItem = {
+  id: number;
+  name: string | null;
+  image_url: string | null;
+  mapping_id: number | null;
+  state: string | null;
+  grid_origin_x: number;
+  grid_origin_y: number;
+  grid_resolution: number;
 };
 
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
+function mapPoiTypeToMonitorType(
+  apiType: string
+): "workstation" | "charging" | "pickup" | "dropoff" {
+  switch (apiType) {
+    case "charging":
+      return "charging";
+    case "standby":
+      return "workstation";
+    default:
+      return "workstation";
+  }
 }
 
-function buildFallbackRoute(position: MapPixelCoord): MapPixelCoord[] {
-  const d = 35;
-  return [
-    { x: position.x - d, y: position.y - d },
-    { x: position.x + d, y: position.y - d },
-    { x: position.x + d, y: position.y + d },
-    { x: position.x - d, y: position.y + d },
-    { x: position.x - d, y: position.y - d },
-  ];
-}
+type ApiRobot = {
+  serial_number: string;
+  name: string;
+  ip_address: string;
+};
+
+type ApiRobotStatus = {
+  battery_level: number;
+  charging_status: number;
+  charging_status_name: string;
+  position_x: number;
+  position_y: number;
+  position_yaw: number;
+  status: number;
+  status_name: string;
+  updated_at: string;
+};
+
+type ApiRobotFull = {
+  id: number;
+  name: string;
+  serial_number: string;
+  site: string | null;
+  model: string | null;
+  ip_address: string | null;
+  max_battery: number;
+  min_battery: number;
+  is_active: boolean;
+  business_id: string | null;
+  status: ApiRobotStatus | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type LiveRobot = {
+  IP: string;
+  SN: string;
+  ROBOTNAME: string;
+  MODEL: string;
+  RUNSTATE: string;
+  ONLINE: string;
+  SIGNAL: string;
+  "POWER(%)": string;
+};
 
 const defaultOverlayItems = [
   { label: "맵 배경", checked: true },
@@ -133,40 +147,38 @@ type Props = {
 };
 
 export function MonitoringClient({ initialDateTime }: Props) {
-  const pathname = usePathname();
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [mapMode, setMapMode] = useState<"2d" | "3d">("2d");
-  const [mapScale, setMapScale] = useState(1);
-  const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
   const [taskTab, setTaskTab] = useState<TaskState>("running");
   const [overlayItems, setOverlayItems] = useState(defaultOverlayItems);
   const [isLayerOpen, setIsLayerOpen] = useState(false);
   const [expandedDeviceId, setExpandedDeviceId] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
+  const [togglingDeviceId, setTogglingDeviceId] = useState<string | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [mapSrc, setMapSrc] = useState("/map/gumi_map_trans.png");
+  const [mapSrc, setMapSrc] = useState("");
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+  const [alertModal, setAlertModal] = useState<{ title: string; message: string } | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
-  const [simulatedRobots, setSimulatedRobots] = useState<RobotMarkerData[]>(mockRobotPositions);
-  const [allocatedNodes, setAllocatedNodes] = useState<WaypointMarkerData[]>([]);
-  const [collisionEvents, setCollisionEvents] = useState<MonitoringCollisionEvent[]>([]);
-  const mapViewportRef = useRef<HTMLDivElement | null>(null);
-  const panStartRef = useRef<{ x: number; y: number } | null>(null);
-  const startOffsetRef = useRef({ x: 0, y: 0 });
-  const routeStateRef = useRef<Record<string, RobotRouteState>>({});
-  const robotsRef = useRef<RobotMarkerData[]>(mockRobotPositions);
-  const nodeSeqRef = useRef(0);
-  const collisionEventSeqRef = useRef(0);
-  const stoppedRobotIdsRef = useRef<Set<string>>(new Set());
-  const activeCollisionPairsRef = useRef<Set<string>>(new Set());
-  const eventCooldownRef = useRef<Map<string, number>>(new Map());
-  const deviceCounts = getDeviceCounts(mockDevices);
+  const [simulatedRobots, setSimulatedRobots] = useState<RobotMarkerData[]>([]);
+
+  // ── 실제 로봇 데이터 (mock 대체) ──
+  const [apiRobotsFull, setApiRobotsFull] = useState<ApiRobotFull[]>([]);
+  const [liveRobots, setLiveRobots] = useState<LiveRobot[]>([]);
+  const livePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleDeviceEnableToggle = useCallback((deviceId: string) => {
+    if (togglingDeviceId) return;
+    setTogglingDeviceId(deviceId);
+    // TODO: Replace with real API call
+    setTimeout(() => setTogglingDeviceId(null), 300);
+  }, [togglingDeviceId]);
 
   // const taskCountByRobot = mockTasks.reduce((acc, task) => {
   //   acc[task.robot] = (acc[task.robot] || 0) + 1;
@@ -175,38 +187,27 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
   const [isLoading, setIsLoading] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(initialDateTime);
+  const [selectedBusiness, setSelectedBusiness] = useState("");
 
-  const getPairKey = (robotA: string, robotB: string) =>
-    [robotA, robotB].sort().join(":");
+  // API data state
+  const [apiBusinesses, setApiBusinesses] = useState<BusinessItem[]>([]);
+  const [areas, setAreas] = useState<AreaItem[]>([]);
+  const [selectedArea, setSelectedArea] = useState("");
+  const [areaMaps, setAreaMaps] = useState<MapItem[]>([]);
+  const [selectedMapId, setSelectedMapId] = useState<number | null>(null);
+  const [mapImageSize, setMapImageSize] = useState<{ w: number; h: number } | null>(null);
+  const [rawApiElements, setRawApiElements] = useState<{ pois: any[]; lines: any[] } | null>(null);
+  const [apiPois, setApiPois] = useState<PoiMarkerData[]>([]);
+  const [apiWaypoints, setApiWaypoints] = useState<WaypointMarkerData[]>([]);
+  const [apiRouteWaypoints, setApiRouteWaypoints] = useState<WaypointMarkerData[]>([]);
+  const [apiRouteSegments, setApiRouteSegments] = useState<RouteSegment[]>([]);
+  const initialLoadRef = useRef(true);
 
-  const buildCollisionEvent = (
-    type: CollisionEventType,
-    pairKey: string,
-    robotIds: [string, string],
-    distancePx: number,
-    timestampMs: number
-  ): MonitoringCollisionEvent => ({
-    eventId: `evt-${collisionEventSeqRef.current++}`,
-    type,
-    pairKey,
-    robotIds,
-    distancePx: Number(distancePx.toFixed(2)),
-    timestamp: new Date(timestampMs).toISOString(),
-  });
-
-  const canEmitEvent = (
-    type: CollisionEventType,
-    pairKey: string,
-    nowMs: number
-  ) => {
-    const cooldownKey = `${type}:${pairKey}`;
-    const lastMs = eventCooldownRef.current.get(cooldownKey);
-    if (lastMs != null && nowMs - lastMs < EVENT_COOLDOWN_MS) {
-      return false;
-    }
-    eventCooldownRef.current.set(cooldownKey, nowMs);
-    return true;
-  };
+  // 로봇 실시간 위치 (다중 로봇)
+  const [mapMeta, setMapMeta] = useState<MapMeta>(null);
+  const [apiRobots, setApiRobots] = useState<ApiRobot[]>([]);
+  const [robotPoses, setRobotPoses] = useState<Map<string, { pos: [number, number]; ori: number }>>(new Map());
+  const poseWsRefs = useRef<Map<string, WebSocket>>(new Map());
 
   useEffect(() => {
     const t = setTimeout(() => setIsLoading(false), 3000);
@@ -218,236 +219,391 @@ export function MonitoringClient({ initialDateTime }: Props) {
     return () => clearInterval(timer);
   }, []);
 
+  // ── 사업장 목록 로드 (초기 로드 시 "구미 본사" 자동 선택) ──
   useEffect(() => {
-    if (collisionEvents.length === 0) {
+    apiFetch<{ total: number; items: BusinessItem[] }>("/api/map/businesses")
+      .then((data) => {
+        setApiBusinesses(data.items);
+        if (!selectedBusiness) {
+          const defaultBiz = data.items.find((b) => b.name === "구미 본사");
+          if (defaultBiz) setSelectedBusiness(String(defaultBiz.business_id));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Business 변경 시 영역 목록 로드 ──
+  useEffect(() => {
+    if (!selectedBusiness) {
+      setAreas([]);
+      setSelectedArea("");
+      setAreaMaps([]);
+      setMapSrc("");
       return;
     }
-    const latestEvent = collisionEvents[collisionEvents.length - 1];
-    console.log("[monitoring-collision]", latestEvent);
-    window.dispatchEvent(
-      new CustomEvent("monitoring:collision", { detail: latestEvent })
-    );
-  }, [collisionEvents]);
-
-  useEffect(() => {
-    routeStateRef.current = Object.fromEntries(
-      mockRobotPositions.map((robot, index) => [
-        robot.robotId,
-        {
-          route: mockRobotRoutes[robot.robotId] ?? buildFallbackRoute(robot.position),
-          segmentIndex: 0,
-          progress: 0,
-          speed: 0.015 + index * 0.005,
-        },
-      ])
-    );
-  }, []);
-
-  useEffect(() => {
-    robotsRef.current = simulatedRobots;
-  }, [simulatedRobots]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const nowMs = Date.now();
-      const queuedEvents: MonitoringCollisionEvent[] = [];
-
-      setSimulatedRobots((prev) => {
-        const movedRobots = prev.map((robot) => {
-          if (stoppedRobotIdsRef.current.has(robot.robotId)) {
-            return {
-              ...robot,
-              collisionState: "collision",
-            };
-          }
-
-          const routeState = routeStateRef.current[robot.robotId];
-          if (!routeState || routeState.route.length < 2) {
-            return robot;
-          }
-
-          let nextProgress = routeState.progress + routeState.speed;
-          let segmentIndex = routeState.segmentIndex;
-          while (nextProgress >= 1) {
-            nextProgress -= 1;
-            segmentIndex = (segmentIndex + 1) % (routeState.route.length - 1);
-          }
-
-          routeState.segmentIndex = segmentIndex;
-          routeState.progress = nextProgress;
-
-          const start = routeState.route[segmentIndex];
-          const end = routeState.route[segmentIndex + 1];
-          const dx = end.x - start.x;
-          const dy = end.y - start.y;
-
-          return {
-            ...robot,
-            yaw: Math.atan2(dy, dx),
-            collisionState: "none",
-            position: {
-              x: lerp(start.x, end.x, nextProgress),
-              y: lerp(start.y, end.y, nextProgress),
-            },
-          };
-        });
-
-        const nextPairCollisions = new Set<string>();
-        const robotCollisionState = new Map<
-          string,
-          "none" | "near_miss" | "collision"
-        >();
-        movedRobots.forEach((robot) =>
-          robotCollisionState.set(robot.robotId, "none")
-        );
-
-        for (let i = 0; i < movedRobots.length; i += 1) {
-          for (let j = i + 1; j < movedRobots.length; j += 1) {
-            const robotA = movedRobots[i];
-            const robotB = movedRobots[j];
-            const distance = Math.hypot(
-              robotA.position.x - robotB.position.x,
-              robotA.position.y - robotB.position.y
-            );
-            const pairKey = getPairKey(robotA.robotId, robotB.robotId);
-            const pairRobotIds: [string, string] =
-              robotA.robotId < robotB.robotId
-                ? [robotA.robotId, robotB.robotId]
-                : [robotB.robotId, robotA.robotId];
-
-            if (distance <= COLLISION_THRESHOLD_PX) {
-              nextPairCollisions.add(pairKey);
-              robotCollisionState.set(robotA.robotId, "collision");
-              robotCollisionState.set(robotB.robotId, "collision");
-
-              if (
-                canEmitEvent("collision_detected", pairKey, nowMs)
-              ) {
-                queuedEvents.push(
-                  buildCollisionEvent(
-                    "collision_detected",
-                    pairKey,
-                    pairRobotIds,
-                    distance,
-                    nowMs
-                  )
-                );
-              }
-
-              const shouldStop =
-                !stoppedRobotIdsRef.current.has(robotA.robotId) ||
-                !stoppedRobotIdsRef.current.has(robotB.robotId);
-              if (shouldStop) {
-                stoppedRobotIdsRef.current.add(robotA.robotId);
-                stoppedRobotIdsRef.current.add(robotB.robotId);
-                if (canEmitEvent("emergency_stop_triggered", pairKey, nowMs)) {
-                  queuedEvents.push(
-                    buildCollisionEvent(
-                      "emergency_stop_triggered",
-                      pairKey,
-                      pairRobotIds,
-                      distance,
-                      nowMs
-                    )
-                  );
-                }
-              }
-              continue;
-            }
-
-            if (distance <= NEAR_THRESHOLD_PX) {
-              const stateA = robotCollisionState.get(robotA.robotId);
-              const stateB = robotCollisionState.get(robotB.robotId);
-              if (stateA !== "collision") {
-                robotCollisionState.set(robotA.robotId, "near_miss");
-              }
-              if (stateB !== "collision") {
-                robotCollisionState.set(robotB.robotId, "near_miss");
-              }
-              if (canEmitEvent("near_miss_detected", pairKey, nowMs)) {
-                queuedEvents.push(
-                  buildCollisionEvent(
-                    "near_miss_detected",
-                    pairKey,
-                    pairRobotIds,
-                    distance,
-                    nowMs
-                  )
-                );
-              }
-            }
+    setAreaMaps([]);
+    setMapSrc("");
+    apiFetch<{ total: number; items: AreaItem[] }>(
+      `/api/map/businesses/${selectedBusiness}/areas`
+    )
+      .then((data) => {
+        setAreas(data.items);
+        if (initialLoadRef.current) {
+          const defaultArea = data.items.find((a) => a.name === "area-B001");
+          if (defaultArea) {
+            setSelectedArea(String(defaultArea.area_id));
+            initialLoadRef.current = false;
+            return;
           }
         }
+        if (data.items.length > 0) {
+          setSelectedArea(String(data.items[0].area_id));
+        } else {
+          setSelectedArea("");
+        }
+      })
+      .catch(() => setAreas([]));
+  }, [selectedBusiness]);
 
-        for (const activePair of activeCollisionPairsRef.current) {
-          if (nextPairCollisions.has(activePair)) {
-            continue;
-          }
-          const [robotA, robotB] = activePair.split(":");
-          if (!robotA || !robotB) {
-            continue;
-          }
-          const robotIds: [string, string] = [robotA, robotB];
-          if (canEmitEvent("collision_cleared", activePair, nowMs)) {
-            queuedEvents.push(
-              buildCollisionEvent(
-                "collision_cleared",
-                activePair,
-                robotIds,
-                0,
-                nowMs
-              )
+  // ── Area 변경 시 맵 목록 로드 및 첫 번째 맵 이미지 + 요소 로드 ──
+  useEffect(() => {
+    if (!selectedArea) {
+      setAreaMaps([]);
+      setSelectedMapId(null);
+      setMapSrc("");
+      setRawApiElements(null);
+      setApiPois([]);
+      setApiWaypoints([]);
+      setApiRouteWaypoints([]);
+      setApiRouteSegments([]);
+      setMapImageSize(null);
+      setMapMeta(null);
+      return;
+    }
+    apiFetch<{ total: number; items: MapItem[] }>(
+      `/api/map/areas/${selectedArea}/maps`
+    )
+      .then((data) => {
+        setAreaMaps(data.items);
+        if (data.items.length > 0 && data.items[0].image_url) {
+          const map = data.items[0];
+          setSelectedMapId(map.id);
+          setMapMeta({
+            grid_origin_x: map.grid_origin_x,
+            grid_origin_y: map.grid_origin_y,
+            grid_resolution: map.grid_resolution,
+          });
+          const imgUrl = map.image_url!;
+          if (imgUrl.startsWith("/static/")) {
+            setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}${imgUrl}`);
+          } else {
+            setMapSrc(
+              `${process.env.NEXT_PUBLIC_API_URL}/api/map/proxy-image?url=${encodeURIComponent(imgUrl)}`
             );
           }
+          // 저장된 POI·라인 로드
+          apiFetch<{ pois: any[]; lines: any[] }>(
+            `/api/map/maps/${map.id}/elements`
+          )
+            .then((elems) => setRawApiElements(elems))
+            .catch(() => setRawApiElements(null));
+        } else {
+          setSelectedMapId(null);
+          setMapSrc("");
+          setMapMeta(null);
+          setRawApiElements(null);
+          setApiPois([]);
+          setApiWaypoints([]);
+          setApiRouteWaypoints([]);
+          setApiRouteSegments([]);
         }
-        activeCollisionPairsRef.current = nextPairCollisions;
-
-        return movedRobots.map((robot) => ({
-          ...robot,
-          collisionState: robotCollisionState.get(robot.robotId) ?? "none",
-        }));
+      })
+      .catch(() => {
+        setAreaMaps([]);
+        setSelectedMapId(null);
+        setMapSrc("");
+        setMapMeta(null);
+        setRawApiElements(null);
       });
+  }, [selectedArea]);
 
-      if (queuedEvents.length > 0) {
-        setCollisionEvents((prev) => {
-          const merged = [...prev, ...queuedEvents];
-          if (merged.length <= COLLISION_EVENT_LIMIT) {
-            return merged;
-          }
-          return merged.slice(merged.length - COLLISION_EVENT_LIMIT);
+  // ── 맵 이미지 크기 로드 (좌표 변환용) ──
+  useEffect(() => {
+    if (!mapSrc) {
+      setMapImageSize(null);
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      setMapImageSize({ w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.onerror = () => setMapImageSize(null);
+    img.src = mapSrc;
+  }, [mapSrc]);
+
+  // ── SVG 좌표 → 이미지 픽셀 좌표 변환 (rawApiElements + mapImageSize) ──
+  useEffect(() => {
+    if (!rawApiElements || !mapImageSize) {
+      setApiPois([]);
+      setApiWaypoints([]);
+      setApiRouteWaypoints([]);
+      setApiRouteSegments([]);
+      return;
+    }
+
+    const halfW = mapImageSize.w / 2;
+    const halfH = mapImageSize.h / 2;
+
+    const convertedPois: PoiMarkerData[] = [];
+    const convertedWaypoints: WaypointMarkerData[] = [];
+
+    for (const p of rawApiElements.pois) {
+      const px = p.x + halfW;
+      const py = p.y + halfH;
+
+      if (p.type === "waypoint") {
+        convertedWaypoints.push({
+          id: p.id,
+          label: p.name,
+          position: { x: px, y: py },
+        });
+      } else {
+        convertedPois.push({
+          id: p.id,
+          label: p.name,
+          position: { x: px, y: py },
+          type: mapPoiTypeToMonitorType(p.type),
+          angle: p.angle ?? undefined,
+          dockingRadius: p.dockingRadius ?? undefined,
         });
       }
-    }, SIMULATION_TICK_MS);
+    }
 
-    return () => clearInterval(timer);
-  }, []);
+    // 라인 → 경로 웨이포인트 + RouteSegment 변환
+    const posMap = new Map<string, { x: number; y: number; name: string }>();
+    for (const p of rawApiElements.pois) {
+      posMap.set(p.id, { x: p.x + halfW, y: p.y + halfH, name: p.name });
+    }
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setAllocatedNodes((prev) => {
-        const snapshots = robotsRef.current.map((robot) => ({
-          id: `alloc-${robot.robotId}-${nodeSeqRef.current++}`,
-          label: `${robot.robotName}-alloc`,
-          position: {
-            x: robot.position.x,
-            y: robot.position.y,
-          },
-        }));
-        const merged = [...prev, ...snapshots];
-        if (merged.length <= NODE_TRAIL_LIMIT) {
-          return merged;
+    const routePoints: WaypointMarkerData[] = [];
+    const segments: RouteSegment[] = [];
+
+    for (const line of rawApiElements.lines) {
+      const fromPos = posMap.get(line.fromId);
+      const toPos = posMap.get(line.toId);
+      if (fromPos && toPos) {
+        // routeWaypoints (기존 호환)
+        if (
+          routePoints.length === 0 ||
+          routePoints[routePoints.length - 1].id !== line.fromId
+        ) {
+          routePoints.push({
+            id: line.fromId,
+            label: fromPos.name,
+            position: { x: fromPos.x, y: fromPos.y },
+          });
         }
-        return merged.slice(merged.length - NODE_TRAIL_LIMIT);
-      });
-    }, NODE_SNAPSHOT_TICK_MS);
+        routePoints.push({
+          id: line.toId,
+          label: toPos.name,
+          position: { x: toPos.x, y: toPos.y },
+        });
 
-    return () => clearInterval(timer);
-  }, []);
+        // RouteSegment (direction, curve 정보 포함)
+        const controlPts = line.controlPoints
+          ? line.controlPoints.map((cp: { x: number; y: number }) => ({
+              x: cp.x + halfW,
+              y: cp.y + halfH,
+            }))
+          : undefined;
 
+        segments.push({
+          id: line.id,
+          from: { x: fromPos.x, y: fromPos.y },
+          to: { x: toPos.x, y: toPos.y },
+          direction: line.direction ?? "forward",
+          lineType: line.lineType ?? "straight",
+          controlPoints: controlPts,
+        });
+      }
+    }
+
+    setApiPois(convertedPois);
+    setApiWaypoints(convertedWaypoints);
+    setApiRouteWaypoints(routePoints);
+    setApiRouteSegments(segments);
+  }, [rawApiElements, mapImageSize]);
+
+  // 사업장 PK → Robot.business_id 매핑 (하드코딩)
+  const BUSINESS_VALUE_MAP: Record<string, string> = {
+    "1": "68271f2a4fd0c6e755addf12", // 구미 본사
+  };
+
+  // API 사업장 → BusinessSelectBox 형식 변환
+  const businessesForSelectBox: Business[] = useMemo(
+    () => apiBusinesses.map((b) => ({
+      id: String(b.business_id),
+      name: b.name,
+      value: BUSINESS_VALUE_MAP[String(b.business_id)],
+    })),
+    [apiBusinesses]
+  );
+
+  // 선택된 사업장의 value (Robot.business_id 필터용)
+  const selectedBusinessValue = useMemo(() => {
+    const biz = businessesForSelectBox.find((b) => b.id === selectedBusiness);
+    return biz?.value ?? selectedBusiness;
+  }, [businessesForSelectBox, selectedBusiness]);
+
+  // ── 로봇 목록 API 로드 (selectedBusinessValue 변경 시) ──
+  // selectedBusinessValue: Business.value (Robot.business_id와 매칭되는 값)
   useEffect(() => {
-    setMapScale(1);
-    setMapOffset({ x: 0, y: 0 });
-  }, [pathname]);
+    if (!selectedBusinessValue) {
+      setApiRobotsFull([]);
+      setApiRobots([]);
+      return;
+    }
+
+    apiFetch<{ total: number; items: ApiRobotFull[] }>(
+      `/api/robots?business_id=${selectedBusinessValue}`
+    )
+      .then((data) => {
+        setApiRobotsFull(data.items);
+        setApiRobots(
+          data.items
+            .filter((r) => r.ip_address)
+            .map((r) => ({
+              serial_number: r.serial_number,
+              name: r.name,
+              ip_address: r.ip_address!,
+            }))
+        );
+      })
+      .catch(() => {
+        setApiRobotsFull([]);
+        setApiRobots([]);
+      });
+  }, [selectedBusinessValue]);
+
+  // ── 다중 로봇 실시간 위치 WS 연결 ──
+  useEffect(() => {
+    // 기존 연결 정리
+    poseWsRefs.current.forEach((ws) => ws.close());
+    poseWsRefs.current.clear();
+    setRobotPoses(new Map());
+
+    if (!apiRobots.length) return;
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+    const wsBase = API_URL.replace(/^http/, "ws");
+
+    apiRobots.forEach((robot) => {
+      const wsUrl = `${wsBase}/api/map/ws/${robot.ip_address}?topics=/tracked_pose`;
+      const ws = new WebSocket(wsUrl);
+      poseWsRefs.current.set(robot.serial_number, ws);
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.topic === "/tracked_pose" && msg.pos) {
+            setRobotPoses((prev) => {
+              const next = new Map(prev);
+              next.set(robot.serial_number, {
+                pos: msg.pos,
+                ori: msg.ori ?? 0,
+              });
+              return next;
+            });
+          }
+        } catch {
+          // ignore
+        }
+      };
+      ws.onerror = () =>
+        console.warn(`[MonitoringPoseWS] ${robot.name} (${robot.ip_address}) error`);
+      ws.onclose = () =>
+        console.log(`[MonitoringPoseWS] ${robot.name} closed`);
+    });
+
+    return () => {
+      poseWsRefs.current.forEach((ws) => ws.close());
+      poseWsRefs.current.clear();
+    };
+  }, [apiRobots]);
+
+  // ── 로봇 실시간 상태 폴링 (5초 간격) ──
+  useEffect(() => {
+    if (livePollingRef.current) {
+      clearInterval(livePollingRef.current);
+      livePollingRef.current = null;
+    }
+
+    if (apiRobotsFull.length === 0) {
+      setLiveRobots([]);
+      return;
+    }
+
+    const fetchLive = () => {
+      apiFetch<{ total: number; items: LiveRobot[] }>("/api/robots/live")
+        .then((data) => setLiveRobots(data.items))
+        .catch(() => {});
+    };
+
+    fetchLive();
+    livePollingRef.current = setInterval(fetchLive, 5000);
+
+    return () => {
+      if (livePollingRef.current) {
+        clearInterval(livePollingRef.current);
+        livePollingRef.current = null;
+      }
+    };
+  }, [apiRobotsFull]);
+
+  // ── IP 기준 live 데이터 lookup ──
+  const liveByIp = useMemo(() => {
+    const map = new Map<string, LiveRobot>();
+    for (const lr of liveRobots) {
+      map.set(lr.IP, lr);
+    }
+    return map;
+  }, [liveRobots]);
+
+  // ── 다중 로봇 월드 좌표 → 이미지 픽셀 좌표 변환 (live 상태 반영) ──
+  useEffect(() => {
+    if (!mapMeta || !mapImageSize || mapMeta.grid_resolution <= 0) {
+      return;
+    }
+    if (robotPoses.size === 0) {
+      setSimulatedRobots([]);
+      return;
+    }
+
+    const markers: RobotMarkerData[] = [];
+    robotPoses.forEach((pose, sn) => {
+      const ipx =
+        (pose.pos[0] - mapMeta.grid_origin_x) / mapMeta.grid_resolution;
+      const ipy =
+        mapImageSize.h -
+        (pose.pos[1] - mapMeta.grid_origin_y) / mapMeta.grid_resolution;
+
+      const robot = apiRobots.find((r) => r.serial_number === sn);
+      const fullRobot = apiRobotsFull.find((r) => r.serial_number === sn);
+      const live = fullRobot?.ip_address ? liveByIp.get(fullRobot.ip_address) : null;
+
+      markers.push({
+        robotId: sn,
+        robotName: robot?.name ?? sn,
+        position: { x: ipx, y: ipy },
+        yaw: pose.ori,
+        status: live ? mapLiveRunStateToDeviceStatus(live.RUNSTATE) : "running",
+        power: live ? mapLiveOnlineToPower(live.ONLINE) : "online",
+      });
+    });
+
+    setSimulatedRobots(markers);
+  }, [robotPoses, mapMeta, mapImageSize, apiRobots, apiRobotsFull, liveByIp]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1200px)");
@@ -493,133 +649,29 @@ export function MonitoringClient({ initialDateTime }: Props) {
     setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
   };
 
-  const clamp = (value: number, min: number, max: number) =>
-    Math.min(max, Math.max(min, value));
 
-  const getPanLimits = (
-    scale: number,
-    viewportWidth: number,
-    viewportHeight: number
-  ) => ({
-    maxX: ((Math.max(scale, 1) - 1) * viewportWidth) / 2,
-    maxY: ((Math.max(scale, 1) - 1) * viewportHeight) / 2,
-  });
+  const handleStartAll = async () => {
+    try {
+      const liveData = await apiFetch<{ total: number; items: any[] }>("/api/robots/live");
+      const chargingRobotCount = (liveData.items ?? []).filter(
+        (r: any) => r.RUNSTATE === "CHARGING"
+      ).length;
 
-  const clampOffset = (
-    nextX: number,
-    nextY: number,
-    scale: number,
-    rect: DOMRect
-  ) => {
-    if (scale <= 1) {
-      return { x: 0, y: 0 };
+      const chargingPoiCount = apiPois.filter((p) => p.type === "charging").length;
+
+      if (chargingPoiCount > 0 && chargingRobotCount >= chargingPoiCount) {
+        setAlertModal({
+          title: "작업 재개 불가",
+          message: "모든 로봇이 충전 중이여서 작업 재개가 안됩니다.",
+        });
+        return;
+      }
+
+      setIsRunning(true);
+      console.log("Start All tasks");
+    } catch (e) {
+      console.error("로봇 상태 조회 실패:", e);
     }
-    const { maxX, maxY } = getPanLimits(scale, rect.width, rect.height);
-    return {
-      x: clamp(nextX, -maxX, maxX),
-      y: clamp(nextY, -maxY, maxY),
-    };
-  };
-
-  const stopPanning = () => {
-    setIsPanning(false);
-    panStartRef.current = null;
-  };
-
-  const handleMapWheel = (event: WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const viewport = mapViewportRef.current;
-    if (!viewport) {
-      return;
-    }
-
-    if (event.deltaY === 0) {
-      return;
-    }
-    const rect = viewport.getBoundingClientRect();
-    const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
-    const nextScale = clamp(mapScale * zoomFactor, 0.5, 4);
-    setMapScale(nextScale);
-    if (nextScale <= 1) {
-      setMapOffset({ x: 0, y: 0 });
-    } else {
-      setMapOffset((prevOffset) =>
-        clampOffset(prevOffset.x, prevOffset.y, nextScale, rect)
-      );
-    }
-  };
-
-  const handleMapMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-    if (mapMode !== "2d" || mapScale <= 1 || event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    setIsPanning(true);
-    panStartRef.current = { x: event.clientX, y: event.clientY };
-    startOffsetRef.current = mapOffset;
-  };
-
-  const handleMapMouseMove = (event: MouseEvent<HTMLDivElement>) => {
-    if (!isPanning || !panStartRef.current) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    const viewport = mapViewportRef.current;
-    if (!viewport) {
-      return;
-    }
-    const rect = viewport.getBoundingClientRect();
-    const dx = event.clientX - panStartRef.current.x;
-    const dy = event.clientY - panStartRef.current.y;
-    const next = clampOffset(
-      startOffsetRef.current.x + dx,
-      startOffsetRef.current.y + dy,
-      mapScale,
-      rect
-    );
-    setMapOffset(next);
-  };
-
-  useEffect(() => {
-    const handleWindowMouseUp = () => {
-      setIsPanning(false);
-      panStartRef.current = null;
-    };
-
-    window.addEventListener("mouseup", handleWindowMouseUp);
-    return () => {
-      window.removeEventListener("mouseup", handleWindowMouseUp);
-    };
-  }, []);
-
-  const imageNaturals = useMapImageNaturals(mapSrc);
-
-  const mapSceneStyle: CSSProperties = {
-    "--map-ar": imageNaturals
-      ? `${imageNaturals.width} / ${imageNaturals.height}`
-      : "563 / 682",
-    transform: `translate3d(${mapOffset.x}px, ${mapOffset.y}px, 0) scale(${mapScale})`,
-    transformOrigin: "center",
-  } as CSSProperties;
-
-  const mapBgColor = useImageBackgroundColor(mapSrc);
-  const mapViewportStyle: CSSProperties = {
-    backgroundColor: mapBgColor ?? "var(--bg-map)",
-  };
-
-  const mapViewportClassName = [
-    "center-map__viewport",
-    mapScale > 1 ? "is-pannable" : "",
-    isPanning ? "is-panning" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const handleStartAll = () => {
-    console.log("Start All tasks");
   };
 
   const hasRunningTasks = mockTasks.some((task) => task.state === "running");
@@ -634,14 +686,92 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
   const handleConfirmStop = () => {
     setStopConfirmOpen(false);
+    setIsRunning(false);
     console.log("Stop All tasks");
   };
 
-  const filteredDevices = deviceSearch
-    ? mockDevices.filter((d) =>
-        d.name.toLowerCase().includes(deviceSearch.toLowerCase())
-      )
-    : mockDevices;
+  // ── API 로봇 → DeviceRow 형식 변환 ──
+  const deviceList = useMemo(() => {
+    return apiRobotsFull.map((robot) => {
+      const live = robot.ip_address ? liveByIp.get(robot.ip_address) : null;
+
+      let power: "online" | "offline";
+      let battery: string;
+      let status: "idle" | "running" | "error" | "warning" | "disable";
+
+      if (live) {
+        power = mapLiveOnlineToPower(live.ONLINE);
+        battery = formatLiveBattery(live["POWER(%)"], live.ONLINE);
+        status = mapLiveRunStateToDeviceStatus(live.RUNSTATE);
+      } else if (robot.status) {
+        power = mapBackendStatusToPower(robot.status.status);
+        battery = formatBattery(robot.status.battery_level, power);
+        status = mapBackendStatusToDeviceStatus(robot.status.status);
+      } else {
+        power = "offline";
+        battery = "--";
+        status = "disable";
+      }
+
+      return {
+        id: String(robot.id),
+        name: robot.name,
+        power,
+        battery,
+        status,
+      };
+    });
+  }, [apiRobotsFull, liveByIp]);
+
+  const filteredDevices = useMemo(() => {
+    if (!deviceSearch) return deviceList;
+    return deviceList.filter((d) =>
+      d.name.toLowerCase().includes(deviceSearch.toLowerCase())
+    );
+  }, [deviceList, deviceSearch]);
+
+  const deviceCounts = useMemo(() => ({
+    all: deviceList.length,
+    online: deviceList.filter((d) => d.power === "online").length,
+    offline: deviceList.filter((d) => d.power === "offline").length,
+    error: deviceList.filter((d) => d.status === "error").length,
+  }), [deviceList]);
+
+  // ── 로봇 정보 모달 (실제 데이터) ──
+  const selectedDevice: RobotDevice | null = useMemo(() => {
+    if (!openDeviceId) return null;
+    const robot = apiRobotsFull.find((r) => String(r.id) === openDeviceId);
+    if (!robot) return null;
+
+    const live = robot.ip_address ? liveByIp.get(robot.ip_address) : null;
+
+    let runState: RunState | null = null;
+    if (live) {
+      if (live.RUNSTATE === "EXECUTING") runState = "EXECUTING";
+      else if (live.RUNSTATE === "CHARGING") runState = "CHARGING";
+      else if (live.RUNSTATE === "IDLE") runState = "IDLE";
+    }
+
+    return {
+      id: String(robot.id),
+      sn: robot.serial_number,
+      robotName: robot.name,
+      model: robot.model ?? "-",
+      runState,
+      online: live ? live.ONLINE === "Online" : (robot.status?.status !== 4),
+      signal: live && live.SIGNAL !== "N/A" ? parseInt(live.SIGNAL, 10) || null : null,
+      power: live && live.ONLINE === "Online"
+        ? parseInt(live["POWER(%)"], 10) || null
+        : robot.status?.battery_level ?? null,
+      enable: robot.is_active,
+      deploymentTime: null,
+      apkVersion: null,
+      sdkVersion: null,
+      busiName: null,
+      buildingName: null,
+      currentTask: [],
+    };
+  }, [openDeviceId, apiRobotsFull, liveByIp]);
 
   const filteredTasks = mockTasks
     .filter((task) => task.state === taskTab)
@@ -664,8 +794,9 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const showPoiMarkers =
     overlayItems.find((item) => item.label === "작업 지점")?.checked ?? false;
 
-  const renderedWaypoints = showNavigationNodes ? mockWaypoints : [];
-  const routeWaypoints = showNavigationLine ? mockWaypoints : [];
+  const renderedWaypoints = showNavigationNodes ? apiWaypoints : [];
+  const routeWaypoints = showNavigationLine ? apiRouteWaypoints : [];
+  const routeSegments = showNavigationLine ? apiRouteSegments : [];
 
   return (
     <>
@@ -754,54 +885,31 @@ export function MonitoringClient({ initialDateTime }: Props) {
             }
           >
             <section className={mapMode === "3d" ? "monitoring-map is-3d" : "monitoring-map"}>
-              <div
-                className="center-map__canvas"
-                onWheel={handleMapWheel}
-              >
-                {mapMode === "3d" ? (
-                  "Map (3D View)"
-                ) : (
-                  <div
-                    className={mapViewportClassName}
-                    ref={mapViewportRef}
-                    style={mapViewportStyle}
-                    onMouseDown={handleMapMouseDown}
-                    onMouseMove={handleMapMouseMove}
-                    onMouseUp={stopPanning}
-                    onMouseLeave={stopPanning}
-                  >
-                    <div
-                      className="center-map__scene"
-                      style={mapSceneStyle}
-                    >
-                      <img
-                        className="center-map__image"
-                        src={mapSrc}
-                        alt="지도"
-                        draggable={false}
-                        style={showMapBackground ? undefined : { visibility: "hidden" }}
-                      />
-                      {imageNaturals && (
-                        <MapOverlay
-                          pois={mockPois}
-                          waypoints={renderedWaypoints}
-                          routeWaypoints={routeWaypoints}
-                          robots={simulatedRobots}
-                          showPois={showPoiMarkers}
-                          showRoutes={showNavigationLine}
-                          showWaypoints={showNavigationNodes}
-                          showDirectionArrows={showDirectionArrows}
-                          showVirtualWalls={showVirtualWalls}
-                          virtualWalls={mockVirtualWalls}
-                          imageWidth={imageNaturals.width}
-                          imageHeight={imageNaturals.height}
-                          mapScale={mapScale}
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <BusinessSelectBox
+                businesses={businessesForSelectBox}
+                selectedId={selectedBusiness}
+                onChange={setSelectedBusiness}
+              />
+              {mapMode === "3d" ? (
+                "Map (3D View)"
+              ) : (
+                <MonitoringMapCanvas
+                  mapSrc={mapSrc}
+                  pois={apiPois}
+                  waypoints={renderedWaypoints}
+                  routeWaypoints={routeWaypoints}
+                  routeSegments={routeSegments}
+                  robots={simulatedRobots}
+                  virtualWalls={mockVirtualWalls}
+
+                  showMapBackground={showMapBackground}
+                  showNavigationLine={showNavigationLine}
+                  showDirectionArrows={showDirectionArrows}
+                  showVirtualWalls={showVirtualWalls}
+                  showNavigationNodes={showNavigationNodes}
+                  showPoiMarkers={showPoiMarkers}
+                />
+              )}
             </section>
             <div className="overlay-card-layer">
               {isLayerOpen && (
@@ -837,12 +945,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
                 <button
                   className="btn btn--primary"
                   onClick={handleStartAll}
+                  disabled={isRunning}
                 >
                   시작
                 </button>
                 <button
                   className="btn btn--danger"
                   onClick={handleStopAll}
+                  disabled={!isRunning}
                 >
                   종료
                 </button>
@@ -903,10 +1013,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
               )}
             </div> */}
           </Panel>
-          <DeviceInfoPopup
-            deviceId={openDeviceId}
-            onClose={() => setOpenDeviceId(null)}
-          />
+          {selectedDevice && (
+            <RobotDeviceInfo
+              device={selectedDevice}
+              onClose={() => setOpenDeviceId(null)}
+              onEnableToggle={handleDeviceEnableToggle}
+              togglingDeviceId={togglingDeviceId}
+            />
+          )}
           <TaskInfoModal
             taskId={openTaskId}
             onClose={() => setOpenTaskId(null)}
@@ -922,6 +1036,24 @@ export function MonitoringClient({ initialDateTime }: Props) {
             onConfirm={handleConfirmStop}
             onCancel={() => setStopConfirmOpen(false)}
           />
+          <Modal
+            open={!!alertModal}
+            onClose={() => setAlertModal(null)}
+            title={alertModal?.title ?? ""}
+            width="400px"
+          >
+            <div className="confirm-modal">
+              <p className="confirm-modal__message">{alertModal?.message}</p>
+              <div className="confirm-modal__actions">
+                <button
+                  className="btn btn--primary"
+                  onClick={() => setAlertModal(null)}
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          </Modal>
         </main>
       </div>
     </div>

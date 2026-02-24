@@ -227,6 +227,8 @@
   border: 0;
   background: transparent;
   color: inherit;
+  padding: 0;
+  width: 100%;
   display: grid;
   grid-template-columns: var(--device-grid);
   align-items: center;
@@ -274,13 +276,18 @@
   max-height: 100%;
   overflow: auto;
   padding-right: 4px;
-  --device-grid: 1.3fr 1fr 0.8fr 1fr;
+  --device-grid: 2fr 1fr 1fr 1fr;
 }
 
 .device-row__actions {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: var(--space-1);
+}
+
+.device-row__actions .icon-btn {
+  font-size: var(--font-size-xs);
+  width: 90px;
 }
 
 .device-row__actions .icon-btn:disabled {
@@ -441,7 +448,7 @@
 .task-panel__footer-actions .btn {
   width: 100%;
   height: 100%;
-  font-size: calc(var(--font-size-lg) + 3px);
+  font-size: calc(var(--font-size-2xl) + 3px);
   font-weight: var(--font-weight-bold);
   letter-spacing: 0.02em;
 }

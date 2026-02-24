@@ -1,6 +1,7 @@
 "use client";
 
-import { Modal } from "../Modal";
+import { useState, useEffect, useCallback } from "react";
+import { Modal } from "./Modal";
 import type { RobotDeviceInfoProps } from "@/lib/types/robots";
 import "./RobotDeviceInfo.css";
 
@@ -15,9 +16,56 @@ export function RobotDeviceInfo({
   onEnableToggle,
   togglingDeviceId,
 }: RobotDeviceInfoProps) {
+  const [initialMinBattery, setInitialMinBattery] = useState<number | null>(null);
+  const [minBattery, setMinBattery] = useState(20);
+  const [isApplying, setIsApplying] = useState(false);
+
+  useEffect(() => {
+    if (!device) return;
+    const controller = new AbortController();
+
+    fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/api/robots/sn/${encodeURIComponent(device.sn)}/min-battery`,
+      { signal: controller.signal }
+    )
+      .then((res) => res.json())
+      .then((data: { min_battery: number }) => {
+        setInitialMinBattery(data.min_battery);
+        setMinBattery(data.min_battery);
+      })
+      .catch(() => {
+        setInitialMinBattery(20);
+        setMinBattery(20);
+      });
+
+    return () => controller.abort();
+  }, [device]);
+
+  const handleApplyMinBattery = useCallback(async () => {
+    if (!device || isApplying) return;
+    setIsApplying(true);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/robots/sn/${encodeURIComponent(device.sn)}/min-battery`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ min_battery: minBattery }),
+        }
+      );
+      if (res.ok) {
+        const data: { min_battery: number } = await res.json();
+        setInitialMinBattery(data.min_battery);
+      }
+    } finally {
+      setIsApplying(false);
+    }
+  }, [device, minBattery, isApplying]);
+
   if (!device) return null;
 
   const isToggleDisabled = togglingDeviceId === device.id;
+  const isMinBatteryChanged = initialMinBattery !== null && minBattery !== initialMinBattery;
 
   const shouldScrollTaskTable = device.currentTask.length > 5;
 
@@ -108,7 +156,7 @@ export function RobotDeviceInfo({
             <div className="robot-info__field">
               <span className="robot-info__label">Signal</span>
               <span className="robot-info__value">
-                {device.signal != null ? `${device.signal} %` : "-"}
+                {device.signal != null ? `${device.signal}` : "-"}
               </span>
             </div>
             <div className="robot-info__field">
@@ -123,6 +171,30 @@ export function RobotDeviceInfo({
                 <span className="robot-info__toggle-slider" />
               </label>
             </div>
+          </div>
+
+          <div className="robot-info__battery-row">
+            <span className="robot-info__label">최소 배터리</span>
+            <input
+              type="range"
+              className="robot-info__range"
+              min={0}
+              max={100}
+              value={minBattery}
+              onChange={(e) => setMinBattery(Number(e.target.value))}
+              style={{
+                background: `linear-gradient(to right, var(--color-primary) ${minBattery}%, var(--bg-surface-2) ${minBattery}%)`,
+              }}
+            />
+            <span className="robot-info__range-value">{minBattery}%</span>
+            <button
+              type="button"
+              className="robot-info__apply-btn"
+              disabled={!isMinBatteryChanged || isApplying}
+              onClick={handleApplyMinBattery}
+            >
+              {isApplying ? "적용 중..." : "적용"}
+            </button>
           </div>
         </section>
 

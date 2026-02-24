@@ -5,7 +5,7 @@ import { TopBar } from "../components/shell/TopBar";
 import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { RobotFilter } from "../components/ui/robots/RobotFilter";
 import { RobotTable } from "../components/ui/robots/RobotTable";
-import { RobotDeviceInfo } from "../components/ui/robots/RobotDeviceInfo";
+import { RobotDeviceInfo } from "../components/ui/RobotDeviceInfo";
 import { ConfirmModal } from "../components/ui/robots/ConfirmModal";
 import type { RobotFilterState, RobotDevice } from "@/lib/types/robots";
 import { LoadingScreen } from "../components/ui/LoadingScreen";

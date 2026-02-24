@@ -9,6 +9,8 @@ export type PoiMarkerData = {
   position: MapPixelCoord;
   type: "workstation" | "charging" | "pickup" | "dropoff";
   renderKind?: "circle" | "triangle";
+  angle?: number;
+  dockingRadius?: number;
 };
 
 export type WaypointMarkerData = {
@@ -25,6 +27,15 @@ export type RobotMarkerData = {
   status: "idle" | "running" | "error" | "warning" | "disable";
   power: "online" | "offline";
   collisionState?: "none" | "near_miss" | "collision";
+};
+
+export type RouteSegment = {
+  id: string;
+  from: MapPixelCoord;
+  to: MapPixelCoord;
+  direction: "forward" | "backward" | "bidirectional";
+  lineType: "straight" | "curve";
+  controlPoints?: MapPixelCoord[];
 };
 
 export type VirtualWallData = {

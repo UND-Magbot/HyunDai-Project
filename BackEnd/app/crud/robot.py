@@ -8,6 +8,7 @@ from app.schemas.robot import (
     RobotResponse,
     RobotStatusUpdate,
     RobotStatusResponse,
+    MinBatteryUpdate,
     STATUS_MAP,
     CHARGING_MAP,
 )
@@ -40,6 +41,7 @@ def _to_response(robot: Robot) -> RobotResponse:
         max_battery=robot.max_battery,
         min_battery=robot.min_battery,
         is_active=robot.is_active,
+        business_id=robot.business_id,
         status=_status_to_response(robot.status) if robot.status else None,
         created_at=robot.created_at,
         updated_at=robot.updated_at,
@@ -92,8 +94,16 @@ def get_robot(db: Session, robot_id: int) -> RobotResponse:
 
 
 # ── 로봇 목록 조회 ──
-def get_robots(db: Session, skip: int = 0, limit: int = 100) -> list[RobotResponse]:
-    robots = db.query(Robot).offset(skip).limit(limit).all()
+def get_robots(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    business_id: str | None = None,
+) -> list[RobotResponse]:
+    query = db.query(Robot).filter(Robot.is_active == True)
+    if business_id is not None:
+        query = query.filter(Robot.business_id == business_id)
+    robots = query.offset(skip).limit(limit).all()
     return [_to_response(r) for r in robots]
 
 
@@ -181,6 +191,26 @@ def update_robot_status(db: Session, robot_id: int, data: RobotStatusUpdate) -> 
     db.refresh(rs)
 
     return _status_to_response(rs)
+
+
+# ── 최소 배터리 조회 (SN 기반) ──
+def get_min_battery_by_sn(db: Session, sn: str) -> dict:
+    robot = db.query(Robot).filter(Robot.serial_number == sn, Robot.is_active == True).first()
+    if not robot:
+        return {"min_battery": 20}
+    return {"min_battery": robot.min_battery}
+
+
+# ── 최소 배터리 수정 (SN 기반) ──
+def update_min_battery_by_sn(db: Session, sn: str, data: MinBatteryUpdate) -> dict:
+    robot = db.query(Robot).filter(Robot.serial_number == sn, Robot.is_active == True).first()
+    if not robot:
+        raise HTTPException(status_code=404, detail="등록되지 않은 로봇입니다.")
+
+    robot.min_battery = data.min_battery
+    db.commit()
+    db.refresh(robot)
+    return {"min_battery": robot.min_battery}
 
 
 # ── RB-05 로봇 상태 조회 ──

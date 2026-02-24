@@ -7,6 +7,7 @@ const RUN_STATE_LABEL: Record<string, string> = {
   EXECUTING: "운영중",
   CHARGING:  "충전중",
   IDLE:      "대기중",
+  OFFLINE:      "오프라인",
 };
 
 function PowerCell({ power }: { power: number | string | null }) {
@@ -40,7 +41,6 @@ export function RobotTable({
           <col />{/* Online */}
           <col />{/* Signal */}
           <col />{/* Power */}
-          <col />{/* Enable */}
           <col />{/* Operation */}
         </colgroup>
         <thead>
@@ -52,14 +52,13 @@ export function RobotTable({
             <th>전원</th>
             <th>신호 상태</th>
             <th>배터리 (%)</th>
-            <th>활성 상태</th>
             <th>운영사</th>
           </tr>
         </thead>
         <tbody>
           {devices.length === 0 ? (
             <tr>
-              <td colSpan={9} className="robot-table__empty">
+              <td colSpan={8} className="robot-table__empty">
                 등록된 장치가 없습니다.
               </td>
             </tr>
@@ -103,17 +102,6 @@ export function RobotTable({
                   </td>
                   <td>
                     <PowerCell power={device.power} />
-                  </td>
-                  <td>
-                    <label className="robot-table__toggle">
-                      <input
-                        type="checkbox"
-                        checked={device.enable}
-                        onChange={() => onEnableToggle(device.id)}
-                        disabled={isToggleDisabled}
-                      />
-                      <span className="robot-table__toggle-slider" />
-                    </label>
                   </td>
                   <td>
                     <button

@@ -69,11 +69,6 @@ export type DeviceDetail = DeviceBaseInfo &
     currentTask: DeviceTask[];
   };
 
-export type DeviceInfoPopupProps = {
-  deviceId: string | null;
-  onClose: () => void;
-};
-
 export type OverlayItem = {
   label: string;
   checked: boolean;
