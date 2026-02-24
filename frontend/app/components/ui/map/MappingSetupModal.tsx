@@ -64,10 +64,10 @@ export function MappingSetupModal({
   const isValid = selectedBusinessId !== null && areaName.trim().length > 0 && !duplicateError;
 
   return (
-    <Modal open={open} onClose={handleClose} title="Mapping Setup" width="460px">
+    <Modal open={open} onClose={handleClose} title="맵핑 설정" width="460px">
       <div className="mapping-setup">
         <div className="mapping-setup__field">
-          <label className="mapping-setup__label">Business</label>
+          <label className="mapping-setup__label">사업장</label>
           <select
             className="mapping-setup__select"
             value={selectedBusinessId ?? ""}
@@ -75,7 +75,7 @@ export function MappingSetupModal({
               setSelectedBusinessId(e.target.value ? Number(e.target.value) : null)
             }
           >
-            <option value="">-- Select Business --</option>
+            <option value="">-- 사업장 선택 --</option>
             {businesses.map((b) => (
               <option key={b.business_id} value={b.business_id}>
                 {b.name}
@@ -85,11 +85,11 @@ export function MappingSetupModal({
         </div>
 
         <div className="mapping-setup__field">
-          <label className="mapping-setup__label">Area Name</label>
+          <label className="mapping-setup__label">영역 이름</label>
           <input
             className={`mapping-setup__input${duplicateError ? " mapping-setup__input--error" : ""}`}
             type="text"
-            placeholder="Enter new area name"
+            placeholder="새 영역 이름 입력"
             value={areaName}
             onChange={(e) => setAreaName(e.target.value)}
           />
@@ -100,14 +100,14 @@ export function MappingSetupModal({
 
         <div className="mapping-setup__actions">
           <button className="mapping-setup__btn mapping-setup__btn--close" onClick={handleClose}>
-            Close
+            닫기
           </button>
           <button
             className="mapping-setup__btn mapping-setup__btn--confirm"
             onClick={handleConfirm}
             disabled={!isValid}
           >
-            Confirm
+            확인
           </button>
         </div>
       </div>

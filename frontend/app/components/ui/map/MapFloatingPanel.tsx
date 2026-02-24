@@ -46,7 +46,7 @@ export function MapFloatingPanel({
           <button
             className="map-floating-panel__toggle"
             onClick={onToggle}
-            title="Close panel"
+            title="패널 닫기"
           >
             ▸
           </button>
@@ -58,7 +58,7 @@ export function MapFloatingPanel({
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                 <circle cx="12" cy="13" r="4" />
               </svg>
-              <span>Camera Feed</span>
+              <span>카메라 피드</span>
             </div>
           </div>
 
@@ -67,31 +67,31 @@ export function MapFloatingPanel({
             <button
               className="map-floating-panel__btn map-floating-panel__btn--primary"
               onClick={onStartMapping}
-              title="Start Mapping"
+              title="맵핑 시작"
             >
-              Start Mapping
+              맵핑 시작
             </button>
             <button
               className="map-floating-panel__btn map-floating-panel__btn--danger"
               onClick={onClearMap}
             >
-              Clear The Map
+              맵 초기화
             </button>
             <button
               className="map-floating-panel__btn"
               onClick={onRemoteImage}
               disabled={!robotConnected}
-              title={!robotConnected ? "Connect a robot first" : "Remote Image"}
+              title={!robotConnected ? "로봇을 먼저 연결하세요" : "원격 영상"}
             >
-              Remote Image
+              원격 영상
             </button>
             <button
               className="map-floating-panel__btn"
               onClick={onRemoteControl}
               disabled={!robotConnected}
-              title={!robotConnected ? "Connect a robot first" : "Remote Control"}
+              title={!robotConnected ? "로봇을 먼저 연결하세요" : "원격 제어"}
             >
-              Remote Control
+              원격 제어
             </button>
           </div>
         </div>
@@ -99,7 +99,7 @@ export function MapFloatingPanel({
         <button
           className="map-floating-panel__toggle map-floating-panel__toggle--collapsed"
           onClick={onToggle}
-          title="Open panel"
+          title="패널 열기"
         >
           ◂
         </button>

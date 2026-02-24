@@ -116,6 +116,15 @@ export type LineDirectionPopupProps = {
   onCancel: () => void;
 };
 
+export type LineEditPopupProps = {
+  line: PathLine;
+  fromPoiName: string;
+  toPoiName: string;
+  onUpdate: (id: string, data: Partial<PathLine>) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+};
+
 export type MappingSetupModalProps = {
   open: boolean;
   businesses: { business_id: number; name: string }[];
@@ -139,5 +148,7 @@ export type MapSyncModalProps = {
   open: boolean;
   onClose: () => void;
   mappingId: number;
+  mapId: number;
+  areaName: string;
   onSyncComplete?: () => void;
 };

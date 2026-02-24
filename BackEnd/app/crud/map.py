@@ -219,6 +219,7 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
             robot_sns=json.dumps(p["robotSns"]) if p.get("robotSns") else None,
             address=p.get("address"),
             docking_radius=p.get("dockingRadius"),
+            area_name=p.get("areaName"),
         )
         db.add(poi)
         db.flush()  # id 확정
@@ -239,9 +240,12 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
             from_world_y=ln.get("fromWorldY"),
             to_world_x=ln.get("toWorldX"),
             to_world_y=ln.get("toWorldY"),
+            from_ori=ln.get("fromOri"),
+            to_ori=ln.get("toOri"),
             direction=ln.get("direction", "forward"),
             line_type=ln.get("lineType", "straight"),
             control_points=json.dumps(ln["controlPoints"]) if ln.get("controlPoints") else None,
+            area_name=ln.get("areaName"),
         )
         db.add(line)
 
@@ -278,6 +282,7 @@ def get_map_elements(db: Session, map_id: int) -> dict:
             "robotSns": json.loads(p.robot_sns) if p.robot_sns else None,
             "address": p.address,
             "dockingRadius": p.docking_radius,
+            "areaName": p.area_name,
         })
 
     line_list = []
@@ -294,9 +299,27 @@ def get_map_elements(db: Session, map_id: int) -> dict:
             "fromWorldY": ln.from_world_y,
             "toWorldX": ln.to_world_x,
             "toWorldY": ln.to_world_y,
+            "fromOri": ln.from_ori,
+            "toOri": ln.to_ori,
             "direction": ln.direction,
             "lineType": ln.line_type,
             "controlPoints": json.loads(ln.control_points) if ln.control_points else None,
+            "areaName": ln.area_name,
         })
 
     return {"pois": poi_list, "lines": line_list}
+
+
+def get_charging_pois(db: Session, map_id: int):
+    """충전소 타입 POI 중 월드 좌표가 유효한 것만 반환."""
+    return (
+        db.query(MapPOI)
+        .filter(
+            MapPOI.map_id == map_id,
+            MapPOI.poi_type == "charging",
+            MapPOI.is_active == True,
+            MapPOI.world_x.isnot(None),
+            MapPOI.world_y.isnot(None),
+        )
+        .all()
+    )

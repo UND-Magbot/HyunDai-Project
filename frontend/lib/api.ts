@@ -9,9 +9,9 @@ export async function apiFetch<T = unknown>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    const b = body as { detail?: string; message?: string };
     throw new Error(
-      (body as { message?: string }).message ??
-        `Request failed: ${res.status}`
+      b.detail ?? b.message ?? `Request failed: ${res.status}`
     );
   }
 

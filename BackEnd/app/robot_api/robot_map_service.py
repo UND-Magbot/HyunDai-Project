@@ -39,7 +39,14 @@ def _request(
         json=json_data,
         timeout=timeout,
     )
-    res.raise_for_status()
+    if not res.ok:
+        error_body = ""
+        try:
+            error_body = res.text[:500]
+        except Exception:
+            pass
+        print(f"[robot_api] {method} {path} → {res.status_code}: {error_body}")
+        res.raise_for_status()
     if res.status_code == 204 or not res.content:
         return {}
     return res.json()
@@ -76,7 +83,7 @@ def get_map(ip: str, secret: str, map_name: str) -> dict:
 
 
 def create_map(ip: str, secret: str, data: dict) -> dict:
-    return _post(ip, secret, "/maps", data)
+    return _post(ip, secret, "/maps/", data)
 
 
 def update_map(ip: str, secret: str, map_name: str, data: dict) -> dict:
@@ -91,10 +98,30 @@ def patch_map(ip: str, secret: str, map_name: str, data: dict) -> dict:
     return _patch(ip, secret, f"/maps/{map_name}", data)
 
 
+def get_map_by_id(ip: str, secret: str, map_id: int) -> dict:
+    """숫자 ID로 로봇 맵 상세 조회 — GET /maps/{id}"""
+    return _get(ip, secret, f"/maps/{map_id}")
+
+
+def delete_map_by_id(ip: str, secret: str, map_id: int) -> dict:
+    """숫자 ID로 로봇 맵 삭제 — DELETE /maps/{id}"""
+    return _delete(ip, secret, f"/maps/{map_id}")
+
+
+def patch_map_by_id(ip: str, secret: str, map_id: int, data: dict) -> dict:
+    """숫자 ID로 로봇 맵 부분 수정 — PATCH /maps/{id}"""
+    return _patch(ip, secret, f"/maps/{map_id}", data)
+
+
 # ── /chassis ──────────────────────────────────────────────────
 
 def set_chassis_pose(ip: str, secret: str, data: dict) -> dict:
     return _post(ip, secret, "/chassis/pose", data)
+
+
+def set_current_map(ip: str, secret: str, data: dict) -> dict:
+    """현재 지도 설정 — POST /chassis/current-map {map_id: ...}"""
+    return _post(ip, secret, "/chassis/current-map", data)
 
 
 # ── /mappings ─────────────────────────────────────────────────

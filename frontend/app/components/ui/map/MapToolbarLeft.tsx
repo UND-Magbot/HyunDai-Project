@@ -3,9 +3,9 @@
 import type { MapTool, MapToolbarLeftProps } from "@/lib/types/map";
 
 const tools: { key: MapTool; icon: string; label: string }[] = [
-  { key: "line", icon: "╱", label: "Line" },
-  { key: "point", icon: "●", label: "Point" },
-  { key: "del", icon: "✕", label: "Del" },
+  { key: "line", icon: "╱", label: "라인" },
+  { key: "point", icon: "●", label: "포인트" },
+  { key: "del", icon: "✕", label: "삭제" },
 ];
 
 export function MapToolbarLeft({ activeTool, onToolChange }: MapToolbarLeftProps) {

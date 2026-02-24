@@ -1,4 +1,5 @@
 import asyncio
+import math
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -13,6 +14,7 @@ STATIC_MAPS_DIR.mkdir(parents=True, exist_ok=True)
 
 from app.database import get_db
 from app.models.robot import Robot
+from app.models.map import RobotMap
 from app.routers.robot import ROBOTS
 from app.crud.map import (
     get_businesses,
@@ -27,6 +29,7 @@ from app.crud.map import (
     delete_map as crud_delete_map,
     save_map_elements,
     get_map_elements,
+    get_charging_pois,
 )
 from app.robot_api.robot_map_service import (
     RobotWSRelay,
@@ -36,6 +39,9 @@ from app.robot_api.robot_map_service import (
     update_map,
     delete_map,
     patch_map,
+    get_map_by_id as get_robot_map_by_id,
+    delete_map_by_id,
+    patch_map_by_id,
     get_mappings,
     get_mapping_by_id,
     create_mapping,
@@ -48,6 +54,7 @@ from app.robot_api.robot_map_service import (
     delete_current_mapping,
     patch_current_mapping,
     set_chassis_pose,
+    set_current_map,
 )
 
 router = APIRouter(prefix="/api/map", tags=["맵 관리"])
@@ -86,6 +93,95 @@ def _proxy(func, *args, **kwargs) -> Any:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"로봇 API 호출 실패: {type(exc).__name__}: {exc}",
         )
+
+
+def _update_robots_area(db: Session, area_id: str):
+    """연결 가능한 모든 로봇의 area_id를 업데이트한다."""
+    robots = db.query(Robot).filter(Robot.is_active == True).all()
+    for robot in robots:
+        if not robot.ip_address:
+            continue
+        try:
+            res = http_requests.get(
+                f"http://{robot.ip_address}:8090/device/info",
+                headers={"Secret": _find_secret(robot.ip_address)} if robot.ip_address in [r["ip"] for r in ROBOTS] else {},
+                timeout=3,
+            )
+            res.raise_for_status()
+            robot.area_id = area_id
+            print(f"[save_map] 로봇 {robot.serial_number} area_id={area_id} 업데이트")
+        except Exception:
+            print(f"[save_map] 로봇 {robot.serial_number} ({robot.ip_address}) 연결 불가 → 건너뜀")
+    db.commit()
+
+
+DOCKING_OFFSET = 0.9  # 충전소에서 도킹 포인트까지의 거리 (m)
+
+
+def _build_charging_overlay_features(charging_pois: list) -> list[dict]:
+    """충전소 POI 목록을 로봇 오버레이용 GeoJSON Feature 리스트로 변환.
+
+    각 충전소마다 2개의 Feature를 생성:
+    - 충전소 (type "9"): 충전기 위치
+    - 도킹 포인트 (type "36"): 로봇이 도킹하는 위치 (충전소 yaw 방향 0.9m 앞)
+    """
+    features = []
+    for poi in charging_pois:
+        charger_id = uuid.uuid4().hex[:24]
+        docking_id = uuid.uuid4().hex[:24]
+
+        # angle: DB에 radian 저장 → degree 문자열로 변환
+        yaw_deg = 0.0
+        if poi.angle is not None:
+            yaw_deg = poi.angle * 180.0 / math.pi
+        charger_yaw = str(int(round(yaw_deg)))  # 정수 문자열 ("180", "90" 등)
+
+        # 도킹 포인트: 충전소 yaw 방향으로 DOCKING_OFFSET만큼 앞
+        yaw_rad = math.radians(yaw_deg)
+        dock_x = poi.world_x + DOCKING_OFFSET * math.cos(yaw_rad)
+        dock_y = poi.world_y + DOCKING_OFFSET * math.sin(yaw_rad)
+        raw_dock_yaw = int(round((yaw_deg + 180) % 360))
+        dock_yaw = str(360 if raw_dock_yaw == 0 else raw_dock_yaw)  # 0° → "360" (1SSS 방식)
+
+        poi_name = poi.name or ""
+
+        # 충전소 Feature (type "9")
+        features.append({
+            "id": charger_id,
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [poi.world_x, poi.world_y],
+            },
+            "properties": {
+                "deviceIds": None,
+                "dockingPointId": docking_id,
+                "mapOverlay": True,
+                "name": poi_name,
+                "subtype": "24v",
+                "type": "9",
+                "yaw": charger_yaw,
+            },
+        })
+
+        # 도킹 포인트 Feature (type "36")
+        features.append({
+            "id": docking_id,
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [dock_x, dock_y],
+            },
+            "properties": {
+                "dockingPointId": charger_id,
+                "mapOverlay": True,
+                "name": f"{poi_name} Docking Point",
+                "type": "36",
+                "yaw": dock_yaw,
+            },
+        })
+
+    return features
 
 
 # ── 로봇 목록 / 연결 확인 ─────────────────────────────────────
@@ -226,10 +322,37 @@ def _download_robot_image(url: str, prefix: str = "map") -> str | None:
         return None
 
 
+def _download_robot_map_data(download_url: str, secret: str | None = None) -> str | None:
+    """로봇 맵 데이터(JSON)를 다운로드하여 로컬에 저장하고, 서버 경로를 반환."""
+    if not download_url:
+        return None
+    try:
+        headers = {"Secret": secret} if secret else {}
+        res = http_requests.get(download_url, headers=headers, timeout=30)
+        res.raise_for_status()
+        filename = f"map_data_{uuid.uuid4().hex[:12]}.json"
+        filepath = STATIC_MAPS_DIR / filename
+        filepath.write_bytes(res.content)
+        return f"/static/maps/{filename}"
+    except Exception:
+        return None
+
+
 @router.post("/maps/save", status_code=201)
 def api_save_map(body: dict, db: Session = Depends(get_db)):
     """매핑 종료 후 결과를 DB에 저장.
-    이미지를 로봇에서 다운로드하여 로컬 서버에 저장한 뒤 경로를 DB에 기록."""
+    이미지·맵 데이터를 로봇에서 다운로드하여 로컬 서버에 저장한 뒤 경로를 DB에 기록."""
+    # 로봇 secret 조회 (download_url에 필요)
+    robot_secret = None
+    download_url = body.get("download_url")
+    if download_url:
+        try:
+            from urllib.parse import urlparse
+            robot_ip = urlparse(download_url).hostname
+            robot_secret = _find_secret(robot_ip)
+        except Exception:
+            pass
+
     # 로봇 URL → 로컬 서버 파일로 다운로드
     if body.get("image_url"):
         local_path = _download_robot_image(body["image_url"], "map_img")
@@ -241,7 +364,20 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
         if local_path:
             body["thumbnail_url"] = local_path
 
-    return save_robot_map(db, body)
+    # 맵 데이터(JSON) 다운로드 저장
+    if download_url:
+        local_data_path = _download_robot_map_data(download_url, robot_secret)
+        if local_data_path:
+            body["download_url"] = local_data_path
+
+    result = save_robot_map(db, body)
+
+    # 맵 저장 성공 시, 연결 가능한 모든 로봇의 area_id 업데이트
+    area_id = body.get("area_id")
+    if area_id:
+        _update_robots_area(db, str(area_id))
+
+    return result
 
 
 @router.get("/areas/{area_id}/maps")
@@ -261,6 +397,135 @@ def api_get_map_detail(map_id: int, db: Session = Depends(get_db)):
 def api_delete_saved_map(map_id: int, db: Session = Depends(get_db)):
     """맵 비활성화"""
     return crud_delete_map(db, map_id)
+
+
+@router.post("/maps/{map_id}/sync-to-robot")
+def api_sync_map_to_robot(map_id: int, body: dict, db: Session = Depends(get_db)):
+    """DB에 저장된 맵 데이터를 대상 로봇에 업로드하고 현재 지도로 설정.
+    body: { robot_ip: str, area_name: str }
+    """
+    import json as _json
+
+    robot_ip = body.get("robot_ip")
+    area_name = body.get("area_name", "synced-map")
+    if not robot_ip:
+        raise HTTPException(status_code=400, detail="robot_ip는 필수입니다.")
+
+    secret = _find_secret(robot_ip)
+
+    # DB에서 맵 조회
+    rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
+    if not rm:
+        raise HTTPException(status_code=404, detail="맵을 찾을 수 없습니다.")
+
+    # 로컬에 저장된 맵 데이터 파일 읽기
+    download_path = rm.download_url
+    if not download_path or not download_path.startswith("/static/"):
+        raise HTTPException(status_code=400, detail="맵 데이터 파일이 로컬에 저장되어 있지 않습니다. 매핑을 다시 저장해주세요.")
+
+    filepath = STATIC_MAPS_DIR.parent.parent / download_path.lstrip("/")
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail=f"맵 데이터 파일을 찾을 수 없습니다: {download_path}")
+
+    map_data = _json.loads(filepath.read_text(encoding="utf-8"))
+    map_data["map_name"] = area_name
+
+    # 1) 로봇에 이미 같은 이름의 맵이 있는지 확인
+    overlay_synced = False
+    overlay_error = None
+    robot_map_id = None
+    try:
+        maps_list = get_maps(robot_ip, secret)
+        if isinstance(maps_list, list):
+            target = next((m for m in maps_list if m.get("map_name") == area_name), None)
+        else:
+            target = None
+        if target:
+            robot_map_id = target["id"]
+            print(f"[sync] 기존 맵 재사용: id={robot_map_id}")
+    except Exception:
+        pass
+
+    # 3) 없으면 새로 업로드
+    if robot_map_id is None:
+        try:
+            result = create_map(robot_ip, secret, map_data)
+            robot_map_id = result.get("id")
+            print(f"[sync] 맵 생성 완료: id={robot_map_id}")
+        except Exception as e:
+            print(f"[sync] 맵 생성 실패: {e}")
+
+    if robot_map_id is None:
+        raise HTTPException(status_code=502, detail="로봇에 맵을 업로드할 수 없습니다.")
+
+    # 4) 충전소 오버레이 PATCH (set_current_map 전에 수행)
+    try:
+        charging_pois = get_charging_pois(db, map_id)
+        if charging_pois:
+            new_features = _build_charging_overlay_features(charging_pois)
+            print(f"[sync] 충전소 POI {len(charging_pois)}개 → Feature {len(new_features)}개 생성")
+
+            # 기존 오버레이 가져오기
+            existing = get_robot_map_by_id(robot_ip, secret, robot_map_id)
+            raw_overlays = existing.get("overlays")
+            if isinstance(raw_overlays, str):
+                overlay_data = _json.loads(raw_overlays)
+            elif isinstance(raw_overlays, dict):
+                overlay_data = raw_overlays
+            else:
+                overlay_data = {"type": "FeatureCollection", "features": []}
+
+            # 기존 충전소(type "9") 및 도킹(type "36") 피처 제거 후 새로 추가
+            old_features = [
+                f for f in overlay_data.get("features", [])
+                if f.get("properties", {}).get("type") not in ("9", "36")
+            ]
+            overlay_data["features"] = old_features + new_features
+
+            # PATCH (overlays는 JSON 문자열로 전송)
+            patch_result = patch_map_by_id(
+                robot_ip, secret, robot_map_id,
+                {"overlays": _json.dumps(overlay_data)}
+            )
+            overlay_synced = True
+            print(f"[sync] 오버레이 PATCH 완료: {patch_result}")
+        else:
+            print("[sync] 충전소 POI 없음 → 오버레이 건너뜀")
+    except Exception as e:
+        overlay_error = str(e)
+        print(f"[sync] 오버레이 처리 실패 (맵 동기화는 계속): {e}")
+
+    # 5) 현재 지도 설정
+    try:
+        result = set_current_map(robot_ip, secret, {"map_id": robot_map_id})
+        print(f"[sync] 현재 지도 설정: {result}")
+    except Exception as e:
+        print(f"[sync] 현재 지도 설정 실패: {e}")
+
+    return {
+        "message": "맵 동기화 완료",
+        "robot_ip": robot_ip,
+        "robot_map_id": robot_map_id,
+        "overlay_synced": overlay_synced,
+        "overlay_error": overlay_error,
+    }
+
+
+@router.get("/{robot_ip}/maps/{robot_map_id}/detail")
+def api_get_robot_map_detail(robot_ip: str, robot_map_id: int):
+    """로봇에 저장된 맵 상세 정보 조회 (overlays 확인용)"""
+    import json as _json
+    secret = _find_secret(robot_ip)
+    detail = get_robot_map_by_id(robot_ip, secret, robot_map_id)
+
+    # overlays가 문자열이면 파싱해서 보기 좋게 반환
+    raw = detail.get("overlays")
+    if isinstance(raw, str):
+        try:
+            detail["overlays"] = _json.loads(raw)
+        except Exception:
+            pass
+    return detail
 
 
 # ── 맵 요소 (POI·라인) 저장 / 조회 ──────────────────────────
@@ -340,9 +605,15 @@ def api_patch_robot_map(robot_ip: str, map_name: str, body: dict):
 @router.post("/{robot_ip}/chassis/pose")
 def api_set_chassis_pose(robot_ip: str, body: dict):
     """로봇 포즈(위치·방향) 설정"""
-    body["adjust_position"] = True
     secret = _find_secret(robot_ip)
     return _proxy(set_chassis_pose, robot_ip, secret, body)
+
+
+@router.post("/{robot_ip}/chassis/current-map")
+def api_set_current_map(robot_ip: str, body: dict):
+    """현재 지도 설정 — {map_id: N}"""
+    secret = _find_secret(robot_ip)
+    return _proxy(set_current_map, robot_ip, secret, body)
 
 
 # ── 로봇 프록시: /mappings ───────────────────────────────────
