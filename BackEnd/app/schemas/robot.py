@@ -76,6 +76,7 @@ class RobotResponse(BaseModel):
     min_battery: int
     is_active: bool
     business_id: Optional[str] = None
+    area_id: Optional[str] = None
     status: Optional[RobotStatusResponse]
     created_at: datetime
     updated_at: datetime

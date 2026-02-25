@@ -4,8 +4,6 @@ export type RunState = "EXECUTING" | "IDLE" | "CHARGING";
 
 export type OnlineStatus = "Online" | "Offline";
 
-export type EnableStatus = "Enable" | "Disabled";
-
 export type RobotDevice = {
   id: string;
   sn: string;
@@ -29,7 +27,6 @@ export type RobotFilterState = {
   model: string;
   runState: RunState | "";
   online: OnlineStatus | "";
-  enable: EnableStatus | "";
 };
 
 export type RobotFilterProps = {

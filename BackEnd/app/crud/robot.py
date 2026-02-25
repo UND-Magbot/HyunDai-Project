@@ -42,6 +42,7 @@ def _to_response(robot: Robot) -> RobotResponse:
         min_battery=robot.min_battery,
         is_active=robot.is_active,
         business_id=robot.business_id,
+        area_id=robot.area_id,
         status=_status_to_response(robot.status) if robot.status else None,
         created_at=robot.created_at,
         updated_at=robot.updated_at,
@@ -99,10 +100,13 @@ def get_robots(
     skip: int = 0,
     limit: int = 100,
     business_id: str | None = None,
+    area_id: str | None = None,
 ) -> list[RobotResponse]:
     query = db.query(Robot).filter(Robot.is_active == True)
     if business_id is not None:
         query = query.filter(Robot.business_id == business_id)
+    if area_id is not None:
+        query = query.filter(Robot.area_id == area_id)
     robots = query.offset(skip).limit(limit).all()
     return [_to_response(r) for r in robots]
 

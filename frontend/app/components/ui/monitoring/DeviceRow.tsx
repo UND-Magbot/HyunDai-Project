@@ -25,6 +25,9 @@ export function DeviceRow({
   const canNav = !isOffline && !isInvalidOnlineDisable;
   const canInfo = !isInvalidOnlineDisable;
 
+  const batteryNum = parseFloat(battery);
+  const isBatteryLow = Number.isFinite(batteryNum) && batteryNum <= 30;
+
   return (
     <div
       className={`device-row${expanded ? " device-row--expanded" : ""}`}
@@ -37,7 +40,7 @@ export function DeviceRow({
       >
         <span className="device-row__cell device-row__cell--robot">{name}</span>
         <span className={`device-row__cell device-row__cell--power power--${power}`}>{power}</span>
-        <span className="device-row__cell device-row__cell--battery">
+        <span className={`device-row__cell device-row__cell--battery${isBatteryLow ? " battery--danger" : ""}`}>
           {battery}
         </span>
         <span className="device-row__cell device-row__cell--status">

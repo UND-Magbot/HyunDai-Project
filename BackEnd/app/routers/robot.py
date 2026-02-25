@@ -70,10 +70,11 @@ def api_get_robots(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     business_id: str | None = Query(None),
+    area_id: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """로봇 목록 조회"""
-    items = get_robots(db, skip=skip, limit=limit, business_id=business_id)
+    items = get_robots(db, skip=skip, limit=limit, business_id=business_id, area_id=area_id)
     return RobotListResponse(total=len(items), items=items)
 
 

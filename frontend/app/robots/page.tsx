@@ -32,7 +32,6 @@ const defaultFilters: RobotFilterState = {
   model: "",
   runState: "",
   online: "",
-  enable: "",
 };
 
 function applyFilters(
@@ -54,10 +53,6 @@ function applyFilters(
     if (filters.online) {
       const isOnline = filters.online === "Online";
       if (d.online !== isOnline) return false;
-    }
-    if (filters.enable) {
-      const isEnabled = filters.enable === "Enable";
-      if (d.enable !== isEnabled) return false;
     }
     return true;
   });
@@ -293,7 +288,7 @@ export default function RobotsPage() {
                 다음
               </button>
               <span className="pagination__info">
-                {displayDevices.length} 개
+                총 {displayDevices.length} 개
               </span>
             </div>
           </div>

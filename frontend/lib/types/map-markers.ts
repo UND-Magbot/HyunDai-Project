@@ -43,3 +43,19 @@ export type VirtualWallData = {
   start: MapPixelCoord;
   end: MapPixelCoord;
 };
+
+export type MonitoringMapProps = {
+  mapSrc: string;
+  pois: PoiMarkerData[];
+  waypoints: WaypointMarkerData[];
+  routeWaypoints: WaypointMarkerData[];
+  routeSegments?: RouteSegment[];
+  robots: RobotMarkerData[];
+  virtualWalls: VirtualWallData[];
+  showMapBackground: boolean;
+  showNavigationLine: boolean;
+  showDirectionArrows: boolean;
+  showVirtualWalls: boolean;
+  showNavigationNodes: boolean;
+  showPoiMarkers: boolean;
+};

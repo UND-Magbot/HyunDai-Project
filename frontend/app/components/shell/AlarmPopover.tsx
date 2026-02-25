@@ -41,6 +41,7 @@ export function AlarmPopover({
   const [searchOpen, setSearchOpen] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [keyword, setKeyword] = useState("");
+  const [appliedKeyword, setAppliedKeyword] = useState("");
   const [readAlarmIds, setReadAlarmIds] = useState<Set<string>>(new Set());
   const triggerRef = useRef<HTMLDivElement>(null);
 
@@ -108,19 +109,24 @@ export function AlarmPopover({
     };
   }, [open, handleClose]);
 
+  const handleSearchKeyword = useCallback(() => {
+    setAppliedKeyword(keyword);
+  }, [keyword]);
+
   const displayAlarms = useMemo(() => {
     let filtered = todayAlarms.filter((a) => !readAlarmIds.has(a.id));
-    if (keyword) {
-      const k = keyword.toLowerCase();
+    if (appliedKeyword) {
+      const k = appliedKeyword.toLowerCase();
       filtered = filtered.filter(
         (a) =>
           a.message.toLowerCase().includes(k) ||
           a.code.toLowerCase().includes(k) ||
-          a.robotSn.toLowerCase().includes(k)
+          a.robotSn.toLowerCase().includes(k) ||
+          (ALARM_ERROR_TYPE_LABELS[a.errorType] ?? "").includes(k)
       );
     }
     return filtered;
-  }, [todayAlarms, readAlarmIds, keyword]);
+  }, [todayAlarms, readAlarmIds, appliedKeyword]);
 
   const noAlarms = displayAlarms.length === 0;
 
@@ -174,14 +180,16 @@ export function AlarmPopover({
                 <input
                   type="text"
                   className="alarm-popover__search-input"
-                  placeholder="오류 메시지, 오류코드, 로봇 SN 검색"
+                  placeholder="오류 메시지, 오류코드, 로봇 SN"
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSearchKeyword(); }}
                 />
                 <IconButton
                   className="alarm-popover__toolbar-btn"
                   variant="ghost"
                   aria-label="검색"
+                  onClick={handleSearchKeyword}
                 >
                   <img
                     src="/icon/search.png"
@@ -234,7 +242,11 @@ export function AlarmPopover({
                   const errorLabel =
                     ALARM_ERROR_TYPE_LABELS[alarm.errorType];
                   const severity =
-                    alarm.status === "Warning" ? "warning" : "info";
+                    alarm.errorType === "network"
+                      ? "error"
+                      : alarm.errorType === "battery"
+                        ? "warning"
+                        : "info";
 
                   return (
                     <div

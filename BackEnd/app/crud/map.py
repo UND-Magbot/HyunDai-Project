@@ -14,6 +14,10 @@ def get_businesses(db: Session) -> list[dict]:
         {
             "business_id": b.business_id,
             "name": b.name,
+            "areas": [
+                {"area_id": a.area_id, "name": a.name}
+                for a in b.areas if a.is_active
+            ],
             "created_at": b.created_at,
             "updated_at": b.updated_at,
         }

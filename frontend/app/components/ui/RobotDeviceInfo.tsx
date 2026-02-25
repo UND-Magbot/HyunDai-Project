@@ -212,15 +212,15 @@ export function RobotDeviceInfo({
             </div>
             <div className="robot-info__field">
               <span className="robot-info__label">배터리</span>
-              <span className="robot-info__value">{renderPower()}</span>
+              <span className="robot-info__value">{renderPower()}{!showChargingStation && "%"}</span>
             </div>
             <div className="robot-info__field">
               <span className="robot-info__label">Signal</span>
               <span className="robot-info__value">
-                {device.signal != null ? `${device.signal}` : "-"}
+                {device.signal != null ? `${device.signal}${!showChargingStation ? "%" : ""}` : "-"}
               </span>
             </div>
-            <div className="robot-info__field">
+            {/* <div className="robot-info__field">
               <span className="robot-info__label">활성 상태</span>
               <label className="robot-info__toggle">
                 <input
@@ -231,7 +231,7 @@ export function RobotDeviceInfo({
                 />
                 <span className="robot-info__toggle-slider" />
               </label>
-            </div>
+            </div> */}
           </div>
 
           <div className="robot-info__battery-row">
@@ -248,6 +248,16 @@ export function RobotDeviceInfo({
               }}
             />
             <span className="robot-info__range-value">{minBattery}%</span>
+            {!showChargingStation && (
+              <button
+                type="button"
+                className="robot-info__apply-btn"
+                disabled={!isChanged || isApplying}
+                onClick={handleApply}
+              >
+                {isApplying ? "적용 중..." : "적용"}
+              </button>
+            )}
           </div>
 
           {showChargingStation && (

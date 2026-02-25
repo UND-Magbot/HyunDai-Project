@@ -34,6 +34,15 @@ import { Panel } from "../components/ui/Panel";
 import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { TopBar } from "../components/shell/TopBar";
 import { MonitoringMapCanvas } from "../components/ui/monitoring/MonitoringMapCanvas";
+import dynamic from "next/dynamic";
+
+const MonitoringMap3D = dynamic(
+  () =>
+    import("../components/ui/monitoring/MonitoringMap3D").then((mod) => ({
+      default: mod.MonitoringMap3D,
+    })),
+  { ssr: false, loading: () => <div className="monitoring-map3d-loading">Loading 3D...</div> }
+);
 import {
   mockVirtualWalls,
 } from "@/lib/mock/mapMarkers";
@@ -47,6 +56,7 @@ import type { MapMeta } from "@/lib/types/map";
 type BusinessItem = {
   business_id: number;
   name: string;
+  areas: { area_id: number; name: string }[];
 };
 
 type AreaItem = {
@@ -107,6 +117,7 @@ type ApiRobotFull = {
   min_battery: number;
   is_active: boolean;
   business_id: string | null;
+  area_id: string | null;
   status: ApiRobotStatus | null;
   created_at: string;
   updated_at: string;
@@ -206,7 +217,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [apiWaypoints, setApiWaypoints] = useState<WaypointMarkerData[]>([]);
   const [apiRouteWaypoints, setApiRouteWaypoints] = useState<WaypointMarkerData[]>([]);
   const [apiRouteSegments, setApiRouteSegments] = useState<RouteSegment[]>([]);
-  const initialLoadRef = useRef(true);
+
 
   // 로봇 실시간 위치 (다중 로봇)
   const [mapMeta, setMapMeta] = useState<MapMeta>({
@@ -241,7 +252,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       .catch(() => {});
   }, []);
 
-  // ── Business 변경 시 영역 목록 로드 ──
+  // ── Business 변경 시 영역 목록 (apiBusinesses에서 직접 추출) ──
   useEffect(() => {
     if (!selectedBusiness) {
       setAreas([]);
@@ -252,27 +263,18 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
     setAreaMaps([]);
     setMapSrc("");
-    apiFetch<{ total: number; items: AreaItem[] }>(
-      `/api/map/businesses/${selectedBusiness}/areas`
-    )
-      .then((data) => {
-        setAreas(data.items);
-        if (initialLoadRef.current) {
-          const defaultArea = data.items.find((a) => a.name === "area-O002");
-          if (defaultArea) {
-            setSelectedArea(String(defaultArea.area_id));
-            initialLoadRef.current = false;
-            return;
-          }
-        }
-        if (data.items.length > 0) {
-          setSelectedArea(String(data.items[0].area_id));
-        } else {
-          setSelectedArea("");
-        }
-      })
-      .catch(() => setAreas([]));
-  }, [selectedBusiness]);
+
+    const biz = apiBusinesses.find((b) => String(b.business_id) === selectedBusiness);
+    const bizAreas = biz?.areas ?? [];
+    setAreas(bizAreas.map((a) => ({ area_id: a.area_id, name: a.name })));
+
+    const defaultArea = bizAreas.find((a) => a.name === "area-O002");
+    if (defaultArea) {
+      setSelectedArea(String(defaultArea.area_id));
+    } else {
+      setSelectedArea("");
+    }
+  }, [selectedBusiness, apiBusinesses]);
 
   // ── Area 변경 시 맵 목록 로드 및 첫 번째 맵 이미지 + 요소 로드 ──
   useEffect(() => {
@@ -448,31 +450,29 @@ export function MonitoringClient({ initialDateTime }: Props) {
     setApiRouteSegments(segments);
   }, [rawApiElements, mapImageSize]);
 
-  // 사업장 PK → Robot.business_id 매핑 (하드코딩)
-  const BUSINESS_VALUE_MAP: Record<string, string> = {
-    "1": "68271f2a4fd0c6e755addf12", // 구미 본사
-  };
-
   // API 사업장 → BusinessSelectBox 형식 변환
   const businessesForSelectBox: Business[] = useMemo(
-    () => apiBusinesses.map((b) => ({
-      id: String(b.business_id),
-      name: b.name,
-      value: BUSINESS_VALUE_MAP[String(b.business_id)],
-    })),
+    () => apiBusinesses.map((b) => {
+      const defaultArea = b.areas?.find((a) => a.name === "area-O002");
+      return {
+        id: String(b.business_id),
+        name: b.name,
+        value: defaultArea ? String(defaultArea.area_id) : "",
+      };
+    }),
     [apiBusinesses]
   );
 
-  // 선택된 사업장의 value (Robot.business_id 필터용)
-  const selectedBusinessValue = useMemo(() => {
-    const biz = businessesForSelectBox.find((b) => b.id === selectedBusiness);
-    return biz?.value ?? selectedBusiness;
-  }, [businessesForSelectBox, selectedBusiness]);
-
-  // ── 로봇 목록 API 로드 ──
-  // TODO: DB business_id 정리 후 selectedBusinessValue 필터 복원
+  // ── 로봇 목록 API 로드 (selectedArea 기반) ──
   useEffect(() => {
-    apiFetch<{ total: number; items: ApiRobotFull[] }>("/api/robots")
+    if (!selectedArea) {
+      setApiRobotsFull([]);
+      setApiRobots([]);
+      return;
+    }
+    apiFetch<{ total: number; items: ApiRobotFull[] }>(
+      `/api/robots?area_id=${selectedArea}`
+    )
       .then((data) => {
         setApiRobotsFull(data.items);
         setApiRobots(
@@ -489,7 +489,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
         setApiRobotsFull([]);
         setApiRobots([]);
       });
-  }, []);
+  }, [selectedArea]);
 
   // ── 다중 로봇 실시간 위치 WS 연결 ──
   useEffect(() => {
@@ -877,7 +877,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
                   </button>
                 </div>
                 <SearchInput
-                  placeholder="로봇명을 입력하세요."
+                  placeholder="로봇 명"
                   onSearch={setDeviceSearch}
                 />
               </>
@@ -926,7 +926,21 @@ export function MonitoringClient({ initialDateTime }: Props) {
                 onChange={setSelectedBusiness}
               />
               {mapMode === "3d" ? (
-                "Map (3D View)"
+                <MonitoringMap3D
+                  mapSrc={mapSrc}
+                  pois={apiPois}
+                  waypoints={renderedWaypoints}
+                  routeWaypoints={routeWaypoints}
+                  routeSegments={routeSegments}
+                  robots={simulatedRobots}
+                  virtualWalls={mockVirtualWalls}
+                  showMapBackground={showMapBackground}
+                  showNavigationLine={showNavigationLine}
+                  showDirectionArrows={showDirectionArrows}
+                  showVirtualWalls={showVirtualWalls}
+                  showNavigationNodes={showNavigationNodes}
+                  showPoiMarkers={showPoiMarkers}
+                />
               ) : (
                 <MonitoringMapCanvas
                   mapSrc={mapSrc}

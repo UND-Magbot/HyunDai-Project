@@ -33,8 +33,31 @@ export function RobotMarker({ data, leftPercent, topPercent }: Props) {
       style={style}
     >
       <div className="map-marker__body" aria-hidden="true">
-        <div className="map-marker__robot-triangle" />
-        <div className="map-marker__robot-ring" />
+        <svg
+          className="map-marker__robot-icon"
+          width="22"
+          height="22"
+          viewBox="0 0 22 22"
+        >
+          {/* 바디 (둥근 직사각형) */}
+          <rect
+            x="1"
+            y="0"
+            width="20"
+            height="22"
+            rx="3"
+            className="map-marker__robot-body"
+          />
+          {/* LED 스트립 (우측) */}
+          <rect
+            x="18"
+            y="2"
+            width="2.5"
+            height="18"
+            rx="1"
+            className="map-marker__robot-led"
+          />
+        </svg>
       </div>
       <span className="map-marker__label">{data.robotName}</span>
     </div>

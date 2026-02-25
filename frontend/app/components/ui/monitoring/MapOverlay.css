@@ -122,43 +122,51 @@
 }
 
 .map-marker--robot .map-marker__body {
-  position: relative;
-  width: 24px;
-  height: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   rotate: var(--robot-yaw, 0deg);
+  transform-origin: center 33px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
 }
 
-.map-marker--robot .map-marker__robot-triangle {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  translate: -50% 0;
+.map-marker--robot .map-marker__body::before {
+  content: "";
   width: 0;
   height: 0;
-  border-left: 11px solid transparent;
-  border-right: 11px solid transparent;
-  border-bottom: 18px solid #30d99a;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
+  border-left: 14px solid transparent;
+  border-right: 14px solid transparent;
+  border-bottom: 20px solid #42d8ff;
 }
 
-.map-marker--robot .map-marker__robot-ring {
-  position: absolute;
-  top: -2px;
-  left: 13px;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  background: #0a1640;
-  border: 3px solid #3d62ff;
-  box-shadow: 0 0 6px rgba(61, 98, 255, 0.55);
+.map-marker__robot-icon {
+  display: block;
 }
 
-.map-marker--robot-warning .map-marker__robot-triangle {
-  border-bottom-color: #ffba24;
+.map-marker__robot-body {
+  fill: #d8dce4;
+  stroke: #8a9bb0;
+  stroke-width: 1;
 }
 
-.map-marker--robot-error .map-marker__robot-triangle {
-  border-bottom-color: #ff5757;
+.map-marker__robot-led {
+  fill: #42d8ff;
+  filter: drop-shadow(0 0 4px rgba(66, 216, 255, 0.7));
+}
+
+.map-marker__robot-dir {
+  fill: #42d8ff;
+  stroke: rgba(0, 0, 0, 0.45);
+  stroke-width: 0.8;
+  filter: drop-shadow(0 0 3px rgba(66, 216, 255, 0.6));
+}
+
+.map-marker__robot-stem {
+  stroke: #42d8ff;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(66, 216, 255, 0.6));
 }
 
 .map-marker--robot .map-marker__label {
@@ -167,18 +175,84 @@
   font-weight: 700;
 }
 
-.map-marker--robot-near_miss .map-marker__robot-ring {
-  border-color: #ffbf2d;
-  box-shadow: 0 0 8px rgba(255, 191, 45, 0.7);
+/* Status: warning → LED amber */
+.map-marker--robot-warning .map-marker__robot-led {
+  fill: #ffba24;
+  filter: drop-shadow(0 0 4px rgba(255, 186, 36, 0.7));
 }
 
-.map-marker--robot-collision .map-marker__robot-ring {
-  border-color: #ff4343;
-  box-shadow: 0 0 10px rgba(255, 67, 67, 0.9);
+.map-marker--robot-warning .map-marker__body::before {
+  border-bottom-color: #ffba24;
 }
 
-.map-marker--robot-collision .map-marker__robot-triangle {
-  border-bottom-color: #ff6363;
+.map-marker--robot-warning .map-marker__robot-dir {
+  fill: #ffba24;
+  filter: drop-shadow(0 0 3px rgba(255, 186, 36, 0.6));
+}
+
+.map-marker--robot-warning .map-marker__robot-stem {
+  stroke: #ffba24;
+  filter: drop-shadow(0 0 2px rgba(255, 186, 36, 0.5));
+}
+
+/* Status: error → LED red */
+.map-marker--robot-error .map-marker__robot-led {
+  fill: #ff5757;
+  filter: drop-shadow(0 0 4px rgba(255, 87, 87, 0.7));
+}
+
+.map-marker--robot-error .map-marker__body::before {
+  border-bottom-color: #ff5757;
+}
+
+.map-marker--robot-error .map-marker__robot-dir {
+  fill: #ff5757;
+  filter: drop-shadow(0 0 3px rgba(255, 87, 87, 0.6));
+}
+
+.map-marker--robot-error .map-marker__robot-stem {
+  stroke: #ff5757;
+  filter: drop-shadow(0 0 2px rgba(255, 87, 87, 0.5));
+}
+
+/* Collision: near_miss → LED amber */
+.map-marker--robot-near_miss .map-marker__robot-led {
+  fill: #ffbf2d;
+  filter: drop-shadow(0 0 6px rgba(255, 191, 45, 0.8));
+}
+
+.map-marker--robot-near_miss .map-marker__body::before {
+  border-bottom-color: #ffbf2d;
+}
+
+.map-marker--robot-near_miss .map-marker__robot-dir {
+  fill: #ffbf2d;
+  filter: drop-shadow(0 0 3px rgba(255, 191, 45, 0.6));
+}
+
+.map-marker--robot-near_miss .map-marker__robot-stem {
+  stroke: #ffbf2d;
+  filter: drop-shadow(0 0 2px rgba(255, 191, 45, 0.5));
+}
+
+/* Collision: collision → LED red */
+.map-marker--robot-collision .map-marker__robot-led {
+  fill: #ff4343;
+  filter: drop-shadow(0 0 8px rgba(255, 67, 67, 0.9));
+}
+
+.map-marker--robot-collision .map-marker__body::before {
+  border-bottom-color: #ff4343;
+}
+
+.map-marker--robot-collision .map-marker__robot-dir {
+  fill: #ff4343;
+  filter: drop-shadow(0 0 3px rgba(255, 67, 67, 0.6));
+}
+
+.map-marker--robot-collision .map-marker__robot-stem {
+  stroke: #ff4343;
+  filter: drop-shadow(0 0 2px rgba(255, 67, 67, 0.5));
 }
 
 .map-marker--poi .map-marker__label {

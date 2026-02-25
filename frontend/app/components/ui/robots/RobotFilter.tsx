@@ -77,21 +77,6 @@ export function RobotFilter({
         </select>
       </div>
 
-      <div className="robot-filter__field">
-        <label className="robot-filter__label">활성 상태</label>
-        <select
-          className="robot-filter__select"
-          value={filters.enable}
-          onChange={(e) =>
-            update({ enable: e.target.value as RobotFilterState["enable"] })
-          }
-        >
-          <option value="">전체</option>
-          <option value="Enable">활성</option>
-          <option value="Disabled">비활성</option>
-        </select>
-      </div>
-
       <button type="button" className="btn btn--primary" onClick={onSearch}>
         조회
       </button>

@@ -29,7 +29,7 @@ export function AlarmSearchFilter({
             <input
               type="text"
               className="alarm-search-filter__input"
-              placeholder="오류 메시지를 입력하세요."
+              placeholder="오류 메시지"
               value={filters.message}
               onChange={(e) => update({ message: e.target.value })}
               onKeyDown={handleKeyDown}

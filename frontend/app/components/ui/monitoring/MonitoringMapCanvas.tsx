@@ -175,9 +175,95 @@ function removeOutsideBackground(
   }
 
   for (let i = 0; i < visited.length; i++) {
+    const p = i * 4;
     if (visited[i]) {
-      data[i * 4 + 3] = 0;
+      data[p + 3] = 0;
+    } else {
+      // 내부 바닥: 벽(어두운 픽셀)은 유지, 나머지는 채움 (#1e3045)
+      const brightness = (data[p] + data[p + 1] + data[p + 2]) / 3;
+      if (brightness > 50) {
+        data[p] = 30;
+        data[p + 1] = 48;
+        data[p + 2] = 69;
+      }
     }
+  }
+
+  // 경계선 스무딩 — 모폴로지 closing (dilate → erode) 으로 노이즈 제거
+  const smoothed = new Uint8Array(visited);
+  const SMOOTH_R = 3;
+  for (let pass = 0; pass < SMOOTH_R; pass++) {
+    const prev = new Uint8Array(smoothed);
+    for (let i = 0; i < prev.length; i++) {
+      if (prev[i]) continue;
+      const px = i % w;
+      const py = (i - px) / w;
+      if (
+        (py > 0 && prev[i - w]) ||
+        (py < h - 1 && prev[i + w]) ||
+        (px > 0 && prev[i - 1]) ||
+        (px < w - 1 && prev[i + 1])
+      ) {
+        smoothed[i] = 1;
+      }
+    }
+  }
+  for (let pass = 0; pass < SMOOTH_R; pass++) {
+    const prev = new Uint8Array(smoothed);
+    for (let i = 0; i < prev.length; i++) {
+      if (!prev[i]) continue;
+      const px = i % w;
+      const py = (i - px) / w;
+      if (
+        (py > 0 && !prev[i - w]) ||
+        (py < h - 1 && !prev[i + w]) ||
+        (px > 0 && !prev[i - 1]) ||
+        (px < w - 1 && !prev[i + 1])
+      ) {
+        smoothed[i] = 0;
+      }
+    }
+  }
+
+  // 경계선 탐지 — smoothed 기준
+  const border = new Uint8Array(w * h);
+  for (let i = 0; i < smoothed.length; i++) {
+    if (smoothed[i]) continue;
+    const px = i % w;
+    const py = (i - px) / w;
+    if (
+      (py > 0 && smoothed[i - w]) ||
+      (py < h - 1 && smoothed[i + w]) ||
+      (px > 0 && smoothed[i - 1]) ||
+      (px < w - 1 && smoothed[i + 1])
+    ) {
+      border[i] = 1;
+    }
+  }
+
+  // 3px 두께 — 경계 2차 확장
+  const borderFinal = new Uint8Array(border);
+  for (let expand = 0; expand < 2; expand++) {
+    const prev = new Uint8Array(borderFinal);
+    for (let i = 0; i < prev.length; i++) {
+      if (!prev[i]) continue;
+      const px = i % w;
+      const py = (i - px) / w;
+      if (py > 0 && !borderFinal[i - w] && !smoothed[i - w]) borderFinal[i - w] = 1;
+      if (py < h - 1 && !borderFinal[i + w] && !smoothed[i + w]) borderFinal[i + w] = 1;
+      if (px > 0 && !borderFinal[i - 1] && !smoothed[i - 1]) borderFinal[i - 1] = 1;
+      if (px < w - 1 && !borderFinal[i + 1] && !smoothed[i + 1]) borderFinal[i + 1] = 1;
+    }
+  }
+
+  // 경계 픽셀 색상 적용 (#3a6a9a)
+  for (let i = 0; i < borderFinal.length; i++) {
+    if (!borderFinal[i]) continue;
+    const p = i * 4;
+    data[p] = 58;
+    data[p + 1] = 106;
+    data[p + 2] = 154;
+    data[p + 3] = 255;
   }
 
   octx.putImageData(imageData, 0, 0);
@@ -711,7 +797,6 @@ function drawRobot(
 ) {
   const { yaw, robotName, status, collisionState } = robot;
 
-  // CSS rotation formula: -(yaw * 180/PI) + 90
   const rotationDeg = -(yaw * 180) / Math.PI + 90;
   const rotationRad = (rotationDeg * Math.PI) / 180;
 
@@ -722,65 +807,88 @@ function drawRobot(
   ctx.save();
   ctx.rotate(rotationRad);
 
-  const triHalfW = 11 * counterScale;
-  const triH = 18 * counterScale;
+  const s = counterScale;
 
-  // Triangle color
-  let triColor = "#30d99a";
+  // LED / direction accent color
+  let accentColor = "#42d8ff";
+  let glowColor = "rgba(66, 216, 255, 0.7)";
   if (collisionState === "collision") {
-    triColor = "#ff6363";
+    accentColor = "#ff4343";
+    glowColor = "rgba(255, 67, 67, 0.9)";
   } else if (collisionState === "near_miss") {
-    triColor = "#ffba24";
+    accentColor = "#ffbf2d";
+    glowColor = "rgba(255, 191, 45, 0.8)";
   } else if (status === "warning") {
-    triColor = "#ffba24";
+    accentColor = "#ffba24";
+    glowColor = "rgba(255, 186, 36, 0.7)";
   } else if (status === "error") {
-    triColor = "#ff5757";
+    accentColor = "#ff5757";
+    glowColor = "rgba(255, 87, 87, 0.7)";
   }
 
-  // Triangle body (pointing up in local space)
+  // Direction triangle (front indicator)
   ctx.beginPath();
-  ctx.moveTo(0, -triH * 0.5);
-  ctx.lineTo(-triHalfW, triH * 0.5);
-  ctx.lineTo(triHalfW, triH * 0.5);
+  ctx.moveTo(0, -14 * s);
+  ctx.lineTo(-3 * s, -9 * s);
+  ctx.lineTo(3 * s, -9 * s);
   ctx.closePath();
-  ctx.fillStyle = triColor;
+  ctx.fillStyle = accentColor;
+  ctx.fill();
+
+  // Body (rounded rectangle)
+  const bw = 20 * s;
+  const bh = 22 * s;
+  const bx = -bw / 2;
+  const by = -9 * s;
+  const br = 3 * s;
+  ctx.beginPath();
+  ctx.moveTo(bx + br, by);
+  ctx.lineTo(bx + bw - br, by);
+  ctx.arcTo(bx + bw, by, bx + bw, by + br, br);
+  ctx.lineTo(bx + bw, by + bh - br);
+  ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
+  ctx.lineTo(bx + br, by + bh);
+  ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
+  ctx.lineTo(bx, by + br);
+  ctx.arcTo(bx, by, bx + br, by, br);
+  ctx.closePath();
+  ctx.fillStyle = "#d8dce4";
   ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
-  ctx.shadowOffsetY = 2;
-  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 1 * s;
+  ctx.shadowBlur = 3 * s;
   ctx.fill();
   resetShadow(ctx);
-
-  // Beacon ring
-  const ringX = 7 * counterScale;
-  const ringY = -6 * counterScale;
-  const ringOuterR = 6 * counterScale;
-  const ringBorderW = 3 * counterScale;
-
-  let ringBorderColor = "#3d62ff";
-  let ringGlow = "rgba(61, 98, 255, 0.55)";
-  if (collisionState === "near_miss") {
-    ringBorderColor = "#ffbf2d";
-    ringGlow = "rgba(255, 191, 45, 0.7)";
-  } else if (collisionState === "collision") {
-    ringBorderColor = "#ff4343";
-    ringGlow = "rgba(255, 67, 67, 0.9)";
-  }
-
-  ctx.beginPath();
-  ctx.arc(ringX, ringY, ringOuterR, 0, Math.PI * 2);
-  ctx.fillStyle = "#0a1640";
-  ctx.fill();
-  ctx.strokeStyle = ringBorderColor;
-  ctx.lineWidth = ringBorderW;
-  ctx.shadowColor = ringGlow;
-  ctx.shadowBlur = 6 * counterScale;
+  ctx.strokeStyle = "#8a9bb0";
+  ctx.lineWidth = 1 * s;
   ctx.stroke();
+
+  // LED strip (right side)
+  const lx = bx + bw - 3.5 * s;
+  const ly = by + 2 * s;
+  const lw = 2.5 * s;
+  const lh = 18 * s;
+  const lr = 1 * s;
+  ctx.beginPath();
+  ctx.moveTo(lx + lr, ly);
+  ctx.lineTo(lx + lw - lr, ly);
+  ctx.arcTo(lx + lw, ly, lx + lw, ly + lr, lr);
+  ctx.lineTo(lx + lw, ly + lh - lr);
+  ctx.arcTo(lx + lw, ly + lh, lx + lw - lr, ly + lh, lr);
+  ctx.lineTo(lx + lr, ly + lh);
+  ctx.arcTo(lx, ly + lh, lx, ly + lh - lr, lr);
+  ctx.lineTo(lx, ly + lr);
+  ctx.arcTo(lx, ly, lx + lr, ly, lr);
+  ctx.closePath();
+  ctx.fillStyle = accentColor;
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 4 * s;
+  ctx.fill();
   resetShadow(ctx);
 
   ctx.restore(); // undo rotation
 
   // --- Label (not rotated) ---
-  drawMarkerLabel(ctx, 0, 14 * counterScale, robotName, "#42d8ff", counterScale, 700);
+  drawMarkerLabel(ctx, 0, 18 * counterScale, robotName, "#42d8ff", counterScale, 700);
 
   ctx.restore(); // undo translation
 }
@@ -1023,7 +1131,7 @@ export function MonitoringMapCanvas({
     ctx.clearRect(0, 0, logicalW, logicalH);
 
     // Background fill
-    ctx.fillStyle = "#A0A0A0";
+    ctx.fillStyle = "#141e2e";
     ctx.fillRect(0, 0, logicalW, logicalH);
 
     const v = viewRef.current;
@@ -1062,10 +1170,6 @@ export function MonitoringMapCanvas({
         drawDirectionArrows(ctx, data, bounds);
       }
 
-      // Virtual walls
-      if (data.showVirtualWalls) {
-        drawVirtualWalls(ctx, data.virtualWalls, bounds);
-      }
 
       // Waypoint markers
       if (data.showNavigationNodes) {
