@@ -12,6 +12,7 @@ import { RobotConnectModal } from "../components/ui/map/RobotConnectModal";
 import { MappingSetupModal } from "../components/ui/map/MappingSetupModal";
 import { MappingModal } from "../components/ui/map/MappingModal";
 import { MapSyncModal } from "../components/ui/map/MapSyncModal";
+import { MapRelocalizeModal } from "../components/ui/map/MapRelocalizeModal";
 import { POIEditPopup } from "../components/ui/map/POIEditPopup";
 import { LineDirectionPopup } from "../components/ui/map/LineDirectionPopup";
 import { LineEditPopup } from "../components/ui/map/LineEditPopup";
@@ -112,6 +113,7 @@ export default function MapPage() {
   const [floatingPanelOpen, setFloatingPanelOpen] = useState(true);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [relocalizeModalOpen, setRelocalizeModalOpen] = useState(false);
   const [connectedRobot, setConnectedRobot] = useState<ConnectedRobot>(null);
 
   // Mapping flow
@@ -565,20 +567,34 @@ export default function MapPage() {
 
     // currentPos / chargingPile: immediately create POI at robot position
     if ((tool === "currentPos" || tool === "chargingPile") && robotPose && mapMeta && mapMeta.grid_resolution > 0 && mapImageSize) {
+      const isCharging = tool === "chargingPile";
+
+      // 충전소: 로봇 도킹 위치 → 충전소 위치로 변환 (백엔드가 +0.9m, +180° 역산하므로)
+      // 일반 POI: 로봇 현재 위치 그대로 사용
+      const DOCKING_OFFSET = 0.9;
+      const worldX = isCharging
+        ? robotPose.pos[0] + DOCKING_OFFSET * Math.cos(robotPose.ori)
+        : robotPose.pos[0];
+      const worldY = isCharging
+        ? robotPose.pos[1] + DOCKING_OFFSET * Math.sin(robotPose.ori)
+        : robotPose.pos[1];
+      const angle = isCharging
+        ? robotPose.ori - Math.PI
+        : robotPose.ori;
+
       // 월드 좌표 → SVG 좌표 변환 (MapCanvas 로봇 표시와 동일 공식)
-      const ipx = (robotPose.pos[0] - mapMeta.grid_origin_x) / mapMeta.grid_resolution;
-      const ipy = mapImageSize.h - (robotPose.pos[1] - mapMeta.grid_origin_y) / mapMeta.grid_resolution;
+      const ipx = (worldX - mapMeta.grid_origin_x) / mapMeta.grid_resolution;
+      const ipy = mapImageSize.h - (worldY - mapMeta.grid_origin_y) / mapMeta.grid_resolution;
       const svgX = ipx - mapImageSize.w / 2;
       const svgY = ipy - mapImageSize.h / 2;
 
-      const isCharging = tool === "chargingPile";
       const newPOI: POI = {
         id: generateId("poi"),
         x: svgX,
         y: svgY,
         name: isCharging ? `CHARGE${pois.length + 1}` : `CURPOS${pois.length + 1}`,
         type: isCharging ? "charging" : "waypoint",
-        angle: robotPose.ori,
+        angle,
       };
       setPois((prev) => [...prev, newPOI]);
       setEditingPOI(newPOI);
@@ -687,6 +703,7 @@ export default function MapPage() {
     }
     setSyncModalOpen(true);
   };
+  const handleRelocalize = () => setRelocalizeModalOpen(true);
   const handleCreate = () => console.log("Create");
   const handleDelete = () => console.log("Delete");
 
@@ -753,8 +770,10 @@ export default function MapPage() {
               onAreaChange={setSelectedArea}
               onSave={handleSave}
               onSync={handleSync}
+              onRelocalize={handleRelocalize}
               onCreate={handleCreate}
               onDelete={handleDelete}
+              syncDisabled={!selectedMapId || !selectedMappingId}
             />
 
             {/* Map Canvas Area */}
@@ -908,6 +927,12 @@ export default function MapPage() {
               areaName={areas.find((a) => String(a.area_id) === selectedArea)?.name ?? ""}
             />
           )}
+
+          {/* 위치 재조정 Modal */}
+          <MapRelocalizeModal
+            open={relocalizeModalOpen}
+            onClose={() => setRelocalizeModalOpen(false)}
+          />
         </main>
       </div>
     </div>

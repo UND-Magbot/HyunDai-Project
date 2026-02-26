@@ -83,7 +83,8 @@ def get_map(ip: str, secret: str, map_name: str) -> dict:
 
 
 def create_map(ip: str, secret: str, data: dict) -> dict:
-    return _post(ip, secret, "/maps/", data)
+    # 맵 업로드는 Base64 데이터가 크므로 타임아웃을 120초로 설정
+    return _request(ip, secret, "POST", "/maps/", json_data=data, timeout=120)
 
 
 def update_map(ip: str, secret: str, map_name: str, data: dict) -> dict:
@@ -103,6 +104,22 @@ def get_map_by_id(ip: str, secret: str, map_id: int) -> dict:
     return _get(ip, secret, f"/maps/{map_id}")
 
 
+def download_map_binary(ip: str, secret: str, map_id: int) -> bytes:
+    """맵 carto_map 바이너리 다운로드 — GET /maps/{id}/download"""
+    url = f"http://{ip}:{PORT}/maps/{map_id}/download"
+    res = requests.get(url, headers={"Secret": secret}, timeout=30)
+    res.raise_for_status()
+    return res.content
+
+
+def download_map_image(ip: str, secret: str, map_id: int) -> bytes:
+    """맵 occupancy_grid (PNG) 다운로드 — GET /maps/{id}.png"""
+    url = f"http://{ip}:{PORT}/maps/{map_id}.png"
+    res = requests.get(url, headers={"Secret": secret}, timeout=30)
+    res.raise_for_status()
+    return res.content
+
+
 def delete_map_by_id(ip: str, secret: str, map_id: int) -> dict:
     """숫자 ID로 로봇 맵 삭제 — DELETE /maps/{id}"""
     return _delete(ip, secret, f"/maps/{map_id}")
@@ -113,10 +130,58 @@ def patch_map_by_id(ip: str, secret: str, map_id: int, data: dict) -> dict:
     return _patch(ip, secret, f"/maps/{map_id}", data)
 
 
+def update_map_by_id(ip: str, secret: str, map_id: int, data: dict) -> dict:
+    """숫자 ID로 로봇 맵 전체 업데이트 — PUT /maps/{id}
+    carto_map 포함 시 데이터가 크므로 타임아웃 120초."""
+    return _request(ip, secret, "PUT", f"/maps/{map_id}", json_data=data, timeout=120)
+
+
+# ── /mappings 데이터 다운로드 ─────────────────────────────────
+
+def download_mapping_data(ip: str, secret: str, mapping_id: int) -> dict:
+    """매핑의 전체 데이터 다운로드 — GET /mappings/{id}/download
+
+    반환 JSON에 포함되는 주요 필드:
+      - carto_map: Base64 인코딩 SLAM 바이너리 (pbstream)
+      - occupancy_grid: Base64 인코딩 PNG 이미지
+      - grid_origin_x, grid_origin_y, grid_resolution: 좌표 메타
+      - trajectories: 이동 경로 좌표 배열
+    """
+    url = f"http://{ip}:{PORT}/mappings/{mapping_id}/download"
+    res = requests.get(url, headers={"Secret": secret}, timeout=60)
+    res.raise_for_status()
+    return res.json()
+
+
+def get_latest_finished_mapping(ip: str, secret: str) -> dict | None:
+    """가장 최근 완료된(finished) 매핑 반환. 없으면 None."""
+    mappings = _get(ip, secret, "/mappings/")
+    if not isinstance(mappings, list):
+        return None
+    finished = [m for m in mappings if m.get("state") == "finished"]
+    if not finished:
+        return None
+    # id가 가장 큰 것 = 가장 최근
+    return max(finished, key=lambda m: m.get("id", 0))
+
+
+# ── /services ─────────────────────────────────────────────────
+
+def restart_robot_service(ip: str, secret: str) -> dict:
+    """로봇 서비스 재시작 — POST /services/restart_service
+    재시작 후 약 60-90초간 응답 불가."""
+    return _post(ip, secret, "/services/restart_service")
+
+
 # ── /chassis ──────────────────────────────────────────────────
 
 def set_chassis_pose(ip: str, secret: str, data: dict) -> dict:
     return _post(ip, secret, "/chassis/pose", data)
+
+
+def get_current_map(ip: str, secret: str) -> dict:
+    """현재 지도 조회 — GET /chassis/current-map"""
+    return _get(ip, secret, "/chassis/current-map")
 
 
 def set_current_map(ip: str, secret: str, data: dict) -> dict:
