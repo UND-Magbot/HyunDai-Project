@@ -61,7 +61,7 @@ def create_robot(db: Session, data: RobotCreate) -> RobotResponse:
     if data.min_battery >= data.max_battery:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="min_battery는 max_battery보다 작아야 합니다.",
+            detail="min_battery가 max_battery보다 크게 설정되었습니다.",
         )
 
     robot = Robot(
@@ -89,7 +89,7 @@ def create_robot(db: Session, data: RobotCreate) -> RobotResponse:
 def get_robot(db: Session, robot_id: int) -> RobotResponse:
     robot = db.query(Robot).filter(Robot.id == robot_id).first()
     if not robot:
-        raise HTTPException(status_code=404, detail="로봇을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="로봇을 찾지 못했습니다.")
     return _to_response(robot)
 
 
@@ -111,7 +111,7 @@ def get_robots(
 def update_robot(db: Session, robot_id: int, data: RobotUpdate) -> RobotResponse:
     robot = db.query(Robot).filter(Robot.id == robot_id).first()
     if not robot:
-        raise HTTPException(status_code=404, detail="로봇을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="로봇을 찾지 못했습니다.")
 
     if data.name is not None:
         robot.name = data.name
@@ -131,13 +131,13 @@ def update_robot(db: Session, robot_id: int, data: RobotUpdate) -> RobotResponse
 def delete_robot(db: Session, robot_id: int) -> dict:
     robot = db.query(Robot).filter(Robot.id == robot_id).first()
     if not robot:
-        raise HTTPException(status_code=404, detail="로봇을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="로봇을 찾지 못했습니다.")
 
     # 작업 중인지 확인 (상태가 WORKING=1이면 삭제 불가)
     if robot.status and robot.status.status == 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="작업 중인 로봇은 삭제할 수 없습니다.",
+            detail="작업 중인 로봇의 삭제가 거부되었습니다.",
         )
 
     robot.is_active = False  # Soft Delete
@@ -154,7 +154,7 @@ def update_robot_status(db: Session, robot_id: int, data: RobotStatusUpdate) -> 
     """
     robot = db.query(Robot).filter(Robot.id == robot_id).first()
     if not robot:
-        raise HTTPException(status_code=404, detail="로봇을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="로봇을 찾지 못했습니다.")
 
     rs = robot.status
     if not rs:
@@ -198,6 +198,7 @@ def get_min_battery_by_sn(db: Session, sn: str) -> dict:
     robot = db.query(Robot).filter(Robot.serial_number == sn, Robot.is_active == True).first()
     if not robot:
         return {"min_battery": 20, "charging_id": None}
+
     return {"min_battery": robot.min_battery, "charging_id": robot.charging_id}
 
 
@@ -218,7 +219,7 @@ def update_min_battery_by_sn(db: Session, sn: str, data: MinBatteryUpdate) -> di
 def get_robot_status(db: Session, robot_id: int) -> RobotStatusResponse:
     robot = db.query(Robot).filter(Robot.id == robot_id).first()
     if not robot:
-        raise HTTPException(status_code=404, detail="로봇을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="로봇을 찾지 못했습니다.")
     if not robot.status:
         raise HTTPException(status_code=404, detail="로봇 상태 정보가 없습니다.")
     return _status_to_response(robot.status)

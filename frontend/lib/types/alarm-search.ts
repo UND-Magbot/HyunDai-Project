@@ -1,16 +1,4 @@
-export type AlarmSearchStatus = "Warning" | "Resume";
-
-import type { AlarmErrorType } from "@/lib/types/shell";
-
-export type AlarmSearchItem = {
-  id: string;
-  code: string;
-  errorType: AlarmErrorType;
-  status: AlarmSearchStatus;
-  robotSn: string;
-  message: string;
-  timestamp: string;
-};
+import type { AlarmLogResponse } from "@/lib/types/alarm-log";
 
 export type AlarmSearchFilterState = {
   message: string;
@@ -20,18 +8,6 @@ export type AlarmSearchFilterState = {
   date: string | null;
   startTime: string;
   endTime: string;
-};
-
-export type AlarmSearchParams = AlarmSearchFilterState & {
-  page: number;
-  pageSize: number;
-};
-
-export type AlarmSearchResponse = {
-  items: AlarmSearchItem[];
-  total: number;
-  page: number;
-  pageSize: number;
 };
 
 export type AlarmSearchFilterProps = {
@@ -45,7 +21,7 @@ export type AlarmSearchFilterProps = {
 };
 
 export type AlarmSearchItemProps = {
-  item: AlarmSearchItem;
+  item: AlarmLogResponse;
 };
 
 export type AlarmSearchPaginationProps = {

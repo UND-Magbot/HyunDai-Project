@@ -5,7 +5,7 @@ import pymysql
 # MariaDB 접속 정보
 DB_USER = "root"
 DB_PASSWORD = "1234"
-DB_HOST = "192.168.0.200"
+DB_HOST = "192.168.0.26"
 DB_PORT = 3306
 DB_NAME = "rcs_db"
 
@@ -18,13 +18,18 @@ Base = declarative_base()
 
 def create_database_if_not_exists():
     """rcs_db 데이터베이스가 없으면 자동 생성"""
-    conn = pymysql.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        charset="utf8mb4",
-    )
+    try:
+        conn = pymysql.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            charset="utf8mb4",
+        )
+    except Exception as e:
+        print(f"[DB] 데이터베이스 서버 연결 실패 ({DB_HOST}:{DB_PORT}): {e}")
+        raise
+
     try:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -32,14 +37,21 @@ def create_database_if_not_exists():
                 f"CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
             )
         conn.commit()
+    except Exception as e:
+        print(f"[DB] 데이터베이스 생성 실패 ({DB_NAME}): {e}")
+        raise
     finally:
         conn.close()
 
 
 def init_db():
     """DB 생성 + 테이블 생성"""
-    create_database_if_not_exists()
-    Base.metadata.create_all(bind=engine)
+    try:
+        create_database_if_not_exists()
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"[DB] 데이터베이스 초기화 실패: {e}")
+        raise
 
 
 def get_db():
@@ -47,5 +59,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception as e:
+        db.rollback()
+        print(f"[DB] 세션 처리 중 오류 발생, 롤백 수행: {e}")
+        raise
     finally:
         db.close()

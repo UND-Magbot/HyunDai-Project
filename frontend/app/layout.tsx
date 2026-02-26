@@ -3,6 +3,7 @@ import "./components/shell/shell.css";
 import "./components/shell/alarm.css";
 
 import type { Metadata } from "next";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "UND 관제 시스템",
@@ -17,7 +18,9 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body suppressHydrationWarning>
-        {children}
+        <Providers>
+          {children}
+        </Providers>
         <footer className="copyright">
           Copyrightⓒ 2026 UND Co., Ltd. All rights reserved
         </footer>

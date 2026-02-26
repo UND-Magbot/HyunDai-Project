@@ -51,7 +51,7 @@ def create_user(db: Session, data: UserCreate) -> UserResponse:
 def get_user(db: Session, user_id: int) -> UserResponse:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사용자를 찾지 못했습니다.")
     return _to_response(user)
 
 
@@ -59,7 +59,7 @@ def get_user(db: Session, user_id: int) -> UserResponse:
 def get_user_by_login_id(db: Session, login_id: str) -> UserResponse:
     user = db.query(User).filter(User.login_id == login_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사용자를 찾지 못했습니다.")
     return _to_response(user)
 
 
@@ -73,7 +73,7 @@ def get_users(db: Session, skip: int = 0, limit: int = 100) -> list[UserResponse
 def update_user(db: Session, user_id: int, data: UserUpdate) -> UserResponse:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사용자를 찾지 못했습니다.")
 
     if data.password is not None:
         user.password_hash = bcrypt.hash(data.password)
@@ -93,7 +93,7 @@ def update_user(db: Session, user_id: int, data: UserUpdate) -> UserResponse:
 def delete_user(db: Session, user_id: int) -> dict:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사용자를 찾지 못했습니다.")
 
     # TODO: 진행 중인 작업이 있는지 확인 (JOB 모듈 연동 시 구현)
     # active_jobs = db.query(Job).filter(Job.assigned_user_id == user_id, Job.status == 1).count()

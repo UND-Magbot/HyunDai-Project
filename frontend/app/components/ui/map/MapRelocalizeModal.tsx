@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../Modal";
 import { apiFetch } from "@/lib/api";
+import { useAlert } from "@/lib/context/AlertContext";
 
 type RobotItem = {
   sn: string;
@@ -23,6 +24,7 @@ type MapRelocalizeModalProps = {
 };
 
 export function MapRelocalizeModal({ open, onClose }: MapRelocalizeModalProps) {
+  const { showAlert } = useAlert();
   const [search, setSearch] = useState("");
   const [selectedSns, setSelectedSns] = useState<Set<string>>(new Set());
   const [robots, setRobots] = useState<RobotItem[]>([]);
@@ -39,7 +41,10 @@ export function MapRelocalizeModal({ open, onClose }: MapRelocalizeModalProps) {
     setSelectedSns(new Set());
     apiFetch<{ total: number; items: RobotItem[] }>("/api/map/robots")
       .then((data) => setRobots(data.items))
-      .catch((err) => setError(err.message ?? "로봇 목록을 불러올 수 없습니다."))
+      .catch((err) => {
+        setError(err.message ?? "로봇 목록을 불러오지 못했습니다.");
+        showAlert({ title: "알림", message: "위치 재조정용 로봇 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-014", errorType: "map", source: "맵 관리 > 위치 재조정", description: "MapRelocalizeModal — 로봇 목록 로드 실패" });
+      })
       .finally(() => setLoading(false));
   }, [open]);
 
@@ -119,7 +124,7 @@ export function MapRelocalizeModal({ open, onClose }: MapRelocalizeModalProps) {
         initialResults.map((r) => ({
           ...r,
           status: "error" as const,
-          message: err.message ?? "위치재조정 실패",
+          message: err.message ?? "위치 재조정에 실패했습니다.",
         }))
       );
     }

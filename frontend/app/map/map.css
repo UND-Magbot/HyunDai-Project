@@ -806,6 +806,23 @@
   margin-bottom: var(--space-3);
 }
 
+/* ── Orthogonal Guide Lines ── */
+.map-ortho-guide {
+  stroke: rgba(0, 150, 255, 0.25);
+  stroke-width: 0.8;
+  stroke-dasharray: 6 3;
+  fill: none;
+  pointer-events: none;
+}
+
+/* ── Snap Indicator (endpoint preview) ── */
+.map-snap-indicator {
+  fill: rgba(0, 150, 255, 0.5);
+  stroke: #0096ff;
+  stroke-width: 0.8;
+  pointer-events: none;
+}
+
 /* ── Temporary Drawing Line ── */
 .map-temp-line {
   stroke: rgba(255, 51, 85, 0.6);

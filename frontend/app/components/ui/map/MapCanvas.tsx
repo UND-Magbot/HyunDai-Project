@@ -10,6 +10,23 @@ import {
 } from "react";
 import type { MapCanvasProps } from "@/lib/types/map";
 
+// Helper: snap end point to orthogonal (horizontal or vertical) relative to start
+function snapToOrthogonal(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number
+): { x: number; y: number } {
+  const dx = Math.abs(endX - startX);
+  const dy = Math.abs(endY - startY);
+  // Snap to whichever axis is dominant
+  if (dx >= dy) {
+    return { x: endX, y: startY }; // horizontal
+  } else {
+    return { x: startX, y: endY }; // vertical
+  }
+}
+
 export function MapCanvas({
   pois,
   lines,
@@ -77,6 +94,7 @@ export function MapCanvas({
       onImageLoad?.(img.naturalWidth, img.naturalHeight);
     };
     img.onerror = () => {
+      console.error("[맵 이미지 로드 실패]", mapImageUrl);
       setProcessedImg(null);
     };
     img.src = mapImageUrl;
@@ -133,9 +151,14 @@ export function MapCanvas({
     const pos = screenToCanvas(e.clientX, e.clientY);
     mousePosRef.current = pos;
 
-    // 라인 그리기 중이면 마우스 위치 state 갱신 (임시 라인 렌더용)
+    // 라인 그리기 중이면 직교 스냅된 위치로 state 갱신 (임시 라인 렌더용)
     if (lineStartPOI && (activeTool === "line" || activeTool === "curveLine")) {
-      setMousePos(pos);
+      const startPoi = pois.find((p) => p.id === lineStartPOI);
+      if (startPoi) {
+        setMousePos(snapToOrthogonal(startPoi.x, startPoi.y, pos.x, pos.y));
+      } else {
+        setMousePos(pos);
+      }
     }
 
     if (isPanningRef.current && panStartRef.current) {
@@ -169,6 +192,15 @@ export function MapCanvas({
       activeTool === "polygon"
     ) {
       const pos = screenToCanvas(e.clientX, e.clientY);
+      // 라인 모드에서 시작 POI가 있으면 직교 스냅 좌표 전달
+      if ((activeTool === "line" || activeTool === "curveLine") && lineStartPOI) {
+        const startPoi = pois.find((p) => p.id === lineStartPOI);
+        if (startPoi) {
+          const snapped = snapToOrthogonal(startPoi.x, startPoi.y, pos.x, pos.y);
+          onCanvasClick(snapped.x, snapped.y);
+          return;
+        }
+      }
       onCanvasClick(pos.x, pos.y);
     }
   };
@@ -309,18 +341,49 @@ export function MapCanvas({
             );
           })}
 
-          {/* Temporary line while drawing */}
+          {/* Orthogonal guide lines from start POI */}
+          {lineStartPOI && (activeTool === "line" || activeTool === "curveLine") && (() => {
+            const startPoi = pois.find((p) => p.id === lineStartPOI);
+            if (!startPoi) return null;
+            return (
+              <g className="map-ortho-guides">
+                {/* Horizontal guide */}
+                <line
+                  x1={-10000} y1={startPoi.y}
+                  x2={10000} y2={startPoi.y}
+                  className="map-ortho-guide"
+                />
+                {/* Vertical guide */}
+                <line
+                  x1={startPoi.x} y1={-10000}
+                  x2={startPoi.x} y2={10000}
+                  className="map-ortho-guide"
+                />
+              </g>
+            );
+          })()}
+
+          {/* Temporary line while drawing (snapped to orthogonal) */}
           {lineStartPOI && (activeTool === "line" || activeTool === "curveLine") && mousePos && (() => {
             const startPoi = pois.find((p) => p.id === lineStartPOI);
             if (!startPoi) return null;
             return (
-              <line
-                x1={startPoi.x}
-                y1={startPoi.y}
-                x2={mousePos.x}
-                y2={mousePos.y}
-                className="map-temp-line"
-              />
+              <>
+                <line
+                  x1={startPoi.x}
+                  y1={startPoi.y}
+                  x2={mousePos.x}
+                  y2={mousePos.y}
+                  className="map-temp-line"
+                />
+                {/* Snap indicator at endpoint */}
+                <circle
+                  cx={mousePos.x}
+                  cy={mousePos.y}
+                  r={3}
+                  className="map-snap-indicator"
+                />
+              </>
             );
           })()}
 

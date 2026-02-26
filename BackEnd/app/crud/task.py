@@ -13,7 +13,7 @@ def create_task(db: Session, data: TaskCreate) -> TaskResponse:
     # 웨이포인트 order 중복 검사
     orders = [w.order for w in data.waypoints]
     if len(orders) != len(set(orders)):
-        raise HTTPException(status_code=400, detail="웨이포인트 order 값이 중복됩니다")
+        raise HTTPException(status_code=400, detail="웨이포인트 order 값이 중복됩니다.")
 
     task = Task(
         name=data.name,
@@ -44,7 +44,7 @@ def create_task(db: Session, data: TaskCreate) -> TaskResponse:
 def get_task(db: Session, task_id: int) -> TaskResponse:
     task = db.query(Task).filter(Task.id == task_id, Task.is_active == True).first()
     if not task:
-        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="작업을 찾지 못했습니다.")
     return _to_response(task)
 
 
@@ -60,9 +60,9 @@ def get_tasks(db: Session, robot_id: int = None, skip: int = 0, limit: int = 100
 def update_task(db: Session, task_id: int, data: TaskUpdate) -> TaskResponse:
     task = db.query(Task).filter(Task.id == task_id, Task.is_active == True).first()
     if not task:
-        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="작업을 찾지 못했습니다.")
     if task.status == 1:
-        raise HTTPException(status_code=400, detail="실행 중인 작업은 수정할 수 없습니다")
+        raise HTTPException(status_code=400, detail="실행 중인 작업의 수정이 거부되었습니다.")
 
     if data.name is not None:
         task.name = data.name
@@ -74,7 +74,7 @@ def update_task(db: Session, task_id: int, data: TaskUpdate) -> TaskResponse:
     if data.waypoints is not None:
         orders = [w.order for w in data.waypoints]
         if len(orders) != len(set(orders)):
-            raise HTTPException(status_code=400, detail="웨이포인트 order 값이 중복됩니다")
+            raise HTTPException(status_code=400, detail="웨이포인트 order 값이 중복됩니다.")
 
         # 기존 웨이포인트 삭제 후 재생성
         db.query(TaskWaypoint).filter(TaskWaypoint.task_id == task_id).delete()
@@ -97,9 +97,9 @@ def update_task(db: Session, task_id: int, data: TaskUpdate) -> TaskResponse:
 def delete_task(db: Session, task_id: int) -> dict:
     task = db.query(Task).filter(Task.id == task_id, Task.is_active == True).first()
     if not task:
-        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="작업을 찾지 못했습니다.")
     if task.status == 1:
-        raise HTTPException(status_code=400, detail="실행 중인 작업은 삭제할 수 없습니다")
+        raise HTTPException(status_code=400, detail="실행 중인 작업의 삭제가 거부되었습니다.")
 
     task.is_active = False
     db.commit()

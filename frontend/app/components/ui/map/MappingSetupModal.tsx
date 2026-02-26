@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Modal } from "../Modal";
 import { apiFetch } from "@/lib/api";
+import { useAlert } from "@/lib/context/AlertContext";
 import type { MappingSetupModalProps } from "@/lib/types/map";
 
 let areaCounter = 6;
@@ -19,6 +20,7 @@ export function MappingSetupModal({
   const [areaName, setAreaName] = useState("");
   const [existingAreas, setExistingAreas] = useState<AreaItem[]>([]);
   const [duplicateError, setDuplicateError] = useState(false);
+  const { showInfo } = useAlert();
 
   // 사업장 변경 시 해당 영역 목록 로드
   useEffect(() => {
@@ -30,7 +32,10 @@ export function MappingSetupModal({
       `/api/map/businesses/${selectedBusinessId}/areas`
     )
       .then((data) => setExistingAreas(data.items))
-      .catch(() => setExistingAreas([]));
+      .catch((err) => {
+        console.error("[매핑설정 영역 목록 로드 실패]", err);
+        setExistingAreas([]);
+      });
   }, [selectedBusinessId]);
 
   // 영역 이름 중복 검사
@@ -47,7 +52,11 @@ export function MappingSetupModal({
   }, [areaName, existingAreas]);
 
   const handleConfirm = () => {
-    if (selectedBusinessId === null || !areaName.trim() || duplicateError) return;
+    if (selectedBusinessId === null || !areaName.trim()) return;
+    if (duplicateError) {
+      showInfo("안내", "이미 존재하는 영역 이름입니다.");
+      return;
+    }
     const generatedAreaId = `area-${String(areaCounter++).padStart(3, "0")}`;
     onConfirm(selectedBusinessId, generatedAreaId, areaName.trim());
     setSelectedBusinessId(null);

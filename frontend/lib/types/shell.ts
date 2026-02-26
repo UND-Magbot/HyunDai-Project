@@ -1,6 +1,6 @@
 export type AlarmSeverity = "info" | "warning" | "error";
 
-export type AlarmErrorType = "network" | "battery" | "task";
+export type AlarmErrorType = "auth" | "task" | "robot" | "map" | "net";
 
 export type AlarmListItemProps = {
   code: string;
