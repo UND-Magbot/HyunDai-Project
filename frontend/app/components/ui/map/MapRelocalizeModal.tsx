@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../Modal";
 import { apiFetch } from "@/lib/api";
-import type { MapSyncModalProps } from "@/lib/types/map";
 
 type RobotItem = {
   sn: string;
@@ -11,28 +10,26 @@ type RobotItem = {
   ip_address: string | null;
 };
 
-type SyncResult = {
+type RelocalizeResult = {
   sn: string;
   name: string;
   status: "pending" | "loading" | "success" | "error";
   message?: string;
 };
 
-export function MapSyncModal({
-  open,
-  onClose,
-  mappingId,
-  mapId,
-  areaName,
-  onSyncComplete,
-}: MapSyncModalProps) {
+type MapRelocalizeModalProps = {
+  open: boolean;
+  onClose: () => void;
+};
+
+export function MapRelocalizeModal({ open, onClose }: MapRelocalizeModalProps) {
   const [search, setSearch] = useState("");
   const [selectedSns, setSelectedSns] = useState<Set<string>>(new Set());
   const [robots, setRobots] = useState<RobotItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<SyncResult[]>([]);
+  const [results, setResults] = useState<RelocalizeResult[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -75,70 +72,63 @@ export function MapSyncModal({
     }
   };
 
-  const handleSync = async () => {
+  const handleRelocalize = async () => {
     if (selectedSns.size === 0) return;
-    setSyncing(true);
+    setRunning(true);
     setError(null);
 
     const targets = robots.filter(
       (r) => selectedSns.has(r.sn) && r.ip_address
     );
 
-    const initialResults: SyncResult[] = targets.map((r) => ({
+    // 진행 상태 초기화
+    const initialResults: RelocalizeResult[] = targets.map((r) => ({
       sn: r.sn,
       name: r.name,
-      status: "pending",
+      status: "loading",
     }));
     setResults(initialResults);
 
-    const promises = targets.map(async (robot) => {
-      setResults((prev) =>
-        prev.map((r) =>
-          r.sn === robot.sn ? { ...r, status: "loading" as const } : r
-        )
+    try {
+      const robotIps = targets.map((r) => r.ip_address as string);
+      const response = await apiFetch<{
+        results: { robot_ip: string; success: boolean; message: string }[];
+      }>("/api/map/relocalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ robot_ips: robotIps }),
+      });
+
+      // IP → SN 매핑
+      const ipToSn = new Map(
+        targets.map((r) => [r.ip_address, r.sn])
       );
 
-      try {
-        // 백엔드에서 맵 데이터 업로드 + current-map 설정 + 포즈 설정 일괄 처리
-        await apiFetch(`/api/map/maps/${mapId}/sync-to-robot`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            robot_ip: robot.ip_address,
-            area_name: areaName,
-            method: "full",
-          }),
-        });
+      setResults(
+        response.results.map((r) => ({
+          sn: ipToSn.get(r.robot_ip) ?? r.robot_ip,
+          name:
+            targets.find((t) => t.ip_address === r.robot_ip)?.name ??
+            r.robot_ip,
+          status: r.success ? ("success" as const) : ("error" as const),
+          message: r.message,
+        }))
+      );
+    } catch (err: any) {
+      setResults(
+        initialResults.map((r) => ({
+          ...r,
+          status: "error" as const,
+          message: err.message ?? "위치재조정 실패",
+        }))
+      );
+    }
 
-        setResults((prev) =>
-          prev.map((r) =>
-            r.sn === robot.sn
-              ? { ...r, status: "success" as const, message: "맵 업로드 + 지도 적용 완료" }
-              : r
-          )
-        );
-      } catch (err: any) {
-        setResults((prev) =>
-          prev.map((r) =>
-            r.sn === robot.sn
-              ? {
-                  ...r,
-                  status: "error" as const,
-                  message: err.message ?? "동기화 실패",
-                }
-              : r
-          )
-        );
-      }
-    });
-
-    await Promise.allSettled(promises);
-    setSyncing(false);
-    onSyncComplete?.();
+    setRunning(false);
   };
 
   const handleClose = () => {
-    if (syncing) return;
+    if (running) return;
     setSearch("");
     setSelectedSns(new Set());
     setError(null);
@@ -149,9 +139,13 @@ export function MapSyncModal({
   const hasResults = results.length > 0;
 
   return (
-    <Modal open={open} onClose={handleClose} title="맵 동기화 (Sync)" width="460px">
+    <Modal open={open} onClose={handleClose} title="위치 재조정" width="460px">
       {!hasResults ? (
         <>
+          <div style={{ marginBottom: "var(--space-2)", color: "var(--text-muted)", fontSize: "13px" }}>
+            선택한 로봇의 위치를 충전소 도킹 포인트 좌표로 재조정합니다.
+          </div>
+
           <div className="robot-connect__search">
             <input
               className="input"
@@ -226,7 +220,6 @@ export function MapSyncModal({
                 {r.status === "loading" && "⏳ "}
                 {r.status === "success" && "✅ "}
                 {r.status === "error" && "❌ "}
-                {r.status === "pending" && "⏸ "}
                 {r.name}
               </span>
               <span
@@ -254,16 +247,16 @@ export function MapSyncModal({
       )}
 
       <div className="robot-connect__actions">
-        <button className="btn" onClick={handleClose} disabled={syncing}>
+        <button className="btn" onClick={handleClose} disabled={running}>
           {hasResults ? "닫기" : "취소"}
         </button>
         {!hasResults && (
           <button
             className="btn btn--primary"
-            onClick={handleSync}
-            disabled={selectedSns.size === 0 || syncing}
+            onClick={handleRelocalize}
+            disabled={selectedSns.size === 0 || running}
           >
-            {syncing ? "동기화 중..." : `동기화 (${selectedSns.size}대)`}
+            {running ? "재조정 중..." : `위치 재조정 (${selectedSns.size}대)`}
           </button>
         )}
       </div>

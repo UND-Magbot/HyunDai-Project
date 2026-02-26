@@ -173,7 +173,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [openDeviceId, setOpenDeviceId] = useState<string | null>(null);
   const [togglingDeviceId, setTogglingDeviceId] = useState<string | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [mapSrc, setMapSrc] = useState(`${process.env.NEXT_PUBLIC_API_URL}/static/maps/map_img_e420e1e52e6c.png`);
+  const [mapSrc, setMapSrc] = useState("");
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [alertModal, setAlertModal] = useState<{ title: string; message: string } | null>(null);
@@ -220,11 +220,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
 
   // 로봇 실시간 위치 (다중 로봇)
-  const [mapMeta, setMapMeta] = useState<MapMeta>({
-    grid_origin_x: -28.6,
-    grid_origin_y: -5.75,
-    grid_resolution: 0.05,
-  });
+  const [mapMeta, setMapMeta] = useState<MapMeta | null>(null);
+  const defaultMapRef = useRef<{ image_url: string | null; grid_origin_x: number; grid_origin_y: number; grid_resolution: number; area_id: number | null } | null>(null);
   const [apiRobots, setApiRobots] = useState<ApiRobot[]>([]);
   const [robotPoses, setRobotPoses] = useState<Map<string, { pos: [number, number]; ori: number }>>(new Map());
   const poseWsRefs = useRef<Map<string, WebSocket>>(new Map());
@@ -239,17 +236,33 @@ export function MonitoringClient({ initialDateTime }: Props) {
     return () => clearInterval(timer);
   }, []);
 
-  // ── 사업장 목록 로드 (초기 로드 시 "구미 본사" 자동 선택) ──
+  // ── 기본 맵 + 사업장 목록을 동시에 로드 (race condition 방지) ──
   useEffect(() => {
-    apiFetch<{ total: number; items: BusinessItem[] }>("/api/map/businesses")
-      .then((data) => {
-        setApiBusinesses(data.items);
-        if (!selectedBusiness) {
-          const defaultBiz = data.items.find((b) => b.name === "구미 본사");
-          if (defaultBiz) setSelectedBusiness(String(defaultBiz.business_id));
+    Promise.all([
+      apiFetch<{ image_url: string | null; grid_origin_x: number; grid_origin_y: number; grid_resolution: number; area_id: number | null }>("/api/map/default-map").catch(() => null),
+      apiFetch<{ total: number; items: BusinessItem[] }>("/api/map/businesses").catch(() => ({ total: 0, items: [] as BusinessItem[] })),
+    ]).then(([defaultMap, bizData]) => {
+      // 기본 맵 정보 설정
+      if (defaultMap) {
+        defaultMapRef.current = defaultMap;
+        if (defaultMap.image_url && !mapSrc) {
+          if (defaultMap.image_url.startsWith("/static/")) {
+            setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}${defaultMap.image_url}`);
+          } else {
+            setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}/api/map/proxy-image?url=${encodeURIComponent(defaultMap.image_url)}`);
+          }
         }
-      })
-      .catch(() => {});
+        if (!mapMeta) {
+          setMapMeta({ grid_origin_x: defaultMap.grid_origin_x, grid_origin_y: defaultMap.grid_origin_y, grid_resolution: defaultMap.grid_resolution });
+        }
+      }
+      // 사업장 목록 설정
+      setApiBusinesses(bizData.items);
+      if (!selectedBusiness) {
+        const defaultBiz = bizData.items.find((b) => b.name === "구미 본사");
+        if (defaultBiz) setSelectedBusiness(String(defaultBiz.business_id));
+      }
+    });
   }, []);
 
   // ── Business 변경 시 영역 목록 (apiBusinesses에서 직접 추출) ──
@@ -263,32 +276,58 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
     setAreaMaps([]);
     setMapSrc("");
-
-    const biz = apiBusinesses.find((b) => String(b.business_id) === selectedBusiness);
-    const bizAreas = biz?.areas ?? [];
-    setAreas(bizAreas.map((a) => ({ area_id: a.area_id, name: a.name })));
-
-    const defaultArea = bizAreas.find((a) => a.name === "area-O002");
-    if (defaultArea) {
-      setSelectedArea(String(defaultArea.area_id));
-    } else {
-      setSelectedArea("");
-    }
-  }, [selectedBusiness, apiBusinesses]);
+    apiFetch<{ total: number; items: AreaItem[] }>(
+      `/api/map/businesses/${selectedBusiness}/areas`
+    )
+      .then((data) => {
+        setAreas(data.items);
+        if (initialLoadRef.current) {
+          const defAreaId = defaultMapRef.current?.area_id;
+          const defaultArea = defAreaId
+            ? data.items.find((a) => a.area_id === defAreaId)
+            : null;
+          if (defaultArea) {
+            setSelectedArea(String(defaultArea.area_id));
+            initialLoadRef.current = false;
+            return;
+          }
+        }
+        if (data.items.length > 0) {
+          setSelectedArea(String(data.items[0].area_id));
+        } else {
+          setSelectedArea("");
+        }
+      })
+      .catch(() => setAreas([]));
+  }, [selectedBusiness]);
 
   // ── Area 변경 시 맵 목록 로드 및 첫 번째 맵 이미지 + 요소 로드 ──
+  const applyDefaultMap = () => {
+    const def = defaultMapRef.current;
+    if (def?.image_url) {
+      if (def.image_url.startsWith("/static/")) {
+        setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}${def.image_url}`);
+      } else {
+        setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}/api/map/proxy-image?url=${encodeURIComponent(def.image_url)}`);
+      }
+      setMapMeta({ grid_origin_x: def.grid_origin_x, grid_origin_y: def.grid_origin_y, grid_resolution: def.grid_resolution });
+    } else {
+      setMapSrc("");
+      setMapMeta(null);
+    }
+  };
+
   useEffect(() => {
     if (!selectedArea) {
       setAreaMaps([]);
       setSelectedMapId(null);
-      setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}/static/maps/map_img_e420e1e52e6c.png`);
+      applyDefaultMap();
       setRawApiElements(null);
       setApiPois([]);
       setApiWaypoints([]);
       setApiRouteWaypoints([]);
       setApiRouteSegments([]);
       setMapImageSize(null);
-      setMapMeta({ grid_origin_x: -28.6, grid_origin_y: -5.75, grid_resolution: 0.05 });
       return;
     }
     apiFetch<{ total: number; items: MapItem[] }>(
@@ -320,8 +359,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
             .catch(() => setRawApiElements(null));
         } else {
           setSelectedMapId(null);
-          setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}/static/maps/map_img_e420e1e52e6c.png`);
-          setMapMeta({ grid_origin_x: -28.6, grid_origin_y: -5.75, grid_resolution: 0.05 });
+          applyDefaultMap();
           setRawApiElements(null);
           setApiPois([]);
           setApiWaypoints([]);
