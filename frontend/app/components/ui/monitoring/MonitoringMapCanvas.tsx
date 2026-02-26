@@ -855,10 +855,10 @@ function drawRobot(
 
   // ── 1. Direction Arrow (cursor / pointer shape) ──
   ctx.beginPath();
-  ctx.moveTo(0, -50 * s);          // tip
-  ctx.lineTo(12 * s, -18 * s);     // bottom-right
-  ctx.lineTo(0, -28 * s);          // notch center
-  ctx.lineTo(-12 * s, -18 * s);    // bottom-left
+  ctx.moveTo(0, -40 * s);          // tip
+  ctx.lineTo(9 * s, -18 * s);     // bottom-right
+  ctx.lineTo(0, -25 * s);         // notch center
+  ctx.lineTo(-9 * s, -18 * s);    // bottom-left
   ctx.closePath();
   ctx.lineJoin = "round";
   ctx.fillStyle = accentColor;
