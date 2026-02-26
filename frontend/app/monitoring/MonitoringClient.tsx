@@ -266,10 +266,10 @@ export function MonitoringClient({ initialDateTime }: Props) {
   }, []);
 
   // ── Business 변경 시 영역 목록 (apiBusinesses에서 직접 추출) ──
+  // selectedArea는 BusinessSelectBox onChange(handleBusinessAreaChange)에서 직접 설정됨
   useEffect(() => {
     if (!selectedBusiness) {
       setAreas([]);
-      setSelectedArea("");
       setAreaMaps([]);
       setMapSrc("");
       return;
@@ -281,17 +281,6 @@ export function MonitoringClient({ initialDateTime }: Props) {
     )
       .then((data) => {
         setAreas(data.items);
-        if (initialLoadRef.current) {
-          const defAreaId = defaultMapRef.current?.area_id;
-          const defaultArea = defAreaId
-            ? data.items.find((a) => a.area_id === defAreaId)
-            : null;
-          if (defaultArea) {
-            setSelectedArea(String(defaultArea.area_id));
-            initialLoadRef.current = false;
-            return;
-          }
-        }
         if (data.items.length > 0) {
           setSelectedArea(String(data.items[0].area_id));
         } else {
@@ -488,18 +477,24 @@ export function MonitoringClient({ initialDateTime }: Props) {
     setApiRouteSegments(segments);
   }, [rawApiElements, mapImageSize]);
 
-  // API 사업장 → BusinessSelectBox 형식 변환
+  // API 사업장 → BusinessSelectBox 형식 변환 (사업장×영역 쌍으로 펼침)
   const businessesForSelectBox: Business[] = useMemo(
-    () => apiBusinesses.map((b) => {
-      const defaultArea = b.areas?.find((a) => a.name === "area-O002");
-      return {
-        id: String(b.business_id),
-        name: b.name,
-        value: defaultArea ? String(defaultArea.area_id) : "",
-      };
-    }),
+    () => apiBusinesses.flatMap((b) =>
+      (b.areas ?? []).map((a) => ({
+        id: `${b.business_id}:${a.area_id}`,
+        name: a.name,
+        value: String(a.area_id),
+      }))
+    ),
     [apiBusinesses]
   );
+
+  // 사업장×영역 셀렉트박스 onChange → business + area 동시 설정
+  const handleBusinessAreaChange = useCallback((combinedId: string) => {
+    const [bizId, areaId] = combinedId.split(":");
+    setSelectedBusiness(bizId);
+    setSelectedArea(areaId);
+  }, []);
 
   // ── 로봇 목록 API 로드 (selectedArea 기반) ──
   useEffect(() => {
@@ -614,17 +609,18 @@ export function MonitoringClient({ initialDateTime }: Props) {
   }, [liveRobots]);
 
   // ── 다중 로봇 월드 좌표 → 이미지 픽셀 좌표 변환 (live 상태 반영) ──
+  // WS 데이터가 없는 로봇은 백엔드 status 값(position_x/y/yaw)을 초기값으로 사용
   useEffect(() => {
     if (!mapMeta || !mapImageSize || mapMeta.grid_resolution <= 0) {
       return;
     }
-    if (robotPoses.size === 0) {
-      setSimulatedRobots([]);
-      return;
-    }
 
     const markers: RobotMarkerData[] = [];
+    const posedSNs = new Set<string>();
+
+    // 1) 실시간 WS 데이터가 있는 로봇 (pose.ori 사용)
     robotPoses.forEach((pose, sn) => {
+      posedSNs.add(sn);
       const ipx =
         (pose.pos[0] - mapMeta.grid_origin_x) / mapMeta.grid_resolution;
       const ipy =
@@ -644,6 +640,30 @@ export function MonitoringClient({ initialDateTime }: Props) {
         power: live ? mapLiveOnlineToPower(live.ONLINE) : "online",
       });
     });
+
+    // 2) WS 데이터가 아직 없는 로봇 → 백엔드 status 초기값 사용
+    for (const fullRobot of apiRobotsFull) {
+      if (posedSNs.has(fullRobot.serial_number)) continue;
+      if (!fullRobot.status) continue;
+
+      const { position_x, position_y, position_yaw } = fullRobot.status;
+      const ipx =
+        (position_x - mapMeta.grid_origin_x) / mapMeta.grid_resolution;
+      const ipy =
+        mapImageSize.h -
+        (position_y - mapMeta.grid_origin_y) / mapMeta.grid_resolution;
+
+      const live = fullRobot.ip_address ? liveByIp.get(fullRobot.ip_address) : null;
+
+      markers.push({
+        robotId: fullRobot.serial_number,
+        robotName: fullRobot.name,
+        position: { x: ipx, y: ipy },
+        yaw: position_yaw,
+        status: live ? mapLiveRunStateToDeviceStatus(live.RUNSTATE) : "running",
+        power: live ? mapLiveOnlineToPower(live.ONLINE) : "online",
+      });
+    }
 
     setSimulatedRobots(markers);
   }, [robotPoses, mapMeta, mapImageSize, apiRobots, apiRobotsFull, liveByIp]);
@@ -960,10 +980,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
             <section className={mapMode === "3d" ? "monitoring-map is-3d" : "monitoring-map"}>
               <BusinessSelectBox
                 businesses={businessesForSelectBox}
-                selectedId={selectedBusiness}
-                onChange={setSelectedBusiness}
+                selectedId={`${selectedBusiness}:${selectedArea}`}
+                onChange={handleBusinessAreaChange}
               />
-              {mapMode === "3d" ? (
+              {!selectedArea && !isLoading ? (
+                <div className="monitoring-map__empty">
+                  <p>현재 사업장에 등록된 영역이 없습니다.</p>
+                </div>
+              ) : mapMode === "3d" ? (
                 <MonitoringMap3D
                   mapSrc={mapSrc}
                   pois={apiPois}

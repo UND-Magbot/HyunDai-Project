@@ -125,19 +125,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   rotate: var(--robot-yaw, 0deg);
-  transform-origin: center 33px;
+  transform-origin: center 43px;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
 }
 
 .map-marker--robot .map-marker__body::before {
-  content: "";
-  width: 0;
-  height: 0;
-  border-left: 14px solid transparent;
-  border-right: 14px solid transparent;
-  border-bottom: 20px solid #42d8ff;
+  content: none;
+}
+
+.map-marker__robot-arrow {
+  display: block;
 }
 
 .map-marker__robot-icon {
@@ -158,7 +157,8 @@
 .map-marker__robot-dir {
   fill: #42d8ff;
   stroke: rgba(0, 0, 0, 0.45);
-  stroke-width: 0.8;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
   filter: drop-shadow(0 0 3px rgba(66, 216, 255, 0.6));
 }
 
@@ -181,10 +181,6 @@
   filter: drop-shadow(0 0 4px rgba(255, 186, 36, 0.7));
 }
 
-.map-marker--robot-warning .map-marker__body::before {
-  border-bottom-color: #ffba24;
-}
-
 .map-marker--robot-warning .map-marker__robot-dir {
   fill: #ffba24;
   filter: drop-shadow(0 0 3px rgba(255, 186, 36, 0.6));
@@ -199,10 +195,6 @@
 .map-marker--robot-error .map-marker__robot-led {
   fill: #ff5757;
   filter: drop-shadow(0 0 4px rgba(255, 87, 87, 0.7));
-}
-
-.map-marker--robot-error .map-marker__body::before {
-  border-bottom-color: #ff5757;
 }
 
 .map-marker--robot-error .map-marker__robot-dir {
@@ -221,10 +213,6 @@
   filter: drop-shadow(0 0 6px rgba(255, 191, 45, 0.8));
 }
 
-.map-marker--robot-near_miss .map-marker__body::before {
-  border-bottom-color: #ffbf2d;
-}
-
 .map-marker--robot-near_miss .map-marker__robot-dir {
   fill: #ffbf2d;
   filter: drop-shadow(0 0 3px rgba(255, 191, 45, 0.6));
@@ -239,10 +227,6 @@
 .map-marker--robot-collision .map-marker__robot-led {
   fill: #ff4343;
   filter: drop-shadow(0 0 8px rgba(255, 67, 67, 0.9));
-}
-
-.map-marker--robot-collision .map-marker__body::before {
-  border-bottom-color: #ff4343;
 }
 
 .map-marker--robot-collision .map-marker__robot-dir {

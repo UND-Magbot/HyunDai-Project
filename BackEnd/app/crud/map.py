@@ -9,7 +9,18 @@ from app.models.map import Business, Area, RobotMap, MapPOI, MapLine
 # ── Business CRUD ─────────────────────────────────────────────
 
 def get_businesses(db: Session) -> list[dict]:
-    items = db.query(Business).filter(Business.is_active == True).order_by(Business.name).all()
+    items = (
+        db.query(Business)
+        .join(RobotMap, Business.business_id == RobotMap.business_id)
+        .filter(
+            Business.is_active == True,
+            RobotMap.is_active == True,
+            RobotMap.image_url.isnot(None),
+        )
+        .distinct()
+        .order_by(Business.name)
+        .all()
+    )
     return [
         {
             "business_id": b.business_id,

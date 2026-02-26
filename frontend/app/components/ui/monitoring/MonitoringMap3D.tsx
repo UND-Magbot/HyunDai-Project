@@ -28,7 +28,7 @@ export function MonitoringMap3D(props: MonitoringMapProps) {
 
   const cameraPosition = useMemo<[number, number, number]>(() => {
     if (!occupancy) return [500, 400, 500];
-    const dist = Math.max(occupancy.imageWidth, occupancy.imageHeight) * 0.7;
+    const dist = Math.max(occupancy.imageWidth, occupancy.imageHeight) * 1.0;
     return [dist * 0.4, dist * 0.5, dist * 0.4];
   }, [occupancy]);
 
@@ -39,8 +39,8 @@ export function MonitoringMap3D(props: MonitoringMapProps) {
         gl={{ antialias: true, alpha: false }}
         style={{ background: "#080e1a" }}
       >
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[200, 500, 300]} intensity={0.5} />
+        <ambientLight intensity={1.0} />
+        <directionalLight position={[200, 500, 300]} intensity={1.0} />
 
         <Suspense fallback={null}>
           <GridFloor />

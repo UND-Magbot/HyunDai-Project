@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Billboard, Text } from "@react-three/drei";
 import type { PoiMarkerData } from "@/lib/types/map-markers";
 import { mapPixelToWorld } from "./mapCoords";
+import { ChargingStation3D } from "./ChargingStation3D";
 
 type Props = {
   poi: PoiMarkerData;
@@ -19,26 +20,9 @@ function PoiMarker3DInner({ poi, imgW, imgH }: Props) {
   return (
     <group position={[x, 0, z]}>
       {renderKind === "circle" ? (
-        <>
-          {/* Dark cylinder base */}
-          <mesh position={[0, 5, 0]}>
-            <cylinderGeometry args={[6, 6, 10, 16]} />
-            <meshStandardMaterial
-              color="#232d37"
-              transparent
-              opacity={0.86}
-            />
-          </mesh>
-          {/* Red inner dot */}
-          <mesh position={[0, 10.5, 0]}>
-            <sphereGeometry args={[2.5, 8, 8]} />
-            <meshStandardMaterial
-              color="#ff2b2b"
-              emissive="#ff4a4a"
-              emissiveIntensity={0.65}
-            />
-          </mesh>
-        </>
+        <group rotation={[0, poi.angle != null ? -(poi.angle * Math.PI) / 180 : 0, 0]}>
+          <ChargingStation3D />
+        </group>
       ) : (
         /* Blue cone for non-charging */
         <mesh position={[0, 7, 0]}>
@@ -51,11 +35,13 @@ function PoiMarker3DInner({ poi, imgW, imgH }: Props) {
         </mesh>
       )}
 
-      {/* Angle direction indicator */}
-      {poi.angle != null && <AngleIndicator angle={poi.angle} />}
+      {/* Angle direction indicator (충전/대기 지점 제외) */}
+      {poi.angle != null && poi.type !== "charging" && poi.type !== "workstation" && (
+        <AngleIndicator angle={poi.angle} />
+      )}
 
       {/* Label */}
-      <Billboard position={[0, 18, 0]}>
+      <Billboard position={[0, renderKind === "circle" ? 26 : 18, 0]}>
         <Text fontSize={7} color="#ffffff" anchorY="bottom">
           {poi.label}
         </Text>

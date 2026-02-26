@@ -59,7 +59,7 @@ export function RobotTable({
           {devices.length === 0 ? (
             <tr>
               <td colSpan={8} className="robot-table__empty">
-                등록된 장치가 없습니다.
+                등록된 로봇이 없습니다.
               </td>
             </tr>
           ) : (

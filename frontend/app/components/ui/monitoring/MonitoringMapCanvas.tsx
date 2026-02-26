@@ -402,21 +402,29 @@ function drawRoutes(
   bounds: MapBounds
 ) {
   const segments = data.routeSegments ?? [];
+  const ROUTE_WIDTH = 8;
+  const ROUTE_ALPHA = 0.35;
 
   if (segments.length > 0) {
-    // RouteSegment 기반 렌더링 (direction, curve 지원)
-    for (const seg of segments) {
-      drawRouteSegment(
-        ctx, seg, bounds,
-        "rgba(25, 188, 126, 0.35)", 14,
-        "rgba(23, 160, 112, 0.2)", 2
-      );
+    // 오프스크린 캔버스에 불투명으로 그린 뒤 한 번에 합성 → 노드 겹침 제거
+    const offCanvas = document.createElement("canvas");
+    offCanvas.width = ctx.canvas.width;
+    offCanvas.height = ctx.canvas.height;
+    const offCtx = offCanvas.getContext("2d");
+    if (offCtx) {
+      for (const seg of segments) {
+        drawRouteSegment(offCtx, seg, bounds, "rgb(25, 188, 126)", ROUTE_WIDTH);
+      }
+      ctx.save();
+      ctx.globalAlpha = ROUTE_ALPHA;
+      ctx.drawImage(offCanvas, 0, 0);
+      ctx.restore();
     }
   } else {
     // 기존 fallback: routeWaypoints 기반
     const routeSource = data.routeWaypoints.length > 0 ? data.routeWaypoints : data.waypoints;
     const staticWps = routeSource.filter((wp) => !wp.id.startsWith("alloc-"));
-    drawPolylineRoute(ctx, staticWps, bounds, "rgba(25, 188, 126, 0.35)", 14, "rgba(23, 160, 112, 0.2)", 2);
+    drawPolylineRoute(ctx, staticWps, bounds, "rgba(25, 188, 126, 0.35)", ROUTE_WIDTH, "rgba(23, 160, 112, 0.2)", 2);
   }
 }
 
@@ -438,21 +446,21 @@ function drawArrow(
 
   const s = scale;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2 * s;
+  ctx.lineWidth = 1.5 * s;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  // Stem: -5 to 3
+  // Stem: -3 to 2
   ctx.beginPath();
-  ctx.moveTo(-5 * s, 0);
-  ctx.lineTo(3 * s, 0);
+  ctx.moveTo(-3 * s, 0);
+  ctx.lineTo(2 * s, 0);
   ctx.stroke();
 
-  // Arrowhead: 3,-4 → 8,0 → 3,4
+  // Arrowhead: 0,-0.7 → 2.5,0 → 0,0.7
   ctx.beginPath();
-  ctx.moveTo(3 * s, -4 * s);
-  ctx.lineTo(8 * s, 0);
-  ctx.lineTo(3 * s, 4 * s);
+  ctx.moveTo(0, -0.7 * s);
+  ctx.lineTo(2.5 * s, 0);
+  ctx.lineTo(0, 0.7 * s);
   ctx.stroke();
 
   ctx.restore();
@@ -478,12 +486,12 @@ function drawSegmentArrows(
     const angleRad = Math.atan2(b.cy - a.cy, b.cx - a.cx);
 
     if (bidirectional) {
-      const offsetPx = 7 * scale;
-      const perpX = -Math.sin(angleRad) * offsetPx;
-      const perpY = Math.cos(angleRad) * offsetPx;
+      const offsetPx = 8 * scale;
+      const paraX = Math.cos(angleRad) * offsetPx;
+      const paraY = Math.sin(angleRad) * offsetPx;
 
-      drawArrow(ctx, mx + perpX, my + perpY, angleRad, color, scale);
-      drawArrow(ctx, mx - perpX, my - perpY, angleRad + Math.PI, color, scale);
+      drawArrow(ctx, mx + paraX, my + paraY, angleRad, color, scale);
+      drawArrow(ctx, mx - paraX, my - paraY, angleRad + Math.PI, color, scale);
     } else {
       drawArrow(ctx, mx, my, angleRad, color, scale);
     }
@@ -505,11 +513,11 @@ function drawSegmentDirectionArrow(
   const angleRad = Math.atan2(to.cy - from.cy, to.cx - from.cx);
 
   if (seg.direction === "bidirectional") {
-    const offsetPx = 7 * scale;
-    const perpX = -Math.sin(angleRad) * offsetPx;
-    const perpY = Math.cos(angleRad) * offsetPx;
-    drawArrow(ctx, mx + perpX, my + perpY, angleRad, color, scale);
-    drawArrow(ctx, mx - perpX, my - perpY, angleRad + Math.PI, color, scale);
+    const offsetPx = 8 * scale;
+    const paraX = Math.cos(angleRad) * offsetPx;
+    const paraY = Math.sin(angleRad) * offsetPx;
+    drawArrow(ctx, mx + paraX, my + paraY, angleRad, color, scale);
+    drawArrow(ctx, mx - paraX, my - paraY, angleRad + Math.PI, color, scale);
   } else if (seg.direction === "backward") {
     drawArrow(ctx, mx, my, angleRad + Math.PI, color, scale);
   } else {
@@ -777,8 +785,8 @@ function drawPois(
       drawPoiTriangle(ctx, p.cx, p.cy, poi.label, counterScale);
     }
 
-    // angle 방향 표시
-    if (poi.angle != null) {
+    // angle 방향 표시 (충전/대기 지점 제외)
+    if (poi.angle != null && poi.type !== "charging" && poi.type !== "workstation") {
       drawPoiAngleIndicator(ctx, p.cx, p.cy, poi.angle, counterScale);
     }
   }
@@ -787,6 +795,25 @@ function drawPois(
 /* ------------------------------------------------------------------ */
 /*  Draw: Robot Markers                                                */
 /* ------------------------------------------------------------------ */
+
+/** Rounded rectangle path helper */
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
 
 function drawRobot(
   ctx: CanvasRenderingContext2D,
@@ -809,7 +836,7 @@ function drawRobot(
 
   const s = counterScale;
 
-  // LED / direction accent color
+  // Accent color
   let accentColor = "#42d8ff";
   let glowColor = "rgba(66, 216, 255, 0.7)";
   if (collisionState === "collision") {
@@ -826,59 +853,108 @@ function drawRobot(
     glowColor = "rgba(255, 87, 87, 0.7)";
   }
 
-  // Direction triangle (front indicator)
+  // ── 1. Direction Arrow (cursor / pointer shape) ──
   ctx.beginPath();
-  ctx.moveTo(0, -14 * s);
-  ctx.lineTo(-3 * s, -9 * s);
-  ctx.lineTo(3 * s, -9 * s);
+  ctx.moveTo(0, -50 * s);          // tip
+  ctx.lineTo(12 * s, -18 * s);     // bottom-right
+  ctx.lineTo(0, -28 * s);          // notch center
+  ctx.lineTo(-12 * s, -18 * s);    // bottom-left
   ctx.closePath();
+  ctx.lineJoin = "round";
   ctx.fillStyle = accentColor;
-  ctx.fill();
-
-  // Body (rounded rectangle)
-  const bw = 20 * s;
-  const bh = 22 * s;
-  const bx = -bw / 2;
-  const by = -9 * s;
-  const br = 3 * s;
-  ctx.beginPath();
-  ctx.moveTo(bx + br, by);
-  ctx.lineTo(bx + bw - br, by);
-  ctx.arcTo(bx + bw, by, bx + bw, by + br, br);
-  ctx.lineTo(bx + bw, by + bh - br);
-  ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
-  ctx.lineTo(bx + br, by + bh);
-  ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
-  ctx.lineTo(bx, by + br);
-  ctx.arcTo(bx, by, bx + br, by, br);
-  ctx.closePath();
-  ctx.fillStyle = "#d8dce4";
-  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
-  ctx.shadowOffsetY = 1 * s;
-  ctx.shadowBlur = 3 * s;
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 8 * s;
   ctx.fill();
   resetShadow(ctx);
-  ctx.strokeStyle = "#8a9bb0";
-  ctx.lineWidth = 1 * s;
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 2 * s;
+  ctx.lineJoin = "round";
   ctx.stroke();
 
-  // LED strip (right side)
-  const lx = bx + bw - 3.5 * s;
-  const ly = by + 2 * s;
-  const lw = 2.5 * s;
-  const lh = 18 * s;
-  const lr = 1 * s;
+  // ── 2. Wheels (4 corners) ──
+  const wheelW = 4 * s;
+  const wheelH = 7 * s;
+  const wheelR = 1.5 * s;
+  const wheels: [number, number][] = [
+    [-14 * s, -10 * s], [10 * s, -10 * s],
+    [-14 * s,   9 * s], [10 * s,   9 * s],
+  ];
+  for (const [wx, wy] of wheels) {
+    roundedRect(ctx, wx, wy, wheelW, wheelH, wheelR);
+    ctx.fillStyle = "#2a2a2a";
+    ctx.fill();
+    // Hub line
+    ctx.beginPath();
+    ctx.moveTo(wx + wheelW / 2, wy + 1.2 * s);
+    ctx.lineTo(wx + wheelW / 2, wy + wheelH - 1.2 * s);
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 1 * s;
+    ctx.lineCap = "round";
+    ctx.stroke();
+  }
+
+  // ── 3. Body (AGV platform) ──
+  const bw = 24 * s;
+  const bh = 28 * s;
+  const bx = -12 * s;
+  const by = -12 * s;
+  const br = 4 * s;
+
+  roundedRect(ctx, bx, by, bw, bh, br);
+  ctx.fillStyle = "#f0f2f5";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+  ctx.shadowOffsetY = 1 * s;
+  ctx.shadowBlur = 4 * s;
+  ctx.fill();
+  resetShadow(ctx);
+  ctx.strokeStyle = "#a0aab4";
+  ctx.lineWidth = 1.2 * s;
+  ctx.stroke();
+
+  // ── 4–6. Body details (clipped to body shape) ──
+  ctx.save();
+  roundedRect(ctx, bx, by, bw, bh, br);
+  ctx.clip();
+
+  // Dark bands (front/rear edge)
+  ctx.fillStyle = "#8a9bb0";
+  ctx.fillRect(bx, by, bw, 2.5 * s);
+  ctx.fillRect(bx, by + bh - 2.5 * s, bw, 2.5 * s);
+
+  // Front panel
+  ctx.fillStyle = "#e0e4e8";
+  ctx.fillRect(-7 * s, -11 * s, 14 * s, 3 * s);
+
+  // Pillars (horizontal bars, top-down)
+  ctx.fillStyle = "#dce0e5";
+  ctx.fillRect(-4 * s, -6 * s, 8 * s, 2 * s);
+  ctx.fillRect(-4 * s,  8 * s, 8 * s, 2 * s);
+
+  // Sensors (front)
+  ctx.fillStyle = "#777";
   ctx.beginPath();
-  ctx.moveTo(lx + lr, ly);
-  ctx.lineTo(lx + lw - lr, ly);
-  ctx.arcTo(lx + lw, ly, lx + lw, ly + lr, lr);
-  ctx.lineTo(lx + lw, ly + lh - lr);
-  ctx.arcTo(lx + lw, ly + lh, lx + lw - lr, ly + lh, lr);
-  ctx.lineTo(lx + lr, ly + lh);
-  ctx.arcTo(lx, ly + lh, lx, ly + lh - lr, lr);
-  ctx.lineTo(lx, ly + lr);
-  ctx.arcTo(lx, ly, lx + lr, ly, lr);
-  ctx.closePath();
+  ctx.arc(-4 * s, -10 * s, 1.5 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(4 * s, -10 * s, 1.5 * s, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore(); // undo clip
+
+  // ── 7. LED Strips (both sides, rear half) ──
+  const ledW = 2.5 * s;
+  const ledH = 12 * s;
+  const ledR = 1 * s;
+  const ledY = 2 * s;
+
+  roundedRect(ctx, bx + 0.8 * s, ledY, ledW, ledH, ledR);
+  ctx.fillStyle = accentColor;
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 4 * s;
+  ctx.fill();
+  resetShadow(ctx);
+
+  roundedRect(ctx, bx + bw - ledW - 0.8 * s, ledY, ledW, ledH, ledR);
   ctx.fillStyle = accentColor;
   ctx.shadowColor = glowColor;
   ctx.shadowBlur = 4 * s;
@@ -888,7 +964,7 @@ function drawRobot(
   ctx.restore(); // undo rotation
 
   // --- Label (not rotated) ---
-  drawMarkerLabel(ctx, 0, 18 * counterScale, robotName, "#42d8ff", counterScale, 700);
+  drawMarkerLabel(ctx, 0, 22 * counterScale, robotName, accentColor, counterScale, 700);
 
   ctx.restore(); // undo translation
 }

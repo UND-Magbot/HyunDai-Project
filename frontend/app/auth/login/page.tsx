@@ -32,11 +32,11 @@ export default function LoginPage() {
     const newErrors: LoginFormErrors = {};
 
     if (!form.loginId.trim()) {
-      newErrors.loginId = "아이디를 입력해주세요";
+      newErrors.loginId = "아이디를 입력해 주세요.";
     }
 
     if (!form.password) {
-      newErrors.password = "비밀번호를 입력해주세요";
+      newErrors.password = "비밀번호를 입력해 주세요.";
     }
 
     setErrors(newErrors);
@@ -62,12 +62,14 @@ export default function LoginPage() {
       router.push("/monitoring");
     } catch (err: any) {
       const msg = err?.message ?? "";
-      if (msg.includes("아이디")) {
-        setErrors({ loginId: msg });
+      if (msg.includes("존재")) {
+        setErrors({ loginId: "존재하지 않는 아이디입니다." });
+      } else if (msg.includes("아이디")) {
+        setErrors({ loginId: "아이디가 올바르지 않습니다. 다시 확인해 주세요." });
       } else if (msg.includes("비밀번호")) {
-        setErrors({ password: msg });
+        setErrors({ password: "비밀번호가 올바르지 않습니다. 다시 확인해 주세요." });
       } else {
-        setErrors({ loginId: "로그인에 실패했습니다" });
+        setErrors({ loginId: "로그인에 실패했습니다." });
       }
     }
   };

@@ -15,7 +15,9 @@ export function BusinessSelectBox({ businesses, selectedId, onChange }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const selectedName =
-    businesses.find((b) => b.id === selectedId)?.name ?? "";
+    businesses.find((b) => b.id === selectedId)?.name ??
+    businesses[0]?.name ??
+    "";
 
   const handleClose = useCallback(() => setOpen(false), []);
 

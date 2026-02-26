@@ -33,13 +33,25 @@ export function RobotMarker({ data, leftPercent, topPercent }: Props) {
       style={style}
     >
       <div className="map-marker__body" aria-hidden="true">
+        {/* 방향 화살표 (네비게이션 커서) */}
+        <svg
+          className="map-marker__robot-arrow"
+          width="20"
+          height="24"
+          viewBox="0 0 20 24"
+        >
+          <path
+            d="M10 0 L20 22 L10 15 L0 22 Z"
+            className="map-marker__robot-dir"
+          />
+        </svg>
+        {/* 바디 (둥근 직사각형) */}
         <svg
           className="map-marker__robot-icon"
           width="22"
           height="22"
           viewBox="0 0 22 22"
         >
-          {/* 바디 (둥근 직사각형) */}
           <rect
             x="1"
             y="0"
