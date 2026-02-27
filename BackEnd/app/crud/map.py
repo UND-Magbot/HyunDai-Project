@@ -6,6 +6,17 @@ from fastapi import HTTPException, status
 from app.models.map import Business, Area, RobotMap, MapPOI, MapLine
 
 
+def _safe_json_loads(value: str | None):
+    """JSON 문자열을 안전하게 파싱한다. 실패 시 None 반환."""
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError) as e:
+        print(f"[crud/map] JSON 파싱 실패: {e}")
+        return None
+
+
 # ── Business CRUD ─────────────────────────────────────────────
 
 def get_businesses(db: Session) -> list[dict]:
@@ -50,7 +61,7 @@ def create_business(db: Session, name: str) -> dict:
 def delete_business(db: Session, business_id: int) -> dict:
     biz = db.query(Business).filter(Business.business_id == business_id).first()
     if not biz:
-        raise HTTPException(status_code=404, detail="사업장을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사업장을 찾지 못했습니다.")
     biz.is_active = False
     db.commit()
     return {"message": f"사업장 '{biz.name}'이(가) 비활성화되었습니다.", "business_id": business_id}
@@ -80,7 +91,7 @@ def get_areas(db: Session, business_id: int) -> list[dict]:
 def create_area(db: Session, business_id: int, name: str) -> dict:
     biz = db.query(Business).filter(Business.business_id == business_id).first()
     if not biz:
-        raise HTTPException(status_code=404, detail="사업장을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사업장을 찾지 못했습니다.")
     exists = db.query(Area).filter(Area.business_id == business_id, Area.name == name).first()
     if exists:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"이미 존재하는 영역입니다: {name}")
@@ -94,7 +105,7 @@ def create_area(db: Session, business_id: int, name: str) -> dict:
 def delete_area(db: Session, area_id: int) -> dict:
     area = db.query(Area).filter(Area.area_id == area_id).first()
     if not area:
-        raise HTTPException(status_code=404, detail="영역을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="영역을 찾지 못했습니다.")
     area.is_active = False
     db.commit()
     return {"message": f"영역 '{area.name}'이(가) 비활성화되었습니다.", "area_id": area_id}
@@ -115,6 +126,9 @@ def _map_to_response(rm: RobotMap) -> dict:
         "grid_origin_x": rm.grid_origin_x,
         "grid_origin_y": rm.grid_origin_y,
         "grid_resolution": rm.grid_resolution,
+        "initial_x": rm.initial_x,
+        "initial_y": rm.initial_y,
+        "initial_ori": rm.initial_ori,
         "url": rm.url,
         "start_time": rm.start_time,
         "end_time": rm.end_time,
@@ -139,10 +153,10 @@ def save_robot_map(db: Session, data: dict) -> dict:
 
     biz = db.query(Business).filter(Business.business_id == business_id).first()
     if not biz:
-        raise HTTPException(status_code=404, detail="사업장을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="사업장을 찾지 못했습니다.")
     area = db.query(Area).filter(Area.area_id == area_id, Area.business_id == business_id).first()
     if not area:
-        raise HTTPException(status_code=404, detail="영역을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="영역을 찾지 못했습니다.")
 
     rm = RobotMap(
         business_id=business_id,
@@ -155,6 +169,9 @@ def save_robot_map(db: Session, data: dict) -> dict:
         grid_origin_x=data.get("grid_origin_x", 0.0),
         grid_origin_y=data.get("grid_origin_y", 0.0),
         grid_resolution=data.get("grid_resolution", 0.0),
+        initial_x=data.get("initial_x", 0.0),
+        initial_y=data.get("initial_y", 0.0),
+        initial_ori=data.get("initial_ori", 0.0),
         url=data.get("url"),
         start_time=data.get("start_time"),
         end_time=data.get("end_time"),
@@ -162,6 +179,7 @@ def save_robot_map(db: Session, data: dict) -> dict:
         bag_id=data.get("bag_id"),
         bag_url=data.get("bag_url"),
         download_url=data.get("download_url"),
+        pbstream_url=data.get("pbstream_url"),
         trajectories_url=data.get("trajectories_url"),
     )
     db.add(rm)
@@ -185,7 +203,7 @@ def get_map_by_id(db: Session, map_id: int) -> dict:
     """맵 단건 조회."""
     rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
     if not rm:
-        raise HTTPException(status_code=404, detail="맵을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="맵을 찾지 못했습니다.")
     return _map_to_response(rm)
 
 
@@ -193,7 +211,7 @@ def delete_map(db: Session, map_id: int) -> dict:
     """맵 비활성화."""
     rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
     if not rm:
-        raise HTTPException(status_code=404, detail="맵을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="맵을 찾지 못했습니다.")
     rm.is_active = False
     db.commit()
     return {"message": "맵이 비활성화되었습니다.", "id": map_id}
@@ -210,61 +228,71 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
     """
     rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
     if not rm:
-        raise HTTPException(status_code=404, detail="맵을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="맵을 찾지 못했습니다.")
 
-    # 기존 데이터 삭제 (라인 → POI 순서)
-    db.query(MapLine).filter(MapLine.map_id == map_id).delete()
-    db.query(MapPOI).filter(MapPOI.map_id == map_id).delete()
-    db.flush()
+    try:
+        # 기존 데이터 삭제 (라인 → POI 순서)
+        db.query(MapLine).filter(MapLine.map_id == map_id).delete()
+        db.query(MapPOI).filter(MapPOI.map_id == map_id).delete()
+        db.flush()
 
-    # POI 삽입
-    client_id_to_db_id: dict[str, int] = {}
-    for p in payload.get("pois", []):
-        poi = MapPOI(
-            map_id=map_id,
-            name=p.get("name", ""),
-            x=p["x"],
-            y=p["y"],
-            world_x=p.get("worldX"),
-            world_y=p.get("worldY"),
-            poi_type=p.get("type", "waypoint"),
-            phone_number=p.get("phoneNumber"),
-            angle=p.get("angle"),
-            load_type=p.get("loadType"),
-            robot_sns=json.dumps(p["robotSns"]) if p.get("robotSns") else None,
-            address=p.get("address"),
-            docking_radius=p.get("dockingRadius"),
-            area_name=p.get("areaName"),
+        # POI 삽입
+        client_id_to_db_id: dict[str, int] = {}
+        for p in payload.get("pois", []):
+            poi = MapPOI(
+                map_id=map_id,
+                name=p.get("name", ""),
+                x=p["x"],
+                y=p["y"],
+                world_x=p.get("worldX"),
+                world_y=p.get("worldY"),
+                poi_type=p.get("type", "waypoint"),
+                phone_number=p.get("phoneNumber"),
+                angle=p.get("angle"),
+                load_type=p.get("loadType"),
+                robot_sns=json.dumps(p["robotSns"]) if p.get("robotSns") else None,
+                address=p.get("address"),
+                docking_radius=p.get("dockingRadius"),
+                area_name=p.get("areaName"),
+            )
+            db.add(poi)
+            db.flush()  # id 확정
+            client_id_to_db_id[p["id"]] = poi.id
+
+        # 라인 삽입
+        for ln in payload.get("lines", []):
+            from_db_id = client_id_to_db_id.get(ln["fromId"])
+            to_db_id = client_id_to_db_id.get(ln["toId"])
+            if from_db_id is None or to_db_id is None:
+                continue  # 참조할 POI가 없으면 건너뛰기
+
+            line = MapLine(
+                map_id=map_id,
+                from_poi_id=from_db_id,
+                to_poi_id=to_db_id,
+                from_world_x=ln.get("fromWorldX"),
+                from_world_y=ln.get("fromWorldY"),
+                to_world_x=ln.get("toWorldX"),
+                to_world_y=ln.get("toWorldY"),
+                from_ori=ln.get("fromOri"),
+                to_ori=ln.get("toOri"),
+                direction=ln.get("direction", "forward"),
+                line_type=ln.get("lineType", "straight"),
+                control_points=json.dumps(ln["controlPoints"]) if ln.get("controlPoints") else None,
+                area_name=ln.get("areaName"),
+            )
+            db.add(line)
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"맵 요소 저장 중 DB 오류가 발생했습니다: {e}",
         )
-        db.add(poi)
-        db.flush()  # id 확정
-        client_id_to_db_id[p["id"]] = poi.id
-
-    # 라인 삽입
-    for ln in payload.get("lines", []):
-        from_db_id = client_id_to_db_id.get(ln["fromId"])
-        to_db_id = client_id_to_db_id.get(ln["toId"])
-        if from_db_id is None or to_db_id is None:
-            continue  # 참조할 POI가 없으면 건너뛰기
-
-        line = MapLine(
-            map_id=map_id,
-            from_poi_id=from_db_id,
-            to_poi_id=to_db_id,
-            from_world_x=ln.get("fromWorldX"),
-            from_world_y=ln.get("fromWorldY"),
-            to_world_x=ln.get("toWorldX"),
-            to_world_y=ln.get("toWorldY"),
-            from_ori=ln.get("fromOri"),
-            to_ori=ln.get("toOri"),
-            direction=ln.get("direction", "forward"),
-            line_type=ln.get("lineType", "straight"),
-            control_points=json.dumps(ln["controlPoints"]) if ln.get("controlPoints") else None,
-            area_name=ln.get("areaName"),
-        )
-        db.add(line)
-
-    db.commit()
     return {"message": "저장 완료", "map_id": map_id}
 
 
@@ -272,7 +300,7 @@ def get_map_elements(db: Session, map_id: int) -> dict:
     """맵에 저장된 POI·라인을 프론트엔드 형식으로 반환한다."""
     rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
     if not rm:
-        raise HTTPException(status_code=404, detail="맵을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="맵을 찾지 못했습니다.")
 
     pois = db.query(MapPOI).filter(MapPOI.map_id == map_id, MapPOI.is_active == True).all()
     lines = db.query(MapLine).filter(MapLine.map_id == map_id, MapLine.is_active == True).all()
@@ -294,7 +322,7 @@ def get_map_elements(db: Session, map_id: int) -> dict:
             "phoneNumber": p.phone_number,
             "angle": p.angle,
             "loadType": p.load_type,
-            "robotSns": json.loads(p.robot_sns) if p.robot_sns else None,
+            "robotSns": _safe_json_loads(p.robot_sns),
             "address": p.address,
             "dockingRadius": p.docking_radius,
             "areaName": p.area_name,
@@ -318,7 +346,7 @@ def get_map_elements(db: Session, map_id: int) -> dict:
             "toOri": ln.to_ori,
             "direction": ln.direction,
             "lineType": ln.line_type,
-            "controlPoints": json.loads(ln.control_points) if ln.control_points else None,
+            "controlPoints": _safe_json_loads(ln.control_points),
             "areaName": ln.area_name,
         })
 

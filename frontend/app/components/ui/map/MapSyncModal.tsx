@@ -42,7 +42,7 @@ export function MapSyncModal({
     setSelectedSns(new Set());
     apiFetch<{ total: number; items: RobotItem[] }>("/api/map/robots")
       .then((data) => setRobots(data.items))
-      .catch((err) => setError(err.message ?? "로봇 목록을 불러올 수 없습니다."))
+      .catch((err) => setError(err.message ?? "로봇 목록을 불러오지 못했습니다."))
       .finally(() => setLoading(false));
   }, [open]);
 
@@ -124,7 +124,7 @@ export function MapSyncModal({
               ? {
                   ...r,
                   status: "error" as const,
-                  message: err.message ?? "동기화 실패",
+                  message: err.message ?? "동기화에 실패했습니다.",
                 }
               : r
           )

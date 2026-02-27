@@ -84,18 +84,18 @@ export function CustomTaskModal({
 
   const validate = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!form.taskName.trim()) newErrors.taskName = "작업명을 입력하세요.";
-    if (!form.business) newErrors.business = "고객사를 선택하세요.";
+    if (!form.taskName.trim()) newErrors.taskName = "작업명을 입력해 주세요.";
+    if (!form.business) newErrors.business = "고객사를 선택해 주세요.";
     if (
       isNaN(form.speed) ||
       form.speed < SPEED_MIN ||
       form.speed > SPEED_MAX ||
       form.speed % SPEED_STEP !== 0
     ) {
-      newErrors.speed = `속도는 ${SPEED_MIN}~${SPEED_MAX} 범위의 ${SPEED_STEP} 단위여야 합니다.`;
+      newErrors.speed = `속도가 허용 범위(${SPEED_MIN}~${SPEED_MAX}, ${SPEED_STEP} 단위)를 벗어났습니다.`;
     }
     if (form.steps.length === 0) {
-      newErrors.steps = "스텝을 하나 이상 추가하세요.";
+      newErrors.steps = "스텝을 추가해 주세요.";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;

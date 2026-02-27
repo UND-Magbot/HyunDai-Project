@@ -30,7 +30,7 @@ export function RobotConnectModal({
     setError(null);
     apiFetch<{ total: number; items: RobotItem[] }>("/api/map/robots")
       .then((data) => setRobots(data.items))
-      .catch((err) => setError(err.message ?? "로봇 목록을 불러올 수 없습니다."))
+      .catch((err) => setError(err.message ?? "로봇 목록을 불러오지 못했습니다."))
       .finally(() => setLoading(false));
   }, [open]);
 
@@ -55,7 +55,7 @@ export function RobotConnectModal({
       setSearch("");
       setSelectedSn(null);
     } catch (err: any) {
-      setError(err.message ?? "로봇에 연결할 수 없습니다.");
+      setError(err.message ?? "로봇에 연결하지 못했습니다.");
     } finally {
       setConnecting(false);
     }

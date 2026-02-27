@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -22,12 +22,15 @@ class LoopStartRequest(BaseModel):
 
 # ─── 헬퍼 ─────────────────────────────────────────────────────────────────────
 
-def _get_robot_ip(db: Session, robot_id: int) -> str:
+def _get_robot_ip(db: Session, robot_id: int) -> str | JSONResponse:
     robot = db.query(Robot).filter(Robot.id == robot_id, Robot.is_active == True).first()
     if not robot:
-        raise HTTPException(status_code=404, detail="로봇을 찾을 수 없습니다")
+        return JSONResponse(status_code=404, content={"detail": "로봇을 찾지 못했습니다."})
     if not robot.ip_address:
-        raise HTTPException(status_code=400, detail="로봇 IP 주소가 등록되지 않았습니다")
+        return JSONResponse(status_code=400, content={
+            "detail": "로봇 IP 주소가 등록되어 있지 않습니다.", "error_code": "ROBOT-003",
+            "description": "_get_robot_ip() — IP 미등록"
+        })
     return robot.ip_address
 
 
@@ -40,11 +43,14 @@ def api_start_loop(req: LoopStartRequest, db: Session = Depends(get_db)):
     - 예시: ["CUR-001", "CUR-002"]
     """
     ip = _get_robot_ip(db, req.robot_id)
+    if isinstance(ip, JSONResponse):
+        return ip
 
     # is_running 체크는 start_loop 내부에서 처리 (정리 로직 포함)
-    ok, msg = start_loop(req.robot_id, ip, req.poi_names, req.stop_names, req.entry_poi_names)
+    ok, msg, code = start_loop(req.robot_id, ip, req.poi_names, req.stop_names, req.entry_poi_names)
     if not ok:
-        raise HTTPException(status_code=400, detail=msg)
+        desc_map = {"TASK-001": "start_loop() — 이미 작업 실행 중일 때", "TASK-002": "start_loop() — POI 없이 작업 시작"}
+        return JSONResponse(status_code=400, content={"detail": msg, "error_code": code, "description": desc_map.get(code, "")})
 
     return {"message": msg, "robot_id": req.robot_id, "poi_names": req.poi_names, "stop_names": req.stop_names, "entry_poi_names": req.entry_poi_names}
 
@@ -53,9 +59,11 @@ def api_start_loop(req: LoopStartRequest, db: Session = Depends(get_db)):
 def api_stop_loop(robot_id: int, db: Session = Depends(get_db)):
     """무한반복 작업 정지"""
     ip = _get_robot_ip(db, robot_id)
-    ok, msg = stop_loop(robot_id, ip)
+    if isinstance(ip, JSONResponse):
+        return ip
+    ok, msg, code = stop_loop(robot_id, ip)
     if not ok:
-        raise HTTPException(status_code=400, detail=msg)
+        return JSONResponse(status_code=400, content={"detail": msg, "error_code": code, "description": "stop_loop() — 정지할 작업 없음"})
 
     return {"message": msg, "robot_id": robot_id}
 
@@ -63,9 +71,9 @@ def api_stop_loop(robot_id: int, db: Session = Depends(get_db)):
 @router.post("/loop/confirm/{robot_id}")
 def api_confirm_loop(robot_id: int):
     """작업 포인트 확인 — 로봇 태블릿에서 호출하여 다음 구간으로 진행"""
-    ok, msg = confirm_loop(robot_id)
+    ok, msg, code = confirm_loop(robot_id)
     if not ok:
-        raise HTTPException(status_code=400, detail=msg)
+        return JSONResponse(status_code=400, content={"detail": msg, "error_code": code, "description": "confirm_loop() — 확인 대기 없음"})
     return {"message": msg, "robot_id": robot_id}
 
 
@@ -98,12 +106,15 @@ class ChargeRequest(BaseModel):
 def api_charge(robot_id: int, req: ChargeRequest = None, db: Session = Depends(get_db)):
     """로봇을 충전소로 이동 (경유 경로 지정 가능)"""
     ip = _get_robot_ip(db, robot_id)
+    if isinstance(ip, JSONResponse):
+        return ip
     if req and req.route_poi_names:
-        ok, msg = start_charge_route(robot_id, ip, req.route_poi_names)
+        ok, msg, code = start_charge_route(robot_id, ip, req.route_poi_names)
     else:
-        ok, msg = send_charge(ip)
+        ok, msg, code = send_charge(ip)
     if not ok:
-        raise HTTPException(status_code=400, detail=msg)
+        desc = "send_charge() — 충전소 이동 API 실패" if not (req and req.route_poi_names) else "start_charge_route() — 충전 경로 시작 실패"
+        return JSONResponse(status_code=400, content={"detail": msg, "error_code": code, "description": desc})
     return {"message": msg, "robot_id": robot_id}
 
 

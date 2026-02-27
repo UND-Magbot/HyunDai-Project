@@ -72,8 +72,8 @@ def _base_url(ip: str) -> str:
     return f"http://{ip}:{PORT}"
 
 
-def send_charge(ip: str, retry_count: int = 3) -> tuple[bool, str]:
-    """충전소 이동 명령 전송 → (success, message)"""
+def send_charge(ip: str, retry_count: int = 3) -> tuple[bool, str, str | None]:
+    """충전소 이동 명령 전송 → (success, message, error_code)"""
     session = _get_session(ip)
     body = {
         "creator": "rcs",
@@ -84,14 +84,16 @@ def send_charge(ip: str, retry_count: int = 3) -> tuple[bool, str]:
         r = session.post(f"{_base_url(ip)}/chassis/moves", json=body, timeout=5)
         if r.status_code in (200, 201):
             move_id = r.json().get("id", -1)
-            return True, f"충전소 이동 시작 (move_id={move_id})"
-        return False, f"HTTP {r.status_code}: {r.text}"
+            return True, f"충전소 이동 시작 (move_id={move_id})", None
+        logger.error(f"[send_charge] HTTP {r.status_code}: {r.text}")
+        return False, "충전소 이동에 실패했습니다.", "ROBOT-004"
     except Exception as e:
-        return False, str(e)
+        logger.error(f"[send_charge] 예외: {e}")
+        return False, "충전소 이동에 실패했습니다.", "ROBOT-004"
 
 
 def start_charge_route(robot_id: int, robot_ip: str,
-                       route_poi_names: list[str]) -> tuple[bool, str]:
+                       route_poi_names: list[str]) -> tuple[bool, str, str | None]:
     """충전소 이동 (경유 경로 포함) — 백그라운드 스레드 시작"""
     t = threading.Thread(
         target=_charge_route_runner,
@@ -101,7 +103,7 @@ def start_charge_route(robot_id: int, robot_ip: str,
     )
     t.start()
     logger.info(f"[Robot {robot_id}] 충전 경로 스레드 시작: {route_poi_names}")
-    return True, "충전소 이동 경로 시작"
+    return True, "충전소 이동 경로 시작", None
 
 
 def _charge_route_runner(robot_id: int, robot_ip: str,
@@ -123,6 +125,13 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
             ).first()
             if not poi:
                 logger.error(f"[Robot {robot_id}] 충전 경로 POI '{name}' 없음")
+                with _lock:
+                    _run_info[robot_id] = {
+                        "status": "error",
+                        "message": f"충전 경로 POI '{name}'을(를) 찾지 못했습니다.",
+                        "error_code": "ROBOT-005",
+                        "description": "_charge_route_runner() — 충전 경로 POI 조회 실패",
+                    }
                 return
             route_pois.append(poi)
 
@@ -163,6 +172,13 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
                 robot_ip, tx, ty, t_angle, route_coords=route_coords)
             if not ok:
                 logger.error(f"[Robot {robot_id}] 충전 경로 이동 명령 실패: {err}")
+                with _lock:
+                    _run_info[robot_id] = {
+                        "status": "error",
+                        "message": "충전 경로 이동에 실패했습니다.",
+                        "error_code": "ROBOT-005",
+                        "description": "_charge_route_runner() — 충전 경로 이동 명령 실패",
+                    }
                 return
 
             logger.info(f"[Robot {robot_id}] 충전 경로 Move {move_id} 전송")
@@ -196,7 +212,9 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
             with _lock:
                 _run_info[robot_id] = {
                     "status": "error",
-                    "message": f"충전 경로 이동 실패: {result}",
+                    "message": f"충전 경로 이동에 실패했습니다. ({detail})",
+                    "error_code": "ROBOT-005",
+                    "description": "_charge_route_runner() — 충전 경로 이동 실패",
                 }
             return
 
@@ -208,7 +226,7 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
             }
 
         time.sleep(1)
-        ok, msg = send_charge(robot_ip)
+        ok, msg, _ = send_charge(robot_ip)
         logger.info(f"[Robot {robot_id}] 충전 명령: ok={ok}, {msg}")
 
         if ok:
@@ -221,11 +239,20 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
             with _lock:
                 _run_info[robot_id] = {
                     "status": "error",
-                    "message": f"충전 명령 실패: {msg}",
+                    "message": "충전 명령에 실패했습니다.",
+                    "error_code": "ROBOT-006",
+                    "description": "_charge_route_runner() — 충전 명령 실패",
                 }
 
     except Exception as e:
         logger.exception(f"[Robot {robot_id}] 충전 경로 예외: {e}")
+        with _lock:
+            _run_info[robot_id] = {
+                "status": "error",
+                "message": "충전 경로 실행 중 오류가 발생했습니다.",
+                "error_code": "ROBOT-005",
+                "description": "_charge_route_runner() — 충전 경로 예외",
+            }
     finally:
         if ws:
             try:
@@ -638,6 +665,8 @@ def _navigate_to_charger(robot_id: int, robot_ip: str,
         _run_info[robot_id] = {
             "status": "low_battery_charging",
             "message": f"배터리 부족 — 충전소 이동 중 ({route_desc})",
+            "error_code": "ROBOT-007",
+            "description": "_navigate_to_charger() — 배터리 부족",
         }
 
     # 4. 이동 명령 전송
@@ -645,6 +674,13 @@ def _navigate_to_charger(robot_id: int, robot_ip: str,
         ok, move_id, err = send_move(robot_ip, cx, cy, c_angle, route_coords=route_coords)
         if not ok:
             logger.error(f"[Robot {robot_id}] 충전소 이동 명령 실패: {err}")
+            with _lock:
+                _run_info[robot_id] = {
+                    "status": "error",
+                    "message": "충전소 이동에 실패했습니다.",
+                    "error_code": "ROBOT-005",
+                    "description": "_navigate_to_charger() — 충전소 이동 명령 실패",
+                }
             return False
 
         logger.info(f"[Robot {robot_id}] 충전소 이동 Move {move_id} 전송")
@@ -659,11 +695,18 @@ def _navigate_to_charger(robot_id: int, robot_ip: str,
 
     if result != "succeeded":
         logger.error(f"[Robot {robot_id}] 충전소 이동 실패: {result} {detail}")
+        with _lock:
+            _run_info[robot_id] = {
+                "status": "error",
+                "message": f"충전소 이동에 실패했습니다. ({detail})",
+                "error_code": "ROBOT-005",
+                "description": "_navigate_to_charger() — 충전소 이동 실패",
+            }
         return False
 
     # 5. 충전소 도착 → 충전 명령
     time.sleep(1)
-    ok, msg = send_charge(robot_ip)
+    ok, msg, _ = send_charge(robot_ip)
     logger.info(f"[Robot {robot_id}] 충전 명령 전송: ok={ok}, {msg}")
 
     with _lock:
@@ -830,7 +873,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
             if not poi:
                 logger.error(f"[Robot {robot_id}] POI '{name}' 을 찾을 수 없습니다")
                 with _lock:
-                    _run_info[robot_id] = {"status": "error", "message": f"POI '{name}' 없음"}
+                    _run_info[robot_id] = {"status": "error", "message": f"POI '{name}'을(를) 찾지 못했습니다.", "error_code": "TASK-003", "description": "_task_runner() — DB에서 POI 조회 실패"}
                 return
             pois.append(poi)
 
@@ -845,7 +888,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                 if not poi:
                     logger.error(f"[Robot {robot_id}] 진입 POI '{name}' 을 찾을 수 없습니다")
                     with _lock:
-                        _run_info[robot_id] = {"status": "error", "message": f"진입 POI '{name}' 없음"}
+                        _run_info[robot_id] = {"status": "error", "message": f"진입 POI '{name}'을(를) 찾지 못했습니다.", "error_code": "TASK-006", "description": "_task_runner() — 진입 POI 조회 실패"}
                     return
                 entry_pois.append(poi)
 
@@ -881,7 +924,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                 if not ok:
                     logger.error(f"[Robot {robot_id}] 진입 경로 이동 명령 실패: {err}")
                     with _lock:
-                        _run_info[robot_id] = {"status": "error", "message": err}
+                        _run_info[robot_id] = {"status": "error", "message": "진입 경로 이동 명령에 실패했습니다.", "error_code": "TASK-007", "description": "_task_runner() — 진입 경로 이동 실패"}
                     return
 
                 logger.info(f"[Robot {robot_id}] 진입 경로 Move {move_id} 전송 완료")
@@ -914,7 +957,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
             if result in ("failed", "timeout", "ws_error"):
                 logger.error(f"[Robot {robot_id}] 진입 경로 이동 실패 ({result}) — {detail}")
                 with _lock:
-                    _run_info[robot_id] = {"status": "error", "message": f"진입 경로 실패: {result} | {detail}"}
+                    _run_info[robot_id] = {"status": "error", "message": f"진입 경로 이동에 실패했습니다. ({detail})", "error_code": "TASK-007", "description": "_task_runner() — 진입 경로 이동 실패"}
                 return
 
             logger.info(f"[Robot {robot_id}] 진입 경로 완료 — 루프 작업 시작")
@@ -931,7 +974,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
         if not segments:
             logger.error(f"[Robot {robot_id}] 작업 포인트가 없습니다 (stop_names에 해당하는 POI 없음)")
             with _lock:
-                _run_info[robot_id] = {"status": "error", "message": "작업 포인트 없음"}
+                _run_info[robot_id] = {"status": "error", "message": "작업 포인트를 찾지 못했습니다.", "error_code": "TASK-004", "description": "_task_runner() — 정지 포인트 없음"}
             return
 
         stop_poi_names = [s["target"].name for s in segments]
@@ -982,6 +1025,8 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                                     "loop": loop,
                                     "current_poi": home_poi.name,
                                     "message": f"배터리 부족 — {home_poi.name}으로 복귀 중",
+                                    "error_code": "ROBOT-007",
+                                    "description": "_task_runner() — 배터리 부족",
                                 }
 
                             home_ok = False
@@ -1002,6 +1047,15 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
 
                             if not home_ok:
                                 logger.error(f"[Robot {robot_id}] {home_poi.name} 복귀 실패 — 현재 위치에서 충전소 이동 시도")
+                                with _lock:
+                                    _run_info[robot_id] = {
+                                        "status": "low_battery_charging",
+                                        "loop": loop,
+                                        "current_poi": charging_poi.name,
+                                        "message": f"{home_poi.name} 복귀 실패 — 현재 위치에서 충전소 이동 시도",
+                                        "error_code": "ROBOT-007",
+                                        "description": "_task_runner() — 배터리 부족",
+                                    }
 
                             # 2단계: ENTERPOS 역순 → 충전소 이동
                             _navigate_to_charger(
@@ -1026,6 +1080,8 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                                 _run_info[robot_id] = {
                                     "status": "charging",
                                     "message": "배터리 부족 — 충전 중 (작업 종료)",
+                                    "error_code": "ROBOT-008",
+                                    "description": "_task_runner() — 배터리 부족으로 충전 진입",
                                 }
                             return
                         else:
@@ -1106,7 +1162,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                         if not ok:
                             logger.error(f"[Robot {robot_id}] 이동 명령 실패: {err}")
                             with _lock:
-                                _run_info[robot_id] = {"status": "error", "message": err}
+                                _run_info[robot_id] = {"status": "error", "message": "이동 명령에 실패했습니다.", "error_code": "TASK-005", "description": "_task_runner() — 로봇 이동 명령 실패"}
                             return
 
                         logger.info(f"[Robot {robot_id}] Move {move_id} 전송 완료")
@@ -1150,7 +1206,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                     with _lock:
                         _run_info[robot_id] = {
                             "status": "error",
-                            "message": f"이동 실패: {result} | {detail}",
+                            "message": f"이동에 실패했습니다. ({detail})",
+                            "error_code": "TASK-005",
+                            "description": "_task_runner() — 로봇 이동 명령 실패",
                         }
                     return
 
@@ -1236,7 +1294,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
     except Exception as e:
         logger.exception(f"[Robot {robot_id}] 예외: {e}")
         with _lock:
-            _run_info[robot_id] = {"status": "error", "message": str(e)}
+            _run_info[robot_id] = {"status": "error", "message": "작업 실행 중 오류가 발생했습니다.", "error_code": "TASK-013", "description": "_task_runner() — 예외 catch"}
     finally:
         if ws:
             try:
@@ -1258,7 +1316,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
 
 def start_loop(robot_id: int, robot_ip: str, poi_names: list[str],
                stop_names: list[str] | None = None,
-               entry_poi_names: list[str] | None = None) -> tuple[bool, str]:
+               entry_poi_names: list[str] | None = None) -> tuple[bool, str, str | None]:
     """POI 이름 목록을 받아 무한반복 실행 시작 (스레드 안전)
     stop_names: 작업 포인트 (정지할 POI). 비어있으면 모든 POI에서 정지
     entry_poi_names: 진입 경로 POI (충전소→작업구역, 최초 1회만 통과)
@@ -1270,9 +1328,9 @@ def start_loop(robot_id: int, robot_ip: str, poi_names: list[str],
                 logger.info(f"[Robot {robot_id}] 이전 스레드 정리 중 — 강제 제거 후 재시작")
                 _stop_events.pop(robot_id, None)
             else:
-                return False, "이미 실행 중입니다"
+                return False, "이미 실행 중입니다.", "TASK-001"
         if not poi_names:
-            return False, "POI 목록이 비어 있습니다"
+            return False, "POI 목록이 비어 있습니다.", "TASK-002"
 
         stop_event = threading.Event()
         _stop_events[robot_id] = stop_event
@@ -1290,10 +1348,10 @@ def start_loop(robot_id: int, robot_ip: str, poi_names: list[str],
     )
     t.start()
     logger.info(f"[Robot {robot_id}] 스레드 시작 — 진입: {entry_poi_names}, POI: {poi_names}, 작업포인트: {stop_names}")
-    return True, "무한반복 작업이 시작되었습니다"
+    return True, "무한반복 작업이 시작되었습니다.", None
 
 
-def confirm_loop(robot_id: int) -> tuple[bool, str]:
+def confirm_loop(robot_id: int) -> tuple[bool, str, str | None]:
     """작업 포인트 확인 → 다음 구간 진행 (스레드 안전)
     로봇 태블릿에서 호출하여 작업 포인트 대기 해제
     """
@@ -1302,14 +1360,14 @@ def confirm_loop(robot_id: int) -> tuple[bool, str]:
         if not event:
             info = _run_info.get(robot_id, {})
             if info.get("status") != "waiting_confirmation":
-                return False, "확인 대기 중인 작업이 없습니다"
-            return False, "확인 이벤트를 찾을 수 없습니다"
+                return False, "확인 대기 중인 작업이 없습니다.", "TASK-010"
+            return False, "확인 이벤트를 찾지 못했습니다.", "TASK-010"
     event.set()
     logger.info(f"[Robot {robot_id}] 태블릿 확인 신호 수신")
-    return True, "확인 완료 — 다음 구간으로 진행합니다"
+    return True, "확인 완료 — 다음 구간으로 진행합니다.", None
 
 
-def stop_loop(robot_id: int, robot_ip: str = "") -> tuple[bool, str]:
+def stop_loop(robot_id: int, robot_ip: str = "") -> tuple[bool, str, str | None]:
     """실행 중인 무한반복 → CURPOS1 도착 후 정지 (그레이스풀 정지)"""
     with _lock:
         event = _stop_events.get(robot_id)
@@ -1319,18 +1377,18 @@ def stop_loop(robot_id: int, robot_ip: str = "") -> tuple[bool, str]:
                 _run_info.pop(robot_id, None)
             if robot_ip:
                 cancel_current_move(robot_ip)
-            return False, "실행 중인 작업이 없습니다"
+            return False, "실행 중인 작업이 없습니다.", "TASK-008"
         graceful = _graceful_stop_events.get(robot_id)
     if graceful:
         graceful.set()
         logger.info(f"[Robot {robot_id}] 그레이스풀 정지 요청 — CURPOS1 도착 후 종료")
-        return True, "현재 루프 완료 후 CURPOS1에서 정지합니다"
+        return True, "현재 루프 완료 후 CURPOS1에서 정지합니다.", None
     # graceful event가 없으면 즉시 정지 (폴백)
     event.set()
     if robot_ip:
         cancel_current_move(robot_ip)
     logger.info(f"[Robot {robot_id}] 즉시 정지 요청")
-    return True, "정지 요청을 전송했습니다"
+    return True, "정지 요청을 전송했습니다.", None
 
 
 def get_loop_status(robot_id: int) -> dict:

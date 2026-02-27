@@ -110,30 +110,30 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
     const newErrors: Record<string, string> = {};
 
     if (!form.taskType) {
-      newErrors.taskType = "작업 유형을 선택하세요.";
+      newErrors.taskType = "작업 유형을 선택해 주세요.";
     }
 
     if (!form.mode) {
-      newErrors.mode = "모드를 선택하세요.";
+      newErrors.mode = "모드를 선택해 주세요.";
     }
 
     if (isNaN(form.maxSpeed) || form.maxSpeed < SPEED_MIN || form.maxSpeed > SPEED_MAX) {
-      newErrors.maxSpeed = `최대 속도는 ${SPEED_MIN}~${SPEED_MAX} 범위여야 합니다.`;
+      newErrors.maxSpeed = `최대 속도가 허용 범위(${SPEED_MIN}~${SPEED_MAX})를 벗어났습니다.`;
     }
 
     if (isDetourEnabled) {
       const validDetourValues = [0, 0.4, 0.8, 1.2, 1.6, 2.0];
       if (isNaN(form.detourR) || !validDetourValues.includes(roundDetour(form.detourR))) {
-        newErrors.detourR = "우회 반경은 0, 0.4, 0.8, 1.2, 1.6, 2.0 중 하나여야 합니다.";
+        newErrors.detourR = "유효하지 않은 우회 반경이 입력되었습니다.";
       }
     }
 
     if (isNaN(form.cycles) || form.cycles < 1 || !Number.isInteger(form.cycles)) {
-      newErrors.cycles = "반복 횟수는 1 이상의 정수여야 합니다.";
+      newErrors.cycles = "유효하지 않은 반복 횟수가 입력되었습니다.";
     }
 
     if (!form.robot) {
-      newErrors.robot = "로봇을 선택하세요.";
+      newErrors.robot = "로봇을 선택해 주세요.";
     } else if (form.robot !== "Auto") {
       const device = mockDevices.find((d) => d.id === form.robot);
       if (device && device.power !== "online") {
@@ -142,7 +142,7 @@ export function CreateTaskModal({ open, onClose }: CreateTaskModalProps) {
     }
 
     if (form.selectedRoutes.length === 0) {
-      newErrors.selectedRoutes = "경로를 하나 이상 선택하세요.";
+      newErrors.selectedRoutes = "경로를 선택해 주세요.";
     }
 
     setErrors(newErrors);

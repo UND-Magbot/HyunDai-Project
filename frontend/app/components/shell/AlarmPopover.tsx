@@ -4,17 +4,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { IconButton } from "../ui/IconButton";
 import { AlarmSearchPopup } from "./AlarmSearchPopup";
-import { ALARM_ERROR_TYPE_LABELS } from "@/lib/constants/alarm";
-import { getTodayAlarms } from "@/lib/mock/alarmSearch";
-import type { AlarmSearchItem } from "@/lib/types/alarm-search";
+import { ALARM_ERROR_TYPE_LABELS, getErrorTypeFromCode } from "@/lib/constants/alarm";
+import { getAlarmLogs, markAsRead, markAllAsRead } from "@/lib/api/alarm-log";
+import { useAlert } from "@/lib/context/AlertContext";
+import type { AlarmLogResponse } from "@/lib/types/alarm-log";
+import type { AlarmErrorType } from "@/lib/types/shell";
 
-function speakAlarm(alarm: AlarmSearchItem): void {
+function speakAlarm(alarm: AlarmLogResponse): void {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
 
   window.speechSynthesis.cancel();
 
-  const errorLabel = ALARM_ERROR_TYPE_LABELS[alarm.errorType];
-  const text = `${alarm.robotSn} ${errorLabel} 발생했으니 확인부탁드립니다.`;
+  const errorType = alarm.error_type as AlarmErrorType;
+  const errorLabel = ALARM_ERROR_TYPE_LABELS[errorType] ?? alarm.error_type_name;
+  const sn = alarm.robot_sn ?? "";
+  const text = sn
+    ? `${sn} ${errorLabel} 발생했으니 확인부탁드립니다.`
+    : `${errorLabel} 발생했으니 확인부탁드립니다.`;
 
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "ko-KR";
@@ -23,9 +29,7 @@ function speakAlarm(alarm: AlarmSearchItem): void {
 
   const voices = window.speechSynthesis.getVoices();
   const koreanVoice = voices.find((v) => v.lang.startsWith("ko"));
-  if (koreanVoice) {
-    utterance.voice = koreanVoice;
-  }
+  if (koreanVoice) utterance.voice = koreanVoice;
 
   window.speechSynthesis.speak(utterance);
 }
@@ -41,22 +45,47 @@ export function AlarmPopover({
   const [searchOpen, setSearchOpen] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [keyword, setKeyword] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [readAlarmIds, setReadAlarmIds] = useState<Set<string>>(new Set());
+  const [alarms, setAlarms] = useState<AlarmLogResponse[]>([]);
   const triggerRef = useRef<HTMLDivElement>(null);
 
-  const todayAlarms = useMemo(() => getTodayAlarms(), []);
+  const {
+    unreadCount,
+    refreshUnreadCount,
+    decrementUnreadCount,
+    resetUnreadCount,
+  } = useAlert();
 
-  const activeAlarmCount = useMemo(
-    () => todayAlarms.filter((a) => a.status === "Warning" && !readAlarmIds.has(a.id)).length,
-    [todayAlarms, readAlarmIds]
-  );
+  // ── 알람 목록 조회 (최근 24시간, 읽지 않은 것만) ──
+  const fetchAlarms = useCallback(() => {
+    getAlarmLogs({ hours: 24, is_read: false, limit: 100 })
+      .then((res) => setAlarms(res.items))
+      .catch(() => {});
+  }, []);
 
-  const hasGlobalNeonAlert = todayAlarms.some(
-    (a) => a.status === "Warning" && !readAlarmIds.has(a.id)
-  );
+  // 마운트 + 30초 폴링
+  useEffect(() => {
+    fetchAlarms();
+    const timer = setInterval(() => {
+      fetchAlarms();
+      refreshUnreadCount();
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [fetchAlarms, refreshUnreadCount]);
 
-  const showNeon = hasGlobalNeonAlert;
+  const hasUnread = unreadCount > 0;
+
+  // Neon effect
+  useEffect(() => {
+    document.body.removeAttribute("data-alarm-urgent");
+    if (hasUnread) {
+      document.body.setAttribute("data-alarm-neon", "true");
+    } else {
+      document.body.removeAttribute("data-alarm-neon");
+    }
+    return () => {
+      document.body.removeAttribute("data-alarm-neon");
+    };
+  }, [hasUnread]);
 
   // Preload voices for TTS
   useEffect(() => {
@@ -68,18 +97,6 @@ export function AlarmPopover({
         window.speechSynthesis.removeEventListener("voiceschanged", handler);
     }
   }, []);
-
-  useEffect(() => {
-    document.body.removeAttribute("data-alarm-urgent");
-    if (showNeon) {
-      document.body.setAttribute("data-alarm-neon", "true");
-    } else {
-      document.body.removeAttribute("data-alarm-neon");
-    }
-    return () => {
-      document.body.removeAttribute("data-alarm-neon");
-    };
-  }, [showNeon]);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -110,43 +127,50 @@ export function AlarmPopover({
   }, [open, handleClose]);
 
   const handleSearchKeyword = useCallback(() => {
-    setAppliedKeyword(keyword);
-  }, [keyword]);
+    // keyword 필터는 useMemo에서 자동 적용
+  }, []);
 
+  // 키워드 필터
   const displayAlarms = useMemo(() => {
-    let filtered = todayAlarms.filter((a) => !readAlarmIds.has(a.id));
-    if (appliedKeyword) {
-      const k = appliedKeyword.toLowerCase();
-      filtered = filtered.filter(
-        (a) =>
-          a.message.toLowerCase().includes(k) ||
-          a.code.toLowerCase().includes(k) ||
-          a.robotSn.toLowerCase().includes(k) ||
-          (ALARM_ERROR_TYPE_LABELS[a.errorType] ?? "").includes(k)
-      );
-    }
-    return filtered;
-  }, [todayAlarms, readAlarmIds, appliedKeyword]);
+    if (!keyword) return alarms;
+    const k = keyword.toLowerCase();
+    return alarms.filter(
+      (a) =>
+        a.message.toLowerCase().includes(k) ||
+        a.error_code.toLowerCase().includes(k) ||
+        (a.robot_sn ?? "").toLowerCase().includes(k) ||
+        (a.source ?? "").toLowerCase().includes(k)
+    );
+  }, [alarms, keyword]);
 
   const noAlarms = displayAlarms.length === 0;
 
   const handleOpenSearch = () => {
-    if (todayAlarms.length === 0) return;
+    if (alarms.length === 0) return;
     setOpen(false);
     setSearchOpen(true);
   };
 
-  const handleReadAlarm = useCallback((id: string) => {
-    setReadAlarmIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
+  const handleReadAlarm = useCallback(
+    (id: number) => {
+      markAsRead([id])
+        .then(() => {
+          setAlarms((prev) => prev.filter((a) => a.id !== id));
+          decrementUnreadCount();
+        })
+        .catch(() => {});
+    },
+    [decrementUnreadCount]
+  );
 
   const handleReadAll = useCallback(() => {
-    setReadAlarmIds(new Set(todayAlarms.map((a) => a.id)));
-  }, [todayAlarms]);
+    markAllAsRead()
+      .then(() => {
+        setAlarms([]);
+        resetUnreadCount();
+      })
+      .catch(() => {});
+  }, [resetUnreadCount]);
 
   return (
     <>
@@ -157,6 +181,7 @@ export function AlarmPopover({
           aria-label="Open alarms"
           onClick={() => {
             setOpen((v) => !v);
+            if (!open) fetchAlarms();
           }}
         >
           <Image
@@ -167,9 +192,9 @@ export function AlarmPopover({
             className="alarm-trigger__icon"
           />
         </IconButton>
-        {activeAlarmCount > 0 ? (
+        {unreadCount > 0 ? (
           <span className="alarm-badge alarm-badge--error">
-            {activeAlarmCount > 99 ? "99+" : activeAlarmCount}
+            {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         ) : null}
 
@@ -202,16 +227,18 @@ export function AlarmPopover({
                 <button
                   type="button"
                   className={`alarm-popover__action-btn${noAlarms ? " alarm-popover__action-btn--disabled" : ""}`}
-                  onClick={() => { if (!noAlarms) handleReadAll(); }}
+                  onClick={() => {
+                    if (!noAlarms) handleReadAll();
+                  }}
                   aria-disabled={noAlarms}
                 >
                   전체 읽음
                 </button>
                 <button
                   type="button"
-                  className={`alarm-popover__action-btn${todayAlarms.length === 0 ? " alarm-popover__action-btn--disabled" : ""}`}
+                  className={`alarm-popover__action-btn${alarms.length === 0 ? " alarm-popover__action-btn--disabled" : ""}`}
                   onClick={handleOpenSearch}
-                  aria-disabled={todayAlarms.length === 0}
+                  aria-disabled={alarms.length === 0}
                 >
                   알림 이력
                 </button>
@@ -220,11 +247,15 @@ export function AlarmPopover({
                   variant="ghost"
                   aria-label={soundOn ? "Mute alarm sound" : "Enable alarm sound"}
                   aria-disabled={noAlarms}
-                  onClick={() => { if (!noAlarms) setSoundOn((v) => !v); }}
+                  onClick={() => {
+                    if (!noAlarms) setSoundOn((v) => !v);
+                  }}
                 >
                   <img
                     src={
-                      soundOn ? "/icon/sound-btn.png" : "/icon/sound-btn-off.png"
+                      soundOn
+                        ? "/icon/sound-btn.png"
+                        : "/icon/sound-btn-off.png"
                     }
                     alt={soundOn ? "Sound on" : "Sound off"}
                     className="alarm-popover__sound-icon"
@@ -235,18 +266,15 @@ export function AlarmPopover({
             <div className="alarm-popover__list">
               {displayAlarms.length === 0 ? (
                 <div className="alarm-popover__empty">
-                  오늘 발생한 알람이 없습니다.
+                  최근 24시간 내 알람이 없습니다.
                 </div>
               ) : (
                 displayAlarms.map((alarm) => {
+                  const errorType = alarm.error_type as AlarmErrorType;
                   const errorLabel =
-                    ALARM_ERROR_TYPE_LABELS[alarm.errorType];
-                  const severity =
-                    alarm.errorType === "network"
-                      ? "error"
-                      : alarm.errorType === "battery"
-                        ? "warning"
-                        : "info";
+                    ALARM_ERROR_TYPE_LABELS[errorType] ??
+                    alarm.error_type_name;
+                  const severity = alarm.severity === "error" ? "warning" : "info";
 
                   return (
                     <div
@@ -257,16 +285,19 @@ export function AlarmPopover({
                         <span
                           className={`alarm-item__code-severity alarm-item__severity--${severity}`}
                         >
-                          [{alarm.code}] {errorLabel}
+                          [{alarm.error_code}] {errorLabel}
                         </span>
                       </div>
                       <p className="alarm-item__message">
-                        [{alarm.robotSn}] [{errorLabel}] 발생했으니
-                        확인부탁드립니다.
+                        {alarm.robot_sn
+                          ? `[${alarm.robot_sn}] ${alarm.message}`
+                          : alarm.message}
                       </p>
+
                       <div className="alarm-item__footer">
                         <span className="alarm-item__timestamp">
-                          {alarm.timestamp}
+                          {alarm.created_at.replace("T", " ")}
+                          {alarm.source ? ` · ${alarm.source}` : ""}
                         </span>
                         <div className="alarm-item__footer-actions">
                           <button
@@ -291,7 +322,11 @@ export function AlarmPopover({
                             }}
                           >
                             <img
-                              src={soundOn ? "/icon/sound-btn.png" : "/icon/sound-btn-off.png"}
+                              src={
+                                soundOn
+                                  ? "/icon/sound-btn.png"
+                                  : "/icon/sound-btn-off.png"
+                              }
                               alt={soundOn ? "Sound on" : "Sound off"}
                               className="alarm-item__tts-icon"
                             />

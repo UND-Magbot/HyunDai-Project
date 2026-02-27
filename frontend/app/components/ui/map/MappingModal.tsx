@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Modal } from "../Modal";
 import { apiFetch, apiPatch } from "@/lib/api";
 import type { MappingModalProps, MappingStatus } from "@/lib/types/map";
+import { useAlert } from "@/lib/context/AlertContext";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -20,6 +21,7 @@ export function MappingModal({
   onClose,
   onMappingComplete,
 }: MappingModalProps) {
+  const { showAlert } = useAlert();
   const [status, setStatus] = useState<MappingStatus>("idle");
   const [mappingId, setMappingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -331,10 +333,20 @@ export function MappingModal({
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
-      ws.onopen = () => console.log("[WS] Connected");
+      ws.onopen = () => console.log("[WS] 매핑 WebSocket 연결됨");
       ws.onmessage = (e) => handleWsMessage(e.data);
-      ws.onerror = () => console.error("[WS] Connection error");
-      ws.onclose = (e) => console.log("[WS] Closed:", e.code, e.reason);
+      ws.onerror = () => {
+        console.error("[WS] 매핑 WebSocket 연결 오류");
+        setError("맵핑 데이터 수신 연결에 실패했습니다.");
+        showAlert({ title: "맵 오류", message: "맵핑 데이터 수신 연결에 실패했습니다.", errorCode: "MAP-009", errorType: "map", silent: true });
+      };
+      ws.onclose = (e) => {
+        console.log("[WS] 매핑 WebSocket 종료:", e.code, e.reason);
+        if (e.code !== 1000 && e.code !== 1005 && status === "mapping") {
+          setError("맵핑 데이터 연결이 끊어졌습니다.");
+          showAlert({ title: "맵 오류", message: "맵핑 데이터 연결이 끊어졌습니다.", errorCode: "MAP-010", errorType: "map", silent: true });
+        }
+      };
     },
     [closeWs, handleWsMessage]
   );
@@ -342,7 +354,8 @@ export function MappingModal({
   // ── START ──
   const handleStart = async () => {
     if (!connectedRobot) {
-      setError("로봇이 연결되어 있지 않습니다.");
+      setError("맵핑할 로봇이 연결되지 않았습니다.");
+      showAlert({ title: "맵 오류", message: "맵핑할 로봇이 연결되지 않았습니다.", errorCode: "MAP-008", errorType: "map", silent: true });
       return;
     }
 
@@ -437,7 +450,11 @@ export function MappingModal({
           bag_id: mappingData.bag_id ?? null,
           bag_url: mappingData.bag_url ?? null,
           download_url: mappingData.download_url ?? null,
+          pbstream_url: mappingData.pbstream_url ?? null,
           trajectories_url: mappingData.trajectories_url ?? null,
+          initial_x: mappingData.initial_x ?? 0,
+          initial_y: mappingData.initial_y ?? 0,
+          initial_ori: mappingData.initial_ori ?? 0,
         }),
       });
 

@@ -28,6 +28,7 @@ import type {
 } from "@/lib/types/map";
 import { apiFetch } from "@/lib/api";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
+import { useAlert } from "@/lib/context/AlertContext";
 import "./map.css";
 
 type BusinessItem = {
@@ -148,6 +149,8 @@ export default function MapPage() {
   const poseWsRef = useRef<WebSocket | null>(null);
   const [mapImageSize, setMapImageSize] = useState<{ w: number; h: number } | null>(null);
 
+  const { showAlert, showInfo } = useAlert();
+
   // Undo history
   const [history, setHistory] = useState<{
     pois: POI[];
@@ -191,7 +194,10 @@ export default function MapPage() {
           if (defaultBiz) setSelectedBusiness(String(defaultBiz.business_id));
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error("[사업장 목록 로드 실패]", err);
+        showAlert({ title: "알림", message: "사업장 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-001", errorType: "map", source: "맵 관리 > 초기 로드", description: "MapPage — 사업장 목록 로드" });
+      });
   }, []);
 
   // Business 변경 시 영역 목록 로드
@@ -221,7 +227,11 @@ export default function MapPage() {
         }
         setSelectedArea("");
       })
-      .catch(() => setAreas([]));
+      .catch((err) => {
+        console.error("[영역 목록 로드 실패]", err);
+        showAlert({ title: "알림", message: "영역 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-002", errorType: "map", source: "맵 관리 > 초기 로드", description: "MapPage — 영역 목록 로드" });
+        setAreas([]);
+      });
   }, [selectedBusiness]);
 
   // Area 변경 시 맵 목록 로드 및 첫 번째 맵 이미지 표시
@@ -290,7 +300,9 @@ export default function MapPage() {
                 ...loadedLines.map((l: any) => l.id),
               ]);
             })
-            .catch(() => {
+            .catch((err) => {
+              console.error("[맵 요소 로드 실패]", err);
+              showAlert({ title: "알림", message: "맵 요소(POI·라인)를 불러오는 데 실패했습니다.", errorCode: "MAP-004", errorType: "map", source: "맵 관리 > 초기 로드", description: "MapPage — 맵 요소 로드" });
               setPois([]);
               setLines([]);
             });
@@ -303,7 +315,9 @@ export default function MapPage() {
           setLines([]);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("[맵 목록 로드 실패]", err);
+        showAlert({ title: "알림", message: "맵 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-003", errorType: "map", source: "맵 관리 > 초기 로드", description: "MapPage — 맵 목록 로드" });
         setAreaMaps([]);
         setSelectedMapId(null);
         setSelectedMappingId(null);
@@ -340,8 +354,15 @@ export default function MapPage() {
         // ignore
       }
     };
-    ws.onerror = () => console.error("[PoseWS] error");
-    ws.onclose = () => console.log("[PoseWS] closed");
+    ws.onerror = () => {
+      console.error("[PoseWS] 로봇 위치 WebSocket 연결 오류");
+    };
+    ws.onclose = (ev) => {
+      console.log("[PoseWS] 연결 종료", ev.code, ev.reason);
+      if (ev.code !== 1000 && ev.code !== 1005) {
+        console.warn("[PoseWS] 비정상 종료 — 로봇 위치 수신이 중단되었습니다.");
+      }
+    };
 
     return () => {
       ws.close();
@@ -396,11 +417,35 @@ export default function MapPage() {
         setPois((prev) => [...prev, newPOI]);
         setEditingPOI(newPOI);
         setSelectedPOI(newPOI.id);
+      } else if ((activeTool === "line" || activeTool === "curveLine") && lineStartPOI) {
+        // 라인 모드에서 빈 캔버스 클릭 → 직교 스냅 위치에 새 POI 생성 후 라인 연결
+        pushHistory();
+        const newPOI: POI = {
+          id: generateId("poi"),
+          x,
+          y,
+          name: `POINT${pois.length + 1}`,
+          type: "waypoint",
+        };
+        setPois((prev) => [...prev, newPOI]);
+
+        // 방향 선택 팝업 표시
+        const from = pois.find((p) => p.id === lineStartPOI);
+        if (from) {
+          setLineDirectionPopup({
+            fromId: lineStartPOI,
+            toId: newPOI.id,
+            position: {
+              x: ((from.x + x) / 2) * zoom + offset.x,
+              y: ((from.y + y) / 2) * zoom + offset.y,
+            },
+          });
+        }
       } else if (activeTool === "polygon") {
         setPolygonPoints((prev) => [...prev, { x, y }]);
       }
     },
-    [activeTool, pois.length, pushHistory]
+    [activeTool, pois.length, pushHistory, lineStartPOI, pois, zoom, offset]
   );
 
   // ── POI Click Handler ──
@@ -661,7 +706,7 @@ export default function MapPage() {
   // ── Action buttons (placeholder handlers) ──
   const handleSave = useCallback(() => {
     if (!selectedMapId) {
-      alert("저장할 맵을 먼저 선택해 주세요.");
+      showInfo("안내", "저장할 맵을 먼저 선택해 주세요.");
       return;
     }
 
@@ -693,12 +738,12 @@ export default function MapPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pois: poisWithWorld, lines: linesWithWorld }),
     })
-      .then(() => alert("저장되었습니다."))
-      .catch((err) => alert(`저장 실패: ${err.message ?? err}`));
+      .then(() => showAlert({ title: "저장 완료", message: "저장되었습니다." }))
+      .catch((err) => showAlert({ title: "알림", message: "맵 데이터 저장에 실패했습니다.", errorCode: "MAP-006", errorType: "map", source: "맵 관리 > 맵 저장", description: "MapPage — 맵 저장 실패" }));
   }, [selectedMapId, pois, lines, svgToWorld]);
   const handleSync = () => {
     if (!selectedMappingId) {
-      alert("동기화할 맵을 먼저 선택해 주세요.");
+      showInfo("안내", "동기화할 맵을 먼저 선택해 주세요.");
       return;
     }
     setSyncModalOpen(true);
@@ -719,14 +764,20 @@ export default function MapPage() {
     // 사업장 목록 갱신
     apiFetch<{ total: number; items: BusinessItem[] }>("/api/map/businesses")
       .then((data) => setBusinesses(data.items))
-      .catch(() => {});
+      .catch((err) => {
+        console.error("[맵핑 완료 후 사업장 목록 갱신 실패]", err);
+        showAlert({ title: "알림", message: "맵핑 완료 후 사업장 목록 갱신에 실패했습니다.", errorCode: "MAP-011", errorType: "map", source: "맵 관리 > 맵핑 완료", description: "MapPage — 매핑 완료 후 사업장 갱신 실패" });
+      });
     // 현재 선택된 사업장의 영역 목록 갱신
     if (selectedBusiness) {
       apiFetch<{ total: number; items: AreaItem[] }>(
         `/api/map/businesses/${selectedBusiness}/areas`
       )
         .then((data) => setAreas(data.items))
-        .catch(() => {});
+        .catch((err) => {
+          console.error("[맵핑 완료 후 영역 목록 갱신 실패]", err);
+          showAlert({ title: "알림", message: "맵핑 완료 후 영역 목록 갱신에 실패했습니다.", errorCode: "MAP-012", errorType: "map", source: "맵 관리 > 맵핑 완료", description: "MapPage — 매핑 완료 후 영역 갱신 실패" });
+        });
     }
     // 현재 선택된 영역의 맵 목록 갱신
     if (selectedArea) {
@@ -734,7 +785,10 @@ export default function MapPage() {
         `/api/map/areas/${selectedArea}/maps`
       )
         .then((data) => setAreaMaps(data.items))
-        .catch(() => {});
+        .catch((err) => {
+          console.error("[맵핑 완료 후 맵 목록 갱신 실패]", err);
+          showAlert({ title: "알림", message: "맵핑 완료 후 맵 목록 갱신에 실패했습니다.", errorCode: "MAP-013", errorType: "map", source: "맵 관리 > 맵핑 완료", description: "MapPage — 매핑 완료 후 맵 갱신 실패" });
+        });
     }
   }, [selectedBusiness, selectedArea]);
   const handleRemoteImage = () => console.log("Remote Image");

@@ -26,7 +26,7 @@ import {
 import { TaskInfoModal } from "../components/ui/monitoring/TaskInfoModal";
 import { CreateTaskModal } from "../components/ui/tasks/CreateTaskModal";
 import { ConfirmModal } from "../components/ui/robots/ConfirmModal";
-import { Modal } from "../components/ui/Modal";
+import { useAlert } from "@/lib/context/AlertContext";
 import { mockTasks } from "@/lib/mock/tasks";
 import type { TaskState } from "@/lib/types/monitoring";
 import { SearchInput } from "../components/ui/SearchInput";
@@ -49,7 +49,7 @@ import {
 import type { PoiMarkerData, RobotMarkerData, RouteSegment, WaypointMarkerData } from "@/lib/types/map-markers";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
 import { BusinessSelectBox } from "../components/ui/monitoring/BusinessSelectBox";
-import { apiFetch, apiPost } from "@/lib/api";
+import { apiFetch, apiPost, ApiError } from "@/lib/api";
 import type { Business } from "@/lib/types/robots";
 import type { MapMeta } from "@/lib/types/map";
 
@@ -176,7 +176,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [mapSrc, setMapSrc] = useState("");
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
-  const [alertModal, setAlertModal] = useState<{ title: string; message: string } | null>(null);
+  const { showAlert, showInfo } = useAlert();
+  const lastBatteryAlertRef = useRef<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [loopRunning, setLoopRunning] = useState(false);
   const [loopStopping, setLoopStopping] = useState(false);
@@ -240,7 +241,11 @@ export function MonitoringClient({ initialDateTime }: Props) {
   useEffect(() => {
     Promise.all([
       apiFetch<{ image_url: string | null; grid_origin_x: number; grid_origin_y: number; grid_resolution: number; area_id: number | null }>("/api/map/default-map").catch(() => null),
-      apiFetch<{ total: number; items: BusinessItem[] }>("/api/map/businesses").catch(() => ({ total: 0, items: [] as BusinessItem[] })),
+      apiFetch<{ total: number; items: BusinessItem[] }>("/api/map/businesses").catch((err) => {
+        console.error("[모니터링] 사업장 목록 로드 실패:", err);
+        showAlert({ title: "알림", message: "사업장 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-001", errorType: "map", source: "모니터링 > 초기 로드", description: "MonitoringClient — 사업장 목록 로드", silent: false });
+        return { total: 0, items: [] as BusinessItem[] };
+      }),
     ]).then(([defaultMap, bizData]) => {
       // 기본 맵 정보 설정
       if (defaultMap) {
@@ -287,7 +292,11 @@ export function MonitoringClient({ initialDateTime }: Props) {
           setSelectedArea("");
         }
       })
-      .catch(() => setAreas([]));
+      .catch((err) => {
+        console.error("[모니터링] 영역 목록 로드 실패:", err);
+        showAlert({ title: "알림", message: "영역 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-002", errorType: "map", source: "모니터링 > 영역 로드", description: "MonitoringClient — 영역 목록 로드", silent: false });
+        setAreas([]);
+      });
   }, [selectedBusiness]);
 
   // ── Area 변경 시 맵 목록 로드 및 첫 번째 맵 이미지 + 요소 로드 ──
@@ -345,7 +354,11 @@ export function MonitoringClient({ initialDateTime }: Props) {
             `/api/map/maps/${map.id}/elements`
           )
             .then((elems) => setRawApiElements(elems))
-            .catch(() => setRawApiElements(null));
+            .catch((err) => {
+              console.error("[모니터링] 맵 요소 로드 실패:", err);
+              showAlert({ title: "알림", message: "맵 요소(POI·라인)를 불러오는 데 실패했습니다.", errorCode: "MAP-004", errorType: "map", source: "모니터링 > 맵 요소 로드", description: "MonitoringClient — 맵 요소 로드", silent: false });
+              setRawApiElements(null);
+            });
         } else {
           setSelectedMapId(null);
           applyDefaultMap();
@@ -356,7 +369,9 @@ export function MonitoringClient({ initialDateTime }: Props) {
           setApiRouteSegments([]);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("[모니터링] 맵 목록 로드 실패:", err);
+        showAlert({ title: "알림", message: "맵 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-003", errorType: "map", source: "모니터링 > 맵 목록 로드", description: "MonitoringClient — 맵 목록 로드", silent: false });
         setAreaMaps([]);
         setSelectedMapId(null);
         setMapSrc("");
@@ -518,7 +533,9 @@ export function MonitoringClient({ initialDateTime }: Props) {
             }))
         );
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("[모니터링] 로봇 목록 로드 실패:", err);
+        showAlert({ title: "알림", message: "로봇 목록을 불러오는 데 실패했습니다.", errorCode: "ROBOT-010", errorType: "robot", source: "모니터링 > 로봇 목록 로드", description: "MonitoringClient — 로봇 목록 로드 실패", silent: false });
         setApiRobotsFull([]);
         setApiRobots([]);
       });
@@ -558,8 +575,9 @@ export function MonitoringClient({ initialDateTime }: Props) {
           // ignore
         }
       };
-      ws.onerror = () =>
-        console.warn(`[MonitoringPoseWS] ${robot.name} (${robot.ip_address}) error`);
+      ws.onerror = () => {
+        console.warn(`[MonitoringPoseWS] ${robot.name} (${robot.ip_address}) error — NET-002`);
+      };
       ws.onclose = () =>
         console.log(`[MonitoringPoseWS] ${robot.name} closed`);
     });
@@ -585,7 +603,9 @@ export function MonitoringClient({ initialDateTime }: Props) {
     const fetchLive = () => {
       apiFetch<{ total: number; items: LiveRobot[] }>("/api/robots/live")
         .then((data) => setLiveRobots(data.items))
-        .catch(() => {});
+        .catch((err) => {
+          console.error("[모니터링] 로봇 실시간 상태 조회 실패:", err);
+        });
     };
 
     fetchLive();
@@ -730,8 +750,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
       setLoopRunning(true);
       setIsRunning(true);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "시작 실패";
-      setAlertModal({ title: "작업 시작 실패", message: msg });
+      const msg = err instanceof Error ? err.message : "작업을 시작하지 못했습니다.";
+      const code = err instanceof ApiError ? err.errorCode : undefined;
+      if (code === "TASK-001") {
+        showInfo("안내", msg);
+      } else {
+        const errorType = code?.startsWith("ROBOT") ? "robot" : "task";
+        showAlert({ title: "알림", message: msg, errorCode: code ?? "TASK-013", errorType, source: "모니터링 > 작업 실행", description: (err instanceof ApiError ? err.description : undefined) ?? "handleStartAll — 작업 시작 API 호출 실패" });
+      }
     }
   };
 
@@ -745,8 +771,10 @@ export function MonitoringClient({ initialDateTime }: Props) {
         route_poi_names: CHARGE_ROUTE_NAMES,
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "충전소 이동 실패";
-      setAlertModal({ title: "충전소 이동 실패", message: msg });
+      const msg = err instanceof Error ? err.message : "충전소 이동에 실패했습니다.";
+      const code = err instanceof ApiError ? err.errorCode : undefined;
+      const errorType = code?.startsWith("ROBOT") ? "robot" : "task";
+      showAlert({ title: "알림", message: msg, errorCode: code ?? "ROBOT-004", errorType, source: "모니터링 > 충전소 이동", description: (err instanceof ApiError ? err.description : undefined) ?? "handleCharge — 충전소 이동 API 호출 실패" });
     }
   };
 
@@ -759,8 +787,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
     try {
       await apiPost(`/api/tasks/loop/stop/${LOOP_ROBOT_ID}`);
       setLoopStopping(true);
-    } catch {
-      /* 이미 중단된 경우 무시 */
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "작업 정지에 실패했습니다.";
+      const code = err instanceof ApiError ? err.errorCode : undefined;
+      if (code === "TASK-008" || msg.includes("실행 중인 작업이 없습니다")) {
+        setLoopRunning(false); setLoopStopping(false); setIsRunning(false);
+      } else {
+        showAlert({ title: "알림", message: msg, errorCode: code ?? "TASK-009", errorType: "task", source: "모니터링 > 작업 정지", description: (err instanceof ApiError ? err.description : undefined) ?? "handleConfirmStop — 정지 API 호출 실패" });
+      }
     }
   };
 
@@ -769,14 +803,32 @@ export function MonitoringClient({ initialDateTime }: Props) {
     if (!loopRunning && !loopStopping) return;
     const timer = setInterval(async () => {
       try {
-        const res = await apiFetch<{ status: string }>(`/api/tasks/loop/status/${LOOP_ROBOT_ID}`);
-        if (res.status === "error" || res.status === "stopped" || res.status === "idle" || res.status === "charging") {
+        const res = await apiFetch<{ status: string; message?: string; error_code?: string; description?: string }>(`/api/tasks/loop/status/${LOOP_ROBOT_ID}`);
+        if (res.status === "error") {
+          const errorCode = res.error_code ?? "TASK-013";
+          const errorType = errorCode.startsWith("ROBOT") ? "robot" : "task";
+          showAlert({ title: "알림", message: res.message || "작업 실행 중 오류가 발생했습니다.", errorCode, errorType, source: "모니터링 > 작업 상태", description: res.description });
           setLoopRunning(false);
           setLoopStopping(false);
           setIsRunning(false);
+        } else if (res.status === "low_battery_charging") {
+          if (lastBatteryAlertRef.current !== "ROBOT-007") {
+            showAlert({ title: "알림", message: res.message || "배터리 부족으로 충전소로 이동 중입니다.", errorCode: "ROBOT-007", errorType: "robot", source: "모니터링 > 작업 상태", description: res.description ?? "_task_runner() / _navigate_to_charger() — 배터리 부족", silent: false });
+            lastBatteryAlertRef.current = "ROBOT-007";
+          }
+        } else if (res.status === "stopped" || res.status === "idle" || res.status === "charging") {
+          setLoopRunning(false);
+          setLoopStopping(false);
+          setIsRunning(false);
+          lastBatteryAlertRef.current = null;
+        } else {
+          // 정상 실행 중이면 배터리 알림 리셋
+          if (res.status === "running") {
+            lastBatteryAlertRef.current = null;
+          }
         }
-      } catch {
-        /* 무시 */
+      } catch (err) {
+        console.error("[모니터링] 작업 상태 폴링 실패:", err);
       }
     }, 3000);
     return () => clearInterval(timer);
@@ -1148,24 +1200,6 @@ export function MonitoringClient({ initialDateTime }: Props) {
             onConfirm={handleConfirmStop}
             onCancel={() => setStopConfirmOpen(false)}
           />
-          <Modal
-            open={!!alertModal}
-            onClose={() => setAlertModal(null)}
-            title={alertModal?.title ?? ""}
-            width="400px"
-          >
-            <div className="confirm-modal">
-              <p className="confirm-modal__message">{alertModal?.message}</p>
-              <div className="confirm-modal__actions">
-                <button
-                  className="btn btn--primary"
-                  onClick={() => setAlertModal(null)}
-                >
-                  확인
-                </button>
-              </div>
-            </div>
-          </Modal>
         </main>
       </div>
     </div>

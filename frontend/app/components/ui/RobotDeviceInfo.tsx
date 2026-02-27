@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Modal } from "./Modal";
 import type { RobotDeviceInfoProps } from "@/lib/types/robots";
+import { useAlert } from "@/lib/context/AlertContext";
 import "./RobotDeviceInfo.css";
 
 function formatValue(value: string | number | null | undefined): string {
@@ -41,6 +42,7 @@ export function RobotDeviceInfo({
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const chargingDropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const { showAlert } = useAlert();
 
   useEffect(() => {
     if (!device) return;
@@ -57,7 +59,10 @@ export function RobotDeviceInfo({
         setInitialChargingId(data.charging_id ?? null);
         setChargingId(data.charging_id ?? null);
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          console.error("[로봇 상세] 충전 설정 조회 실패:", err);
+        }
         setInitialMinBattery(20);
         setMinBattery(20);
         setInitialChargingId(null);
@@ -82,7 +87,10 @@ export function RobotDeviceInfo({
       .then((data: { id: number; name: string }[]) => {
         setChargingPois(Array.isArray(data) ? data : []);
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          console.error("[로봇 상세] 충전소 목록 조회 실패:", err);
+        }
         setChargingPois([]);
       });
 
@@ -115,7 +123,13 @@ export function RobotDeviceInfo({
         const data: { min_battery: number; charging_id: number | null } = await res.json();
         setInitialMinBattery(data.min_battery);
         setInitialChargingId(data.charging_id ?? null);
+      } else {
+        console.error("[로봇 상세] 충전 설정 저장 실패:", res.status);
+        showAlert({ title: "알림", message: "충전 설정 저장에 실패했습니다.", errorCode: "ROBOT-009", errorType: "robot", source: "로봇 상세 > 충전 설정", description: "RobotDeviceInfo — 충전 설정 저장 실패", robotSn: device.sn });
       }
+    } catch (err) {
+      console.error("[로봇 상세] 충전 설정 저장 오류:", err);
+      showAlert({ title: "알림", message: "충전 설정 저장에 실패했습니다.", errorCode: "ROBOT-009", errorType: "robot", source: "로봇 상세 > 충전 설정", description: "RobotDeviceInfo — 충전 설정 저장 실패", robotSn: device.sn });
     } finally {
       setIsApplying(false);
     }

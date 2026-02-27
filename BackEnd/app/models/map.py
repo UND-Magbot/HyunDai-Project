@@ -51,6 +51,9 @@ class RobotMap(Base):
     grid_origin_x = Column(Float, default=0.0)
     grid_origin_y = Column(Float, default=0.0)
     grid_resolution = Column(Float, default=0.0)
+    initial_x = Column(Float, default=0.0)                                   # 매핑 시작 위치 X (월드 좌표)
+    initial_y = Column(Float, default=0.0)                                   # 매핑 시작 위치 Y (월드 좌표)
+    initial_ori = Column(Float, default=0.0)                                 # 매핑 시작 방향 (rad)
     url = Column(String(500), nullable=True)
     start_time = Column(BigInteger, nullable=True)                            # unix timestamp
     end_time = Column(BigInteger, nullable=True)                              # unix timestamp

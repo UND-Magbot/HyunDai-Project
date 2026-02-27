@@ -21,11 +21,11 @@ export function ForgotPasswordModal({ open, onClose }: ForgotPasswordModalProps)
 
   const handleConfirm = () => {
     if (!email.trim()) {
-      setError("이메일을 입력해주세요");
+      setError("이메일을 입력해 주세요.");
       return;
     }
     if (!EMAIL_REGEX.test(email)) {
-      setError("올바른 이메일 형식을 입력해주세요");
+      setError("올바르지 않은 이메일 형식입니다.");
       return;
     }
     // TODO: API 연동 - 임시 비밀번호 발급 요청
@@ -45,7 +45,7 @@ export function ForgotPasswordModal({ open, onClose }: ForgotPasswordModalProps)
     <Modal open={open} onClose={handleClose} title="비밀번호 찾기" width="420px">
       <div className="forgot-pw__body">
         <p className="forgot-pw__text">
-          가입하신 이메일 주소를 입력하시면 임시 비밀번호를 발송해 드립니다.
+          이메일 주소를 입력하시면 임시 비밀번호를 발송해 드립니다.
         </p>
         <div>
           <input

@@ -63,8 +63,8 @@ export function AddStepModal({
   const validate = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!form.actionType) newErrors.actionType = "동작 유형을 선택해주세요";
-    if (!form.destination) newErrors.destination = "목적지를 선택해주세요";
+    if (!form.actionType) newErrors.actionType = "동작 유형을 선택해 주세요.";
+    if (!form.destination) newErrors.destination = "목적지를 선택해 주세요.";
 
     const volumeValue = Number(form.volume);
     if (
@@ -74,7 +74,7 @@ export function AddStepModal({
       volumeValue < VOLUME_MIN ||
       volumeValue > VOLUME_MAX
     ) {
-      newErrors.volume = "볼륨은 0에서 100 사이의 정수여야 합니다.";
+      newErrors.volume = "볼륨이 유효한 범위(0~100 정수)를 벗어났습니다.";
     }
 
     setErrors(newErrors);
