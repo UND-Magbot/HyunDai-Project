@@ -733,20 +733,11 @@ export function MonitoringClient({ initialDateTime }: Props) {
   };
 
 
-  // ─── 무한반복 작업 제어 ───
-  const LOOP_ROBOT_ID = 7;
-  const LOOP_ENTRY_NAMES = ["ENTERPOS1", "ENTERPOS2", "ENTERPOS3"];
-  const LOOP_POI_NAMES = ["CURPOS1", "CURPOS2", "CURPOS3", "CURPOS4", "CURPOS5", "CURPOS6"];
-  const LOOP_STOP_NAMES = ["CURPOS2", "CURPOS4"];
+  // ─── Convoy 대열 작업 제어 ───
 
   const handleStartAll = async () => {
     try {
-      await apiPost("/api/tasks/loop/start", {
-        robot_id: LOOP_ROBOT_ID,
-        poi_names: LOOP_POI_NAMES,
-        stop_names: LOOP_STOP_NAMES,
-        entry_poi_names: LOOP_ENTRY_NAMES,
-      });
+      await apiPost("/api/convoy/start", {});
       setLoopRunning(true);
       setIsRunning(true);
     } catch (err: unknown) {
@@ -761,20 +752,28 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
   };
 
-  const CHARGE_ROUTE_NAMES = ["ENTERPOS3", "ENTERPOS2", "ENTERPOS1"];
-
   const handleCharge = async (deviceId: string) => {
     const robot = apiRobotsFull.find((r) => String(r.id) === deviceId);
     if (!robot) return;
     try {
-      await apiPost(`/api/tasks/charge/${robot.id}`, {
-        route_poi_names: CHARGE_ROUTE_NAMES,
-      });
+      // route_poi_names 미지정 → 백엔드에서 DB MapLine 그래프로 자동 탐색
+      await apiPost(`/api/tasks/charge/${robot.id}`, {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "충전소 이동에 실패했습니다.";
       const code = err instanceof ApiError ? err.errorCode : undefined;
       const errorType = code?.startsWith("ROBOT") ? "robot" : "task";
       showAlert({ title: "알림", message: msg, errorCode: code ?? "ROBOT-004", errorType, source: "모니터링 > 충전소 이동", description: (err instanceof ApiError ? err.description : undefined) ?? "handleCharge — 충전소 이동 API 호출 실패" });
+    }
+  };
+
+  const handleStop = async (deviceId: string) => {
+    const robot = apiRobotsFull.find((r) => String(r.id) === deviceId);
+    if (!robot) return;
+    try {
+      await apiPost(`/api/tasks/stop/${robot.id}`, {});
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "정지 실패";
+      setAlertModal({ title: "로봇 정지 실패", message: msg });
     }
   };
 
@@ -785,12 +784,12 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const handleConfirmStop = async () => {
     setStopConfirmOpen(false);
     try {
-      await apiPost(`/api/tasks/loop/stop/${LOOP_ROBOT_ID}`);
+      await apiPost("/api/convoy/stop");
       setLoopStopping(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "작업 정지에 실패했습니다.";
       const code = err instanceof ApiError ? err.errorCode : undefined;
-      if (code === "TASK-008" || msg.includes("실행 중인 작업이 없습니다")) {
+      if (msg.includes("실행 중인 작업이 없습니다") || msg.includes("Convoy가 실행 중이 아닙니다")) {
         setLoopRunning(false); setLoopStopping(false); setIsRunning(false);
       } else {
         showAlert({ title: "알림", message: msg, errorCode: code ?? "TASK-009", errorType: "task", source: "모니터링 > 작업 정지", description: (err instanceof ApiError ? err.description : undefined) ?? "handleConfirmStop — 정지 API 호출 실패" });
@@ -798,41 +797,33 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
   };
 
-  // 루프 상태 폴링 (3초 간격)
+  // Convoy 상태 폴링 (3초 간격, 항상 실행 — 새로고침 후에도 상태 복원)
   useEffect(() => {
-    if (!loopRunning && !loopStopping) return;
-    const timer = setInterval(async () => {
+    const checkStatus = async () => {
       try {
-        const res = await apiFetch<{ status: string; message?: string; error_code?: string; description?: string }>(`/api/tasks/loop/status/${LOOP_ROBOT_ID}`);
-        if (res.status === "error") {
-          const errorCode = res.error_code ?? "TASK-013";
-          const errorType = errorCode.startsWith("ROBOT") ? "robot" : "task";
-          showAlert({ title: "알림", message: res.message || "작업 실행 중 오류가 발생했습니다.", errorCode, errorType, source: "모니터링 > 작업 상태", description: res.description });
-          setLoopRunning(false);
+        const res = await apiFetch<{ phase: string }>("/api/convoy/status");
+        if (res.phase === "entering" || res.phase === "running") {
+          setLoopRunning(true);
           setLoopStopping(false);
-          setIsRunning(false);
-        } else if (res.status === "low_battery_charging") {
-          if (lastBatteryAlertRef.current !== "ROBOT-007") {
-            showAlert({ title: "알림", message: res.message || "배터리 부족으로 충전소로 이동 중입니다.", errorCode: "ROBOT-007", errorType: "robot", source: "모니터링 > 작업 상태", description: res.description ?? "_task_runner() / _navigate_to_charger() — 배터리 부족", silent: false });
-            lastBatteryAlertRef.current = "ROBOT-007";
-          }
-        } else if (res.status === "stopped" || res.status === "idle" || res.status === "charging") {
-          setLoopRunning(false);
-          setLoopStopping(false);
-          setIsRunning(false);
-          lastBatteryAlertRef.current = null;
+          setIsRunning(true);
+        } else if (res.phase === "returning") {
+          setLoopRunning(true);
+          setLoopStopping(true);
+          setIsRunning(true);
         } else {
-          // 정상 실행 중이면 배터리 알림 리셋
-          if (res.status === "running") {
-            lastBatteryAlertRef.current = null;
-          }
+          setLoopRunning(false);
+          setLoopStopping(false);
+          setIsRunning(false);
         }
       } catch (err) {
         console.error("[모니터링] 작업 상태 폴링 실패:", err);
       }
-    }, 3000);
+    };
+
+    checkStatus(); // 초기 로드 시 즉시 확인
+    const timer = setInterval(checkStatus, 3000);
     return () => clearInterval(timer);
-  }, [loopRunning, loopStopping]);
+  }, []);
 
   // ── API 로봇 → DeviceRow 형식 변환 ──
   const deviceList = useMemo(() => {
@@ -1015,6 +1006,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
                     onToggleExpand={handleDeviceToggle}
                     onInfo={setOpenDeviceId}
                     onCharge={handleCharge}
+                    onStop={handleStop}
                   />
                 ))
               )}

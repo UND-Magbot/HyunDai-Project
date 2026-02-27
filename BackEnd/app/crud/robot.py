@@ -201,9 +201,8 @@ def update_robot_status(db: Session, robot_id: int, data: RobotStatusUpdate) -> 
 def get_min_battery_by_sn(db: Session, sn: str) -> dict:
     robot = db.query(Robot).filter(Robot.serial_number == sn, Robot.is_active == True).first()
     if not robot:
-        return {"min_battery": 20, "charging_id": None}
-
-    return {"min_battery": robot.min_battery, "charging_id": robot.charging_id}
+        return {"min_battery": 20, "charging_id": None, "standby_id": None}
+    return {"min_battery": robot.min_battery, "charging_id": robot.charging_id, "standby_id": robot.standby_id}
 
 
 # ── 최소 배터리 수정 (SN 기반) ──
@@ -214,9 +213,10 @@ def update_min_battery_by_sn(db: Session, sn: str, data: MinBatteryUpdate) -> di
 
     robot.min_battery = data.min_battery
     robot.charging_id = data.charging_id
+    robot.standby_id = data.standby_id
     db.commit()
     db.refresh(robot)
-    return {"min_battery": robot.min_battery, "charging_id": robot.charging_id}
+    return {"min_battery": robot.min_battery, "charging_id": robot.charging_id, "standby_id": robot.standby_id}
 
 
 # ── RB-05 로봇 상태 조회 ──

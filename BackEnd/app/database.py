@@ -11,7 +11,10 @@ DB_NAME = "rcs_db"
 
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
 
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+engine = create_engine(
+    DATABASE_URL, echo=False, pool_pre_ping=True,
+    pool_size=10, max_overflow=20, pool_recycle=3600,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -45,9 +48,19 @@ def create_database_if_not_exists():
 
 
 def init_db():
-    """DB 생성 + 테이블 생성"""
+    """DB 생성 + 테이블 생성 (스키마 변경된 테이블은 자동 재생성)"""
     try:
         create_database_if_not_exists()
+
+        # convoy_configs 테이블 스키마 마이그레이션: robot_ids → robots_config
+        from sqlalchemy import inspect as sa_inspect
+        insp = sa_inspect(engine)
+        if insp.has_table("convoy_configs"):
+            columns = {c["name"] for c in insp.get_columns("convoy_configs")}
+            if "robots_config" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("DROP TABLE convoy_configs"))
+
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f"[DB] 데이터베이스 초기화 실패: {e}")

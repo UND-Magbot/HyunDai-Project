@@ -68,6 +68,8 @@ export default function RobotsPage() {
   const [togglingDeviceId, setTogglingDeviceId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     deviceId: string;
   } | null>(null);
@@ -85,44 +87,48 @@ export default function RobotsPage() {
     return () => clearInterval(timer);
   }, []);
 
+  const mapLivePayload = useCallback(
+    (payload: any): RobotDevice[] =>
+      (payload.items ?? []).map((r: any, idx: number) => ({
+        id: r.ID != null ? String(r.ID) : r.SN || r.IP || `robot-${idx}`,
+        sn: r.SN ?? "-",
+        robotName: r.ROBOTNAME ?? "-",
+        model: r.MODEL ?? "-",
+        runState: r.RUNSTATE ?? null,
+        online: String(r.ONLINE).toLowerCase() === "online",
+        signal: r.SIGNAL ?? null,
+        power: r["POWER(%)"] ?? null,
+        enable: true,
+        nickname: r.NICKNAME ?? null,
+        axbotVersion: r.AXBOT_VERSION ?? null,
+        platform: r.PLATFORM ?? null,
+        busiName: null,
+        buildingName: null,
+        currentTask: [],
+      })),
+    []
+  );
+
+  // 초기 로드 + 10초 간격 실시간 폴링
   useEffect(() => {
     const fetchRobots = async () => {
       try {
         const res = await fetch("http://127.0.0.1:8000/api/robots/live", {
           cache: "no-store",
         });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const payload = await res.json();
-
-        const mapped = (payload.items ?? []).map((r: any, idx: number) => ({
-          id: r.SN || r.IP || String(idx),
-          sn: r.SN ?? "-",
-          robotName: r.ROBOTNAME ?? "-",
-          model: r.MODEL ?? "-",
-          runState: r.RUNSTATE ?? null,
-          online: String(r.ONLINE).toLowerCase() === "online",
-          signal: r.SIGNAL ?? null,
-          power: r["POWER(%)"] ?? null,
-          enable: true,
-          nickname: r.NICKNAME ?? null,
-          axbotVersion: r.AXBOT_VERSION ?? null,
-          platform: r.PLATFORM ?? null,
-          busiName: null,
-          buildingName: null,
-          currentTask: [],
-        }));
-
-        setDevices(mapped);
+        setDevices(mapLivePayload(payload));
         setErrorMessage(null);
       } catch (e) {
-        setErrorMessage(`Failed to load robots: ${String(e)}`);
+        setErrorMessage(`로봇 목록 조회 실패: ${String(e)}`);
       }
     };
 
     fetchRobots();
-  }, []);
+    const interval = setInterval(fetchRobots, 10000);
+    return () => clearInterval(interval);
+  }, [mapLivePayload]);
 
   const models = useMemo(() => getDistinctModels(devices), [devices]);
 
@@ -208,6 +214,24 @@ export default function RobotsPage() {
     setAppliedFilters({ ...filters });
   }, [filters]);
 
+  const handleSyncLive = useCallback(async () => {
+    setIsSyncing(true);
+    setSyncMessage(null);
+    setErrorMessage(null);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/robots/sync-live", {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setSyncMessage(data.message);
+    } catch (e) {
+      setErrorMessage(`로봇 정보 업로드 실패: ${String(e)}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
   const selectedDevice = selectedDeviceId
     ? devices.find((d) => d.id === selectedDeviceId) ?? null
     : null;
@@ -232,7 +256,30 @@ export default function RobotsPage() {
           <div className="robots-page">
             <header className="robots-page__header">
               <h1 className="robots-page__title">로봇 관리</h1>
+              <button
+                className="robots-page__sync-btn"
+                onClick={handleSyncLive}
+                disabled={isSyncing}
+              >
+                {isSyncing ? "업로드 중..." : "로봇 정보 업로드"}
+              </button>
             </header>
+
+            {syncMessage && (
+              <div
+                style={{
+                  padding: "8px 16px",
+                  background: "var(--bg-success-subtle, #e6f9e6)",
+                  border: "1px solid var(--color-success, #2e7d32)",
+                  borderRadius: "var(--radius-control)",
+                  color: "var(--color-success, #2e7d32)",
+                  fontSize: "14px",
+                  marginBottom: "8px",
+                }}
+              >
+                {syncMessage}
+              </div>
+            )}
 
             <RobotFilter
               filters={filters}

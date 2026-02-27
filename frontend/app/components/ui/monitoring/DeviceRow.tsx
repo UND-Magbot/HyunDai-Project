@@ -27,6 +27,7 @@ export function DeviceRow({
   onToggleExpand,
   onInfo,
   onCharge,
+  onStop,
 }: DeviceRowProps) {
   const expanded = isExpanded;
   const isOffline = power === "offline";
@@ -34,7 +35,8 @@ export function DeviceRow({
   const isInvalidOnlineDisable = power === "online" && status === "disable";
   const effectiveStatus = isOffline ? "disable" : status;
 
-  const canSuspend = !isOffline && !isInvalidOnlineDisable && isRunning;
+  const isCharging = status === "charging";
+  const canSuspend = !isOffline && !isInvalidOnlineDisable && (isRunning || isCharging);
   const canCharge = !isOffline && !isInvalidOnlineDisable;
   const canNav = !isOffline && !isInvalidOnlineDisable;
   const canInfo = !isInvalidOnlineDisable;
@@ -68,7 +70,7 @@ export function DeviceRow({
           className="device-row__actions"
           onClick={(event) => event.stopPropagation()}
         >
-          <IconButton aria-label="Suspend" disabled={!canSuspend}>
+          <IconButton aria-label="Suspend" disabled={!canSuspend} onClick={() => onStop?.(id)}>
             정지
           </IconButton>
           <IconButton aria-label="Charge" disabled={!canCharge} onClick={() => onCharge?.(id)}>

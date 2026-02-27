@@ -14,6 +14,7 @@ export type DeviceRowProps = {
   onToggleExpand?: (deviceId: string) => void;
   onInfo?: (deviceId: string) => void;
   onCharge?: (deviceId: string) => void;
+  onStop?: (deviceId: string) => void;
 };
 
 export type MockDevice = DeviceRowProps & { id: string };

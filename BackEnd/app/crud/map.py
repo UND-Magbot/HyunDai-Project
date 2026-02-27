@@ -1,9 +1,13 @@
 import json
+import logging
 
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.models.map import Business, Area, RobotMap, MapPOI, MapLine
+from app.models.robot import Robot
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_json_loads(value: str | None):
@@ -231,6 +235,33 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
         raise HTTPException(status_code=404, detail="맵을 찾지 못했습니다.")
 
     try:
+        # ── 로봇 POI 매핑 백업: 삭제 전에 (charging_id/standby_id → POI 이름) 저장 ──
+        old_pois = (
+            db.query(MapPOI)
+            .filter(MapPOI.map_id == map_id, MapPOI.poi_type.in_(["charging", "standby"]))
+            .all()
+        )
+        old_poi_id_to_name: dict[int, str] = {p.id: p.name for p in old_pois}
+        old_poi_id_to_type: dict[int, str] = {p.id: p.poi_type for p in old_pois}
+
+        # charging_id / standby_id가 이 맵의 POI를 가리키는 로봇들 백업
+        charging_backup: list[tuple[int, str]] = []  # [(robot_id, poi_name)]
+        standby_backup: list[tuple[int, str]] = []   # [(robot_id, poi_name)]
+        if old_poi_id_to_name:
+            old_ids = list(old_poi_id_to_name.keys())
+            robots_linked = (
+                db.query(Robot)
+                .filter(
+                    (Robot.charging_id.in_(old_ids)) | (Robot.standby_id.in_(old_ids))
+                )
+                .all()
+            )
+            for r in robots_linked:
+                if r.charging_id and r.charging_id in old_poi_id_to_name:
+                    charging_backup.append((r.id, old_poi_id_to_name[r.charging_id]))
+                if r.standby_id and r.standby_id in old_poi_id_to_name:
+                    standby_backup.append((r.id, old_poi_id_to_name[r.standby_id]))
+
         # 기존 데이터 삭제 (라인 → POI 순서)
         db.query(MapLine).filter(MapLine.map_id == map_id).delete()
         db.query(MapPOI).filter(MapPOI.map_id == map_id).delete()
@@ -238,6 +269,8 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
 
         # POI 삽입
         client_id_to_db_id: dict[str, int] = {}
+        new_charging_name_to_id: dict[str, int] = {}
+        new_standby_name_to_id: dict[str, int] = {}
         for p in payload.get("pois", []):
             poi = MapPOI(
                 map_id=map_id,
@@ -258,6 +291,10 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
             db.add(poi)
             db.flush()  # id 확정
             client_id_to_db_id[p["id"]] = poi.id
+            if p.get("type") == "charging":
+                new_charging_name_to_id[p.get("name", "")] = poi.id
+            elif p.get("type") == "standby":
+                new_standby_name_to_id[p.get("name", "")] = poi.id
 
         # 라인 삽입
         for ln in payload.get("lines", []):
@@ -282,6 +319,27 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
                 area_name=ln.get("areaName"),
             )
             db.add(line)
+
+        # ── POI 매핑 복원: 같은 이름의 새 POI로 charging_id/standby_id 재설정 ──
+        restored_charging = 0
+        restored_standby = 0
+        all_restore = [(charging_backup, new_charging_name_to_id, "charging_id"),
+                       (standby_backup, new_standby_name_to_id, "standby_id")]
+        for backup_list, name_map, field in all_restore:
+            for robot_id, poi_name in backup_list:
+                new_poi_id = name_map.get(poi_name)
+                if new_poi_id:
+                    robot = db.query(Robot).filter(Robot.id == robot_id).first()
+                    if robot:
+                        setattr(robot, field, new_poi_id)
+                        if field == "charging_id":
+                            restored_charging += 1
+                        else:
+                            restored_standby += 1
+        if charging_backup or standby_backup:
+            logger.info(f"[save_map_elements] 매핑 복원: "
+                         f"충전소 {restored_charging}/{len(charging_backup)}, "
+                         f"대기장소 {restored_standby}/{len(standby_backup)}")
 
         db.commit()
     except HTTPException:

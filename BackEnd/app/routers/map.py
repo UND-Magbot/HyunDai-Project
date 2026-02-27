@@ -1091,14 +1091,15 @@ def api_set_current_map(robot_ip: str, body: dict):
 
 @router.post("/relocalize")
 def api_relocalize_robots(body: dict, db: Session = Depends(get_db)):
-    """선택된 로봇들의 위치를 충전소 도킹 포인트 좌표로 재조정.
+    """선택된 로봇들의 위치를 충전소 또는 대기지점 좌표로 재조정.
 
     body: {
         robot_ips: list[str]   # 위치재조정할 로봇 IP 목록
     }
 
-    각 로봇의 DB 충전소 POI(Robot.charging_id → MapPOI)를 조회하여
-    도킹 포인트 좌표를 계산하고 set_chassis_pose로 전송합니다.
+    우선순위:
+    1) charging_id → 충전소 도킹 포인트 (0.9m 오프셋)
+    2) standby_id → 대기지점 좌표 (정확한 위치)
     """
     from app.models.map import MapPOI
 
@@ -1120,40 +1121,65 @@ def api_relocalize_robots(body: dict, db: Session = Depends(get_db)):
                 result["message"] = "DB에 등록되지 않은 로봇입니다."
                 results.append(result)
                 continue
-            if not robot.charging_id:
-                result["message"] = "충전소가 지정되지 않았습니다."
+
+            # 충전소 또는 대기지점 POI 결정
+            poi = None
+            poi_kind = ""
+            use_docking_offset = False
+
+            if robot.charging_id:
+                poi = db.query(MapPOI).filter(
+                    MapPOI.id == robot.charging_id,
+                    MapPOI.is_active == True,
+                ).first()
+                poi_kind = "충전소"
+                use_docking_offset = True
+
+            if not poi and robot.standby_id:
+                poi = db.query(MapPOI).filter(
+                    MapPOI.id == robot.standby_id,
+                    MapPOI.is_active == True,
+                ).first()
+                poi_kind = "대기지점"
+                use_docking_offset = False
+
+            if not poi:
+                result["message"] = "충전소 또는 대기지점이 지정되지 않았습니다."
                 results.append(result)
                 continue
-
-            poi = db.query(MapPOI).filter(
-                MapPOI.id == robot.charging_id,
-                MapPOI.is_active == True,
-            ).first()
 
             # POI가 속한 맵의 grid_origin 보정 (맵당 1회만)
-            if poi and poi.map_id and poi.map_id not in _corrected_map_ids:
+            if poi.map_id and poi.map_id not in _corrected_map_ids:
                 _correct_map_grid_origin(db, poi.map_id)
                 _corrected_map_ids.add(poi.map_id)
-            if not poi or poi.world_x is None or poi.world_y is None:
-                result["message"] = "충전소 POI에 월드 좌표가 없습니다."
+
+            if poi.world_x is None or poi.world_y is None:
+                result["message"] = f"{poi_kind} POI에 월드 좌표가 없습니다."
                 results.append(result)
                 continue
 
-            # 도킹 포인트: 충전소 yaw 방향으로 0.9m 앞, 충전소를 바라보는 방향
             yaw_rad = poi.angle if poi.angle is not None else 0.0
-            dock_x = poi.world_x + DOCKING_OFFSET * math.cos(yaw_rad)
-            dock_y = poi.world_y + DOCKING_OFFSET * math.sin(yaw_rad)
-            dock_yaw = yaw_rad + math.pi  # 충전소를 바라보는 방향
+
+            if use_docking_offset:
+                # 충전소: yaw 방향으로 0.9m 앞, 충전소를 바라보는 방향
+                target_x = poi.world_x + DOCKING_OFFSET * math.cos(yaw_rad)
+                target_y = poi.world_y + DOCKING_OFFSET * math.sin(yaw_rad)
+                target_yaw = yaw_rad + math.pi
+            else:
+                # 대기지점: 정확한 좌표, POI 각도 그대로
+                target_x = poi.world_x
+                target_y = poi.world_y
+                target_yaw = yaw_rad
 
             set_chassis_pose(robot_ip, secret, {
-                "position": [dock_x, dock_y, 0],
-                "ori": dock_yaw,
+                "position": [target_x, target_y, 0],
+                "ori": target_yaw,
             })
 
             result["success"] = True
             result["message"] = (
-                f"위치재조정 완료: ({dock_x:.2f}, {dock_y:.2f}, "
-                f"θ={math.degrees(dock_yaw):.0f}°)"
+                f"{poi_kind} 위치재조정 완료: ({target_x:.2f}, {target_y:.2f}, "
+                f"θ={math.degrees(target_yaw):.0f}°)"
             )
             print(f"[relocalize] ✓ {robot_ip}: {result['message']}")
 

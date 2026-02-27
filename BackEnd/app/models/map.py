@@ -125,3 +125,22 @@ class MapLine(Base):
     robot_map = relationship("RobotMap", back_populates="lines")
     from_poi = relationship("MapPOI", foreign_keys=[from_poi_id])
     to_poi = relationship("MapPOI", foreign_keys=[to_poi_id])
+
+
+class ConvoyConfig(Base):
+    """Convoy 대열 작업 설정 테이블
+    - work_poi_names: 작업 루프 POI 순서 (JSON array)
+    - stop_names: 태블릿 확인 대기 POI (JSON array)
+    - robots_config: 로봇별 설정 (JSON array of objects)
+      [{robot_id, charging_poi, entry_poi_names, return_poi_names}, ...]
+    """
+    __tablename__ = "convoy_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, default="default")
+    work_poi_names = Column(Text, nullable=False)              # JSON: ["WORK1","WORK1-1",...]
+    stop_names = Column(Text, nullable=False, default="[]")    # JSON: ["WORK2","WORK4"]
+    robots_config = Column(Text, nullable=False, default="[]") # JSON: [{robot_id, charging_poi, entry_poi_names, return_poi_names}]
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

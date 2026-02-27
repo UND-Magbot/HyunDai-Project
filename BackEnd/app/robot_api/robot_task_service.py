@@ -13,7 +13,7 @@ import requests
 from websocket import create_connection, WebSocketException
 
 from app.database import SessionLocal
-from app.models.map import MapPOI
+from app.models.map import MapPOI, RobotMap
 from app.models.robot import Robot
 
 logger = logging.getLogger(__name__)
@@ -72,71 +72,140 @@ def _base_url(ip: str) -> str:
     return f"http://{ip}:{PORT}"
 
 
-def send_charge(ip: str, retry_count: int = 3) -> tuple[bool, str, str | None]:
-    """충전소 이동 명령 전송 → (success, message, error_code)"""
+def _get_docking_point_coords(ip: str, charger_name: str) -> tuple[float, float, float] | None:
+    """로봇 맵 오버레이에서 충전소의 도킹포인트 좌표 조회.
+    반환: (x, y, yaw) 또는 None (조회 실패)"""
+    try:
+        session = _get_session(ip)
+        r = session.get(f"{_base_url(ip)}/chassis/current-map", timeout=5)
+        if r.status_code != 200:
+            return None
+        map_id = r.json().get("id")
+        if not map_id:
+            return None
+        r = session.get(f"{_base_url(ip)}/maps/{map_id}", timeout=5)
+        if r.status_code != 200:
+            return None
+        overlays = json.loads(r.json().get("overlays", "{}"))
+        features = overlays.get("features", [])
+
+        # 충전소(type=9)에서 도킹포인트 ID 찾기
+        docking_point_id = None
+        for feat in features:
+            props = feat.get("properties", {})
+            if str(props.get("type")) == "9" and props.get("name") == charger_name:
+                docking_point_id = props.get("dockingPointId")
+                break
+
+        if not docking_point_id:
+            logger.warning(f"[{ip}] 충전소 '{charger_name}' 도킹포인트 없음")
+            return None
+
+        # 도킹포인트(type=36) 좌표 조회
+        for feat in features:
+            if feat.get("id") == docking_point_id:
+                coords = feat.get("geometry", {}).get("coordinates", [])
+                props = feat.get("properties", {})
+                yaw = float(props.get("yaw", 0))
+                if len(coords) >= 2:
+                    logger.info(f"[{ip}] '{charger_name}' 도킹포인트: "
+                                f"({coords[0]}, {coords[1]}, yaw={yaw})")
+                    return (coords[0], coords[1], yaw)
+
+        logger.warning(f"[{ip}] 도킹포인트 ID '{docking_point_id}' feature 없음")
+        return None
+    except Exception as e:
+        logger.warning(f"[{ip}] 도킹포인트 좌표 조회 실패: {e}")
+        return None
+
+
+def send_charge(ip: str, retry_count: int = 3,
+                charger_name: str | None = None) -> tuple[bool, str]:
+    """충전소 이동+도킹 명령 전송 → (success, message)
+    charger_name: 충전소 이름 (예: "C3") — 도킹포인트 좌표를 target_x/target_y로 전달.
+    None이면 좌표 미지정 (로봇 기본 충전소 사용).
+    """
     session = _get_session(ip)
-    body = {
+    body: dict = {
         "creator": "rcs",
         "type": "charge",
         "charge_retry_count": retry_count,
     }
+    # 충전소 지정 시: 도킹포인트 좌표를 target_x/target_y로 전달
+    if charger_name:
+        coords = _get_docking_point_coords(ip, charger_name)
+        if coords:
+            body["target_x"] = coords[0]
+            body["target_y"] = coords[1]
+            body["target_ori"] = coords[2]
+            logger.info(f"[{ip}] 충전 목표: '{charger_name}' "
+                        f"({coords[0]}, {coords[1]}, yaw={coords[2]})")
     try:
         r = session.post(f"{_base_url(ip)}/chassis/moves", json=body, timeout=5)
         if r.status_code in (200, 201):
             move_id = r.json().get("id", -1)
-            return True, f"충전소 이동 시작 (move_id={move_id})", None
+            return True, f"충전소 이동 시작 (move_id={move_id})"
         logger.error(f"[send_charge] HTTP {r.status_code}: {r.text}")
-        return False, "충전소 이동에 실패했습니다.", "ROBOT-004"
+        return False, "충전소 이동에 실패했습니다."
     except Exception as e:
         logger.error(f"[send_charge] 예외: {e}")
-        return False, "충전소 이동에 실패했습니다.", "ROBOT-004"
+        return False, "충전소 이동에 실패했습니다."
 
 
 def start_charge_route(robot_id: int, robot_ip: str,
-                       route_poi_names: list[str]) -> tuple[bool, str, str | None]:
+                       route_poi_names: list[str],
+                       charger_name: str | None = None) -> tuple[bool, str]:
     """충전소 이동 (경유 경로 포함) — 백그라운드 스레드 시작"""
     t = threading.Thread(
         target=_charge_route_runner,
-        args=(robot_id, robot_ip, route_poi_names),
+        args=(robot_id, robot_ip, route_poi_names, charger_name),
         daemon=True,
         name=f"charge-robot-{robot_id}",
     )
     t.start()
     logger.info(f"[Robot {robot_id}] 충전 경로 스레드 시작: {route_poi_names}")
-    return True, "충전소 이동 경로 시작", None
+    return True, "충전소 이동 경로 시작"
 
 
 def _charge_route_runner(robot_id: int, robot_ip: str,
-                         route_poi_names: list[str]):
+                         route_poi_names: list[str],
+                         charger_name: str | None = None):
     """백그라운드: 경유 POI 순차 이동 → 충전 명령"""
-    db = None
     ws = None
     move_lock = _get_move_lock(robot_id)
     stop_event = threading.Event()  # 충전 경로는 취소 미지원 (더미)
 
     try:
-        db = SessionLocal()
-
-        # POI 좌표 조회
+        # POI 좌표 조회 (DB 세션 즉시 반환)
         route_pois = []
-        for name in route_poi_names:
-            poi = db.query(MapPOI).filter(
-                MapPOI.name == name, MapPOI.is_active == True
-            ).first()
-            if not poi:
-                logger.error(f"[Robot {robot_id}] 충전 경로 POI '{name}' 없음")
-                with _lock:
-                    _run_info[robot_id] = {
-                        "status": "error",
-                        "message": f"충전 경로 POI '{name}'을(를) 찾지 못했습니다.",
-                        "error_code": "ROBOT-005",
-                        "description": "_charge_route_runner() — 충전 경로 POI 조회 실패",
-                    }
+        db = SessionLocal()
+        try:
+            # ── 활성 맵 ID 자동 감지 (중복 POI 이름 방지) ──
+            first_poi = db.query(MapPOI).join(RobotMap).filter(
+                MapPOI.name == route_poi_names[0],
+                MapPOI.is_active == True,
+                RobotMap.is_active == True,
+            ).order_by(RobotMap.id.desc()).first()
+            if not first_poi:
+                logger.error(f"[Robot {robot_id}] 충전 경로 POI '{route_poi_names[0]}' 없음")
                 return
-            route_pois.append(poi)
+            target_map_id = first_poi.map_id
+
+            for name in route_poi_names:
+                poi = db.query(MapPOI).filter(
+                    MapPOI.name == name, MapPOI.is_active == True,
+                    MapPOI.map_id == target_map_id,
+                ).first()
+                if not poi:
+                    logger.error(f"[Robot {robot_id}] 충전 경로 POI '{name}' 없음 (map_id={target_map_id})")
+                    return
+                db.expunge(poi)
+                route_pois.append(poi)
+        finally:
+            db.close()
 
         if not route_pois:
-            send_charge(robot_ip)
+            send_charge(robot_ip, charger_name=charger_name)
             return
 
         # WebSocket 연결
@@ -226,8 +295,8 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
             }
 
         time.sleep(1)
-        ok, msg, _ = send_charge(robot_ip)
-        logger.info(f"[Robot {robot_id}] 충전 명령: ok={ok}, {msg}")
+        ok, msg = send_charge(robot_ip, charger_name=charger_name)
+        logger.info(f"[Robot {robot_id}] 충전 명령 (charger={charger_name}): ok={ok}, {msg}")
 
         if ok:
             with _lock:
@@ -259,15 +328,16 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
                 ws.close()
             except Exception:
                 pass
-        if db:
-            db.close()
+        # DB 세션은 POI 조회 직후 이미 닫힘
         logger.info(f"[Robot {robot_id}] 충전 경로 스레드 종료")
 
 
 def send_move(ip: str, x: float, y: float, orientation: float,
-              route_coords: str = "") -> tuple[bool, int, str]:
+              route_coords: str = "",
+              target_accuracy: float | None = None) -> tuple[bool, int, str]:
     """이동 명령 전송 → (success, move_id, error_message)
     route_coords: "x1,y1,x2,y2,..." 형식 — 지정 시 해당 경로를 엄격히 따름
+    target_accuracy: 도착 인식 반경(m) — 작을수록 정확한 위치에 도착해야 완료
     """
     session = _get_session(ip)
     # 경로 좌표가 있으면 along_given_route 타입 (직선 경로 엄수, 커브 최소화)
@@ -290,6 +360,8 @@ def send_move(ip: str, x: float, y: float, orientation: float,
             "target_y": y,
             "target_ori": orientation,
         }
+    if target_accuracy is not None:
+        body["target_accuracy"] = target_accuracy
     try:
         r = session.post(f"{_base_url(ip)}/chassis/moves", json=body, timeout=5)
         if r.status_code in (200, 201):
@@ -427,17 +499,20 @@ def _create_planning_ws(ip: str):
 
 def _wait_for_move_ws(ws, move_id: int, ip: str,
                       stop_event: threading.Event,
-                      robot_id: int | None = None) -> tuple[str, str]:
+                      robot_id: int | None = None,
+                      cancel_on_stuck: bool = False) -> tuple[str, str]:
     """WebSocket /planning_state로 이동 완료 대기 → (result, detail)
-    result: succeeded / failed / cancelled / timeout / ws_error
+    result: succeeded / failed / cancelled / timeout / ws_error / stuck
     - HTTP 폴링 없음! WebSocket 메시지만 읽음
     - action_id로 우리 이동인지 필터링
     - robot_id 지정 시 stuck_state를 _stuck_states에 추적
+    - cancel_on_stuck=True: 장애물 감지 시 이동 취소 후 'stuck' 반환
     """
     start = time.time()
     last_state = ""
     last_remaining = None
     last_msg_time = time.time()   # 마지막 메시지 수신 시각
+    stuck_first_time = None       # 장애물 처음 감지 시각
 
     while (time.time() - start) < MOVE_TIMEOUT:
         if stop_event.is_set():
@@ -483,6 +558,16 @@ def _wait_for_move_ws(ws, move_id: int, ip: str,
             is_stuck = bool(stuck) and str(stuck) not in ("0", "", "none", "None")
             with _lock:
                 _stuck_states[robot_id] = is_stuck
+
+            # 장애물 감지 시 즉시 취소 (cancel_on_stuck 모드)
+            if cancel_on_stuck and is_stuck:
+                if stuck_first_time is None:
+                    stuck_first_time = time.time()
+                    logger.info(f"[Move {move_id}] 장애물 감지 — 이동 취소")
+                    cancel_current_move(ip)
+                    return "stuck", "장애물 감지"
+            else:
+                stuck_first_time = None
 
         # 상태 변경 시 로그
         if state != last_state or remaining != last_remaining:
@@ -704,10 +789,11 @@ def _navigate_to_charger(robot_id: int, robot_ip: str,
             }
         return False
 
-    # 5. 충전소 도착 → 충전 명령
+    # 5. 충전소 도착 → 충전 명령 (charger_name으로 overlay ID 자동 매칭)
     time.sleep(1)
-    ok, msg, _ = send_charge(robot_ip)
-    logger.info(f"[Robot {robot_id}] 충전 명령 전송: ok={ok}, {msg}")
+    cname = charging_poi.name if charging_poi else None
+    ok, msg = send_charge(robot_ip, charger_name=cname)
+    logger.info(f"[Robot {robot_id}] 충전 명령 전송 (charger={cname}): ok={ok}, {msg}")
 
     with _lock:
         _run_info[robot_id] = {
@@ -846,7 +932,6 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
     3) DB에서 POI 좌표 조회 → 구간(segment) 단위로 이동 → 무한 반복
     4) stop_names에 포함된 POI에서만 정지, 나머지는 경유 (통과)
     """
-    db = None
     ws = None
     move_lock = _get_move_lock(robot_id)
     stop_set = set(stop_names) if stop_names else set()
@@ -855,7 +940,55 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
         _graceful_stop_events[robot_id] = graceful_stop
 
     try:
+        # DB에서 POI 좌표 조회 (세션 즉시 반환)
+        pois = []
+        entry_pois = []
         db = SessionLocal()
+        try:
+            # ── 활성 맵 ID 자동 감지 (중복 POI 이름 방지) ──
+            first_poi = db.query(MapPOI).join(RobotMap).filter(
+                MapPOI.name == poi_names[0],
+                MapPOI.is_active == True,
+                RobotMap.is_active == True,
+            ).order_by(RobotMap.id.desc()).first()
+            if not first_poi:
+                logger.error(f"[Robot {robot_id}] POI '{poi_names[0]}' 을 찾을 수 없습니다")
+                with _lock:
+                    _run_info[robot_id] = {"status": "error", "message": f"POI '{poi_names[0]}' 없음"}
+                return
+            target_map_id = first_poi.map_id
+            logger.info(f"[Robot {robot_id}] 활성 맵 ID: {target_map_id}")
+
+            for name in poi_names:
+                poi = db.query(MapPOI).filter(
+                    MapPOI.name == name,
+                    MapPOI.is_active == True,
+                    MapPOI.map_id == target_map_id,
+                ).first()
+                if not poi:
+                    logger.error(f"[Robot {robot_id}] POI '{name}' 을 찾을 수 없습니다 (map_id={target_map_id})")
+                    with _lock:
+                        _run_info[robot_id] = {"status": "error", "message": f"POI '{name}' 없음"}
+                    return
+                db.expunge(poi)
+                pois.append(poi)
+
+            if entry_poi_names:
+                for name in entry_poi_names:
+                    poi = db.query(MapPOI).filter(
+                        MapPOI.name == name,
+                        MapPOI.is_active == True,
+                        MapPOI.map_id == target_map_id,
+                    ).first()
+                    if not poi:
+                        logger.error(f"[Robot {robot_id}] 진입 POI '{name}' 을 찾을 수 없습니다 (map_id={target_map_id})")
+                        with _lock:
+                            _run_info[robot_id] = {"status": "error", "message": f"진입 POI '{name}' 없음"}
+                        return
+                    db.expunge(poi)
+                    entry_pois.append(poi)
+        finally:
+            db.close()  # POI 조회 완료 → DB 세션 즉시 반환
 
         # WebSocket 연결 시도
         try:
@@ -863,34 +996,8 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
         except Exception as e:
             logger.warning(f"[Robot {robot_id}] WebSocket 연결 실패 — HTTP 폴백 사용: {e}")
 
-        # DB에서 POI 좌표 조회
-        pois = []
-        for name in poi_names:
-            poi = db.query(MapPOI).filter(
-                MapPOI.name == name,
-                MapPOI.is_active == True,
-            ).first()
-            if not poi:
-                logger.error(f"[Robot {robot_id}] POI '{name}' 을 찾을 수 없습니다")
-                with _lock:
-                    _run_info[robot_id] = {"status": "error", "message": f"POI '{name}'을(를) 찾지 못했습니다.", "error_code": "TASK-003", "description": "_task_runner() — DB에서 POI 조회 실패"}
-                return
-            pois.append(poi)
-
         # ── 진입 경로 처리 (충전소 → 작업구역, 충전 상태일 때만 1회) ──
-        if entry_poi_names and _is_charging(robot_ip):
-            entry_pois = []
-            for name in entry_poi_names:
-                poi = db.query(MapPOI).filter(
-                    MapPOI.name == name,
-                    MapPOI.is_active == True,
-                ).first()
-                if not poi:
-                    logger.error(f"[Robot {robot_id}] 진입 POI '{name}' 을 찾을 수 없습니다")
-                    with _lock:
-                        _run_info[robot_id] = {"status": "error", "message": f"진입 POI '{name}'을(를) 찾지 못했습니다.", "error_code": "TASK-006", "description": "_task_runner() — 진입 POI 조회 실패"}
-                    return
-                entry_pois.append(poi)
+        if entry_pois and _is_charging(robot_ip):
 
             # 진입 경로 → CURPOS1(pois[0])까지 이어서 이동 (ENTERPOS3에서 멈추지 않음)
             first_loop_poi = pois[0]
@@ -1301,8 +1408,7 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                 ws.close()
             except Exception:
                 pass
-        if db:
-            db.close()
+        # DB 세션은 POI 조회 직후 이미 닫힘
         with _lock:
             _stop_events.pop(robot_id, None)
             _confirm_events.pop(robot_id, None)

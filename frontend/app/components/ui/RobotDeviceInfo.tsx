@@ -37,11 +37,18 @@ export function RobotDeviceInfo({
   const [chargingPois, setChargingPois] = useState<{ id: number; name: string }[]>([]);
   const [initialChargingId, setInitialChargingId] = useState<number | null>(null);
   const [chargingId, setChargingId] = useState<number | null>(null);
+  const [standbyPois, setStandbyPois] = useState<{ id: number; name: string }[]>([]);
+  const [initialStandbyId, setInitialStandbyId] = useState<number | null>(null);
+  const [standbyId, setStandbyId] = useState<number | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [chargingDropdownOpen, setChargingDropdownOpen] = useState(false);
+  const [standbyDropdownOpen, setStandbyDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [standbyDropdownPos, setStandbyDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const chargingDropdownRef = useRef<HTMLDivElement>(null);
+  const standbyDropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const standbyTriggerRef = useRef<HTMLButtonElement>(null);
   const { showAlert } = useAlert();
 
   useEffect(() => {
@@ -53,11 +60,13 @@ export function RobotDeviceInfo({
       { signal: controller.signal }
     )
       .then((res) => res.json())
-      .then((data: { min_battery: number; charging_id: number | null }) => {
+      .then((data: { min_battery: number; charging_id: number | null; standby_id: number | null }) => {
         setInitialMinBattery(data.min_battery);
         setMinBattery(data.min_battery);
         setInitialChargingId(data.charging_id ?? null);
         setChargingId(data.charging_id ?? null);
+        setInitialStandbyId(data.standby_id ?? null);
+        setStandbyId(data.standby_id ?? null);
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
@@ -67,6 +76,8 @@ export function RobotDeviceInfo({
         setMinBattery(20);
         setInitialChargingId(null);
         setChargingId(null);
+        setInitialStandbyId(null);
+        setStandbyId(null);
       });
 
     return () => controller.abort();
@@ -98,9 +109,34 @@ export function RobotDeviceInfo({
   }, [device, showChargingStation]);
 
   useEffect(() => {
+    if (!device) return;
+    const controller = new AbortController();
+
+    fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/api/robots/sn/${encodeURIComponent(device.sn)}/standby-pois`,
+      { signal: controller.signal }
+    )
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return res.json();
+      })
+      .then((data: { id: number; name: string }[]) => {
+        setStandbyPois(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        setStandbyPois([]);
+      });
+
+    return () => controller.abort();
+  }, [device]);
+
+  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (chargingDropdownRef.current && !chargingDropdownRef.current.contains(e.target as Node)) {
         setChargingDropdownOpen(false);
+      }
+      if (standbyDropdownRef.current && !standbyDropdownRef.current.contains(e.target as Node)) {
+        setStandbyDropdownOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -116,13 +152,14 @@ export function RobotDeviceInfo({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ min_battery: minBattery, charging_id: chargingId }),
+          body: JSON.stringify({ min_battery: minBattery, charging_id: chargingId, standby_id: standbyId }),
         }
       );
       if (res.ok) {
-        const data: { min_battery: number; charging_id: number | null } = await res.json();
+        const data: { min_battery: number; charging_id: number | null; standby_id: number | null } = await res.json();
         setInitialMinBattery(data.min_battery);
         setInitialChargingId(data.charging_id ?? null);
+        setInitialStandbyId(data.standby_id ?? null);
       } else {
         console.error("[로봇 상세] 충전 설정 저장 실패:", res.status);
         showAlert({ title: "알림", message: "충전 설정 저장에 실패했습니다.", errorCode: "ROBOT-009", errorType: "robot", source: "로봇 상세 > 충전 설정", description: "RobotDeviceInfo — 충전 설정 저장 실패", robotSn: device.sn });
@@ -133,14 +170,15 @@ export function RobotDeviceInfo({
     } finally {
       setIsApplying(false);
     }
-  }, [device, minBattery, chargingId, isApplying]);
+  }, [device, minBattery, chargingId, standbyId, isApplying]);
 
   if (!device) return null;
 
   const isToggleDisabled = togglingDeviceId === device.id;
   const isChanged =
     (initialMinBattery !== null && minBattery !== initialMinBattery) ||
-    (showChargingStation && chargingId !== initialChargingId);
+    (showChargingStation && chargingId !== initialChargingId) ||
+    standbyId !== initialStandbyId;
 
   const shouldScrollTaskTable = device.currentTask.length > 5;
 
@@ -334,6 +372,65 @@ export function RobotDeviceInfo({
               </button>
             </div>
           )}
+
+          <div className="robot-info__charging-row">
+              <span className="robot-info__label">대기장소</span>
+              <div className="robot-info__dropdown" ref={standbyDropdownRef}>
+                <button
+                  type="button"
+                  className="robot-info__dropdown-trigger"
+                  ref={standbyTriggerRef}
+                  onClick={() => {
+                    if (!standbyDropdownOpen && standbyTriggerRef.current) {
+                      const rect = standbyTriggerRef.current.getBoundingClientRect();
+                      setStandbyDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+                    }
+                    setStandbyDropdownOpen((v) => !v);
+                  }}
+                >
+                  <span className={standbyId == null ? "robot-info__dropdown-placeholder" : ""}>
+                    {standbyId != null
+                      ? standbyPois.find((p) => p.id === standbyId)?.name ?? "대기장소를 선택해주세요."
+                      : "대기장소를 선택해주세요."}
+                  </span>
+                  <svg
+                    className={`robot-info__dropdown-arrow${standbyDropdownOpen ? " robot-info__dropdown-arrow--open" : ""}`}
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                  >
+                    <path fill="currentColor" d="M6 8L1 3h10z" />
+                  </svg>
+                </button>
+                {standbyDropdownOpen && standbyDropdownPos && (
+                  <ul
+                    className="robot-info__dropdown-menu"
+                    style={{ top: standbyDropdownPos.top, left: standbyDropdownPos.left, width: standbyDropdownPos.width }}
+                  >
+                    {standbyPois.map((poi) => (
+                      <li key={poi.id}>
+                        <button
+                          type="button"
+                          className={`robot-info__dropdown-option${standbyId === poi.id ? " robot-info__dropdown-option--selected" : ""}`}
+                          onClick={() => { setStandbyId(poi.id); setStandbyDropdownOpen(false); }}
+                        >
+                          {poi.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button
+                type="button"
+                className="robot-info__apply-btn"
+                disabled={!isChanged || isApplying}
+                onClick={handleApply}
+              >
+                {isApplying ? "적용 중..." : "적용"}
+              </button>
+            </div>
 
           {isChanged && (
             <p className="robot-info__warning">
