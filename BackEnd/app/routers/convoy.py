@@ -159,8 +159,8 @@ def api_convoy_start(db: Session = Depends(get_db)):
             # 충전소/대기지점 미지정 로봇은 건너뜀
             continue
 
-        # 허용된 출발지만 참여 (W1, C1, C2, C3)
-        ALLOWED_START_POIS = {"W1", "C1", "C2", "C3"}
+        # 허용된 출발지만 참여 (W1, W2, C1, C2, C3)
+        ALLOWED_START_POIS = {"W1", "W2", "C1", "C2", "C3"}
         if start_poi_name not in ALLOWED_START_POIS:
             continue
 
@@ -182,31 +182,40 @@ def api_convoy_start(db: Session = Depends(get_db)):
     if not robots_config:
         raise HTTPException(status_code=400, detail="출발 가능한 로봇이 없습니다 (충전소/대기지점 미지정)")
 
-    # ── 출발 순서 정렬: W(대기지점) → C(충전소), 번호 오름차순 ──
+    # ── 출발 순서 정렬: C(충전소) → W(대기지점), 번호 오름차순 ──
     def _departure_order(rc):
         name = rc["_start_poi_name"]
-        # W → 0, C → 1, 기타 → 2 (대기지점 우선)
-        prefix_order = 0 if name.startswith("W") else (1 if name.startswith("C") else 2)
+        # C → 0, W → 1, 기타 → 2 (충전소 우선)
+        prefix_order = 0 if name.startswith("C") else (1 if name.startswith("W") else 2)
         return (prefix_order, name)
 
     robots_config.sort(key=_departure_order)
 
-    # 정렬 후 내부 키 제거
-    for rc in robots_config:
+    # ── active(최대 4대) / standby(나머지) 분리 ──
+    # C 로봇 + W 로봇 중 첫 번째까지 active, 나머지 W 로봇은 standby 풀
+    active_robots = robots_config[:4]
+    standby_robots = robots_config[4:]  # 5번째 이후 (W2 등)
+
+    # 내부 키 제거
+    for rc in active_robots + standby_robots:
         rc.pop("_start_poi_name", None)
 
-    ok, msg = start_convoy(robots_config, work_poi_names, stop_names)
+    ok, msg = start_convoy(active_robots, work_poi_names, stop_names, standby_robots)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
 
     return {
         "message": msg,
-        "robots": [
+        "active_robots": [
             {"robot_id": rc["robot_id"],
              "start_poi_type": rc["start_poi_type"],
-             "entry": rc["entry_poi_names"],
-             "return": rc["return_poi_names"]}
-            for rc in robots_config
+             "entry": rc["entry_poi_names"]}
+            for rc in active_robots
+        ],
+        "standby_robots": [
+            {"robot_id": rc["robot_id"],
+             "start_poi_type": rc["start_poi_type"]}
+            for rc in standby_robots
         ],
     }
 

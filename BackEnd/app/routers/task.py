@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.robot import Robot
 from app.models.map import MapPOI
-from app.robot_api.robot_task_service import start_loop, stop_loop, get_loop_status, confirm_loop, send_charge, start_charge_route, cancel_current_move
+from app.robot_api.robot_task_service import start_loop, stop_loop, get_loop_status, confirm_loop, send_charge, start_charge_route, start_return_route, cancel_current_move
 from app.robot_api.robot_live_service import _collect_ws_topics, _to_runstate
 from app.robot_api.route_utils import find_route
 
@@ -167,6 +167,85 @@ def api_charge(robot_id: int, req: ChargeRequest = None, db: Session = Depends(g
     return {"message": msg, "robot_id": robot_id, "route": route_names}
 
 
+@router.post("/return/{robot_id}")
+def api_return(robot_id: int, db: Session = Depends(get_db)):
+    """로봇 복귀 — standby_id가 있으면 대기장소, 없으면 충전소로 이동"""
+    ip = _get_robot_ip(db, robot_id)
+    if isinstance(ip, JSONResponse):
+        return ip
+
+    robot = db.query(Robot).filter(Robot.id == robot_id).first()
+    if not robot:
+        raise HTTPException(status_code=404, detail="로봇을 찾지 못했습니다.")
+
+    dest_poi = None
+    dest_type = None
+
+    # 1) standby_id 우선
+    if robot.standby_id:
+        poi = db.query(MapPOI).filter(
+            MapPOI.id == robot.standby_id, MapPOI.is_active == True
+        ).first()
+        if poi:
+            dest_poi = poi
+            dest_type = "standby"
+
+    # 2) standby 없으면 charging_id
+    if not dest_poi and robot.charging_id:
+        poi = db.query(MapPOI).filter(
+            MapPOI.id == robot.charging_id, MapPOI.is_active == True
+        ).first()
+        if poi:
+            dest_poi = poi
+            dest_type = "charging"
+
+    if not dest_poi:
+        raise HTTPException(status_code=400, detail="대기장소/충전소가 설정되지 않았습니다.")
+
+    # 경유 경로 자동 탐색
+    route_names = _find_return_route(db, dest_poi)
+
+    # 목적지 POI를 경로 마지막에 포함
+    if route_names:
+        route_names.append(dest_poi.name)
+    else:
+        route_names = [dest_poi.name]
+
+    charger_name = dest_poi.name if dest_type == "charging" else None
+    ok, msg = start_return_route(robot_id, ip, route_names, dest_poi.name, charger_name=charger_name)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+
+    return {
+        "message": msg,
+        "robot_id": robot_id,
+        "dest_type": dest_type,
+        "dest_name": dest_poi.name,
+        "route": route_names,
+    }
+
+
+def _find_return_route(db: Session, dest_poi: MapPOI) -> list[str]:
+    """현재 로봇 위치(가장 가까운 WORK 노드)에서 목적지까지 경유 경로 탐색"""
+    work_pois = db.query(MapPOI).filter(
+        MapPOI.map_id == dest_poi.map_id,
+        MapPOI.name.like("WORK%"),
+        MapPOI.is_active == True,
+    ).all()
+
+    if not work_pois:
+        return []
+
+    best_route = None
+    for wp in work_pois:
+        route = find_route(db, dest_poi.map_id, wp.id, dest_poi.id,
+                           include_endpoints=False)
+        if route is not None and (best_route is None or len(route) < len(best_route)):
+            best_route = route
+
+    return best_route or []
+
+
 @router.post("/stop/{robot_id}")
 def api_stop_robot(robot_id: int, db: Session = Depends(get_db)):
     """로봇 현재 이동 명령 즉시 취소 (루프 작업 포함)"""
@@ -306,19 +385,6 @@ const poiDisplayName = {{
   'WORK4': '배출',
 }};
 
-const statusMap = {{
-  'idle': ['대기 중', 'idle'],
-  'starting': ['시작 중...', 'running'],
-  'running': ['이동 중', 'running'],
-  'waiting_confirmation': ['작업 확인 대기', 'waiting'],
-  'stopped': ['정지됨', 'idle'],
-  'error': ['오류 발생', 'error'],
-  'charging_route': ['충전소 이동 중', 'charging'],
-  'charging': ['충전 중', 'charging'],
-  'low_battery_charging': ['배터리 부족 → 충전소 이동 중', 'charging'],
-  'moving_to_start': ['작업 시작 위치로 이동 중', 'moving'],
-}};
-
 async function fetchStatus() {{
   try {{
     const r = await fetch(API + '/loop/status/' + ROBOT_ID);
@@ -331,75 +397,59 @@ async function fetchStatus() {{
 }}
 
 function render(d) {{
-  // 장애물 감지 처리
   handleStuck(!!d.stuck);
-
-  const poi = d.current_poi || '-';
-  const [label, cls] = statusMap[d.status] || [d.status, 'idle'];
+  const poi = d.current_poi || '';
   const btn = document.getElementById('btn-confirm');
   const poiEl = document.getElementById('poiName');
   const statusEl = document.getElementById('statusText');
   const loopEl = document.getElementById('loopInfo');
+  const stopName = poiDisplayName[poi];
 
-  if (d.status === 'idle' || d.status === 'stopped') {{
-    poiEl.textContent = label;
-    statusEl.style.display = 'none';
-    cancelAutoConfirm(); btn.classList.remove('show');
-  }} else if (d.status === 'moving_to_start') {{
-    poiEl.textContent = label;
+  statusEl.style.display = 'none';
+  cancelAutoConfirm();
+  btn.classList.remove('show');
+
+  if (d.status === 'moving_to_start' || d.status === 'starting') {{
+    poiEl.textContent = '작업 진입중';
     poiEl.style.color = '#a29bfe';
     statusEl.style.display = '';
-    statusEl.innerHTML = '<span class="moving"><span class="spinner"></span>' + (d.message || '') + '</span>';
-    cancelAutoConfirm(); btn.classList.remove('show');
-    loopEl.textContent = '';
-    return;
-  }} else if (d.status === 'charging_route' || d.status === 'charging' || d.status === 'low_battery_charging') {{
-    poiEl.textContent = label;
+    statusEl.innerHTML = '<span class="moving"><span class="spinner"></span></span>';
+  }} else if (d.status === 'running') {{
+    poiEl.textContent = stopName ? (stopName + ' 위치 이동중') : '이동 중';
+    poiEl.style.color = '#0be881';
+    statusEl.style.display = '';
+    statusEl.innerHTML = '<span class="running"><span class="spinner"></span></span>';
+  }} else if (d.status === 'waiting_confirmation') {{
+    poiEl.textContent = stopName || poi;
+    poiEl.style.color = '#ffc048';
+    btn.classList.add('show');
+    startAutoConfirm();
+  }} else if (d.status === 'returning') {{
+    poiEl.textContent = '복귀중';
+    poiEl.style.color = '#a29bfe';
+    statusEl.style.display = '';
+    statusEl.innerHTML = '<span class="moving"><span class="spinner"></span></span>';
+  }} else if (d.status === 'charging_route' || d.status === 'low_battery_charging') {{
+    poiEl.textContent = '충전소 이동중';
     poiEl.style.color = '#00d2d3';
     statusEl.style.display = '';
-    statusEl.innerHTML = '<span class="charging"><span class="spinner"></span>' + (d.message || '') + '</span>';
-    cancelAutoConfirm(); btn.classList.remove('show');
-    loopEl.textContent = '';
-    return;
-  }} else {{
-    const stopName = poiDisplayName[d.next_stop || poi] || poiDisplayName[poi];
-    statusEl.style.display = '';
-    if (d.status === 'waiting_confirmation') {{
-      poiEl.textContent = stopName || poi;
-      poiEl.style.color = '#ffc048';
-      statusEl.innerHTML = '<span class="waiting">작업 확인 대기</span>';
-      btn.classList.add('show');
-      startAutoConfirm();
-    }} else if (d.status === 'running') {{
-      if (stopName) {{
-        poiEl.textContent = stopName + ' 위치 이동중';
-      }} else {{
-        poiEl.textContent = '이동 중';
-      }}
-      poiEl.style.color = '#0be881';
-      statusEl.innerHTML = '<span class="running"><span class="spinner"></span>' + (d.message || '이동 중') + '</span>';
-      cancelAutoConfirm(); btn.classList.remove('show');
-    }} else {{
-      poiEl.textContent = stopName || poi;
-      poiEl.style.color = '#e94560';
-      statusEl.innerHTML = '<span class="' + cls + '">' + label + '</span>';
-      cancelAutoConfirm(); btn.classList.remove('show');
+    statusEl.innerHTML = '<span class="charging"><span class="spinner"></span></span>';
+  }} else if (d.status === 'charging') {{
+    poiEl.textContent = '충전중';
+    poiEl.style.color = '#00d2d3';
+  }} else if (d.status === 'error') {{
+    poiEl.textContent = '오류 발생';
+    poiEl.style.color = '#e94560';
+    if (d.message) {{
+      statusEl.style.display = '';
+      statusEl.innerHTML = '<span class="error">' + d.message + '</span>';
     }}
+  }} else {{
+    poiEl.textContent = '대기중';
+    poiEl.style.color = '#666';
   }}
 
-  if (d.status === 'error' && d.message) {{
-    statusEl.innerHTML += '<br><span style="color:#999;font-size:0.7em">' + d.message + '</span>';
-  }}
-
-  if (d.loop) {{
-    let info = '루프 ' + d.loop + '회';
-    if (d.current_segment && d.total_segments) {{
-      info += ' | 구간 ' + d.current_segment + '/' + d.total_segments;
-    }}
-    loopEl.textContent = info;
-  }} else {{
-    loopEl.textContent = '';
-  }}
+  loopEl.textContent = d.loop ? ('반복 ' + d.loop + '회') : '';
 }}
 
 function startAutoConfirm() {{

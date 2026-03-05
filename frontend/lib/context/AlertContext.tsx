@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useState,
   useEffect,
   useRef,
@@ -144,20 +145,23 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     [incrementUnreadCount]
   );
 
+  const contextValue = useMemo(
+    () => ({
+      showAlert,
+      showInfo,
+      alertModal,
+      closeAlert,
+      unreadCount,
+      refreshUnreadCount,
+      incrementUnreadCount,
+      decrementUnreadCount,
+      resetUnreadCount,
+    }),
+    [showAlert, showInfo, alertModal, closeAlert, unreadCount, refreshUnreadCount, incrementUnreadCount, decrementUnreadCount, resetUnreadCount]
+  );
+
   return (
-    <AlertContext.Provider
-      value={{
-        showAlert,
-        showInfo,
-        alertModal,
-        closeAlert,
-        unreadCount,
-        refreshUnreadCount,
-        incrementUnreadCount,
-        decrementUnreadCount,
-        resetUnreadCount,
-      }}
-    >
+    <AlertContext.Provider value={contextValue}>
       {children}
     </AlertContext.Provider>
   );
