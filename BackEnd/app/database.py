@@ -2,12 +2,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 import pymysql
 
-# MariaDB 접속 정보
-DB_USER = "root"
-DB_PASSWORD = "1234"
-DB_HOST = "192.168.0.26"
-DB_PORT = 3306
-DB_NAME = "rcs_db"
+# MariaDB 접속 정보 (환경변수 우선, 없으면 기본값)
+import os
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "unde5466")
+DB_HOST = os.getenv("DB_HOST", "192.168.10.5")
+DB_PORT = int(os.getenv("DB_PORT", "3306"))
+DB_NAME = os.getenv("DB_NAME", "rcs_db")
 
 DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
 

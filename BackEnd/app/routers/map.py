@@ -619,24 +619,34 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
     return result
 
 
+DEFAULT_AREA_ID = 21
+
 @router.get("/default-map")
 def api_get_default_map(db: Session = Depends(get_db)):
-    """가장 최근 업데이트된 활성 맵 정보 반환 (모니터링 페이지 기본값용)"""
+    """지정된 기본 영역(DEFAULT_AREA_ID)의 최신 맵 반환 (모니터링 페이지 기본값용)"""
     try:
         latest = (
             db.query(RobotMap)
-            .filter(RobotMap.is_active == True)
+            .filter(RobotMap.area_id == DEFAULT_AREA_ID, RobotMap.is_active == True)
             .order_by(RobotMap.updated_at.desc())
             .first()
         )
         if not latest:
-            return {"image_url": None, "grid_origin_x": 0, "grid_origin_y": 0, "grid_resolution": 0.05, "area_id": None}
+            latest = (
+                db.query(RobotMap)
+                .filter(RobotMap.is_active == True)
+                .order_by(RobotMap.updated_at.desc())
+                .first()
+            )
+        if not latest:
+            return {"map_id": None, "image_url": None, "grid_origin_x": 0, "grid_origin_y": 0, "grid_resolution": 0.05, "area_id": None}
 
         # grid_origin 보정 확인 (로봇 연결 가능 시 자동 보정, 실패해도 기존 값 반환)
         if _correct_map_grid_origin(db, latest.id):
             db.refresh(latest)
 
         return {
+            "map_id": latest.id,
             "image_url": latest.image_url,
             "grid_origin_x": float(latest.grid_origin_x) if latest.grid_origin_x else 0,
             "grid_origin_y": float(latest.grid_origin_y) if latest.grid_origin_y else 0,
@@ -1098,8 +1108,8 @@ def api_relocalize_robots(body: dict, db: Session = Depends(get_db)):
     }
 
     우선순위:
-    1) charging_id → 충전소 도킹 포인트 (0.9m 오프셋)
-    2) standby_id → 대기지점 좌표 (정확한 위치)
+    1) standby_id → 대기지점 좌표 (정확한 위치)
+    2) charging_id → 충전소 도킹 포인트 (0.9m 오프셋)
     """
     from app.models.map import MapPOI
 
@@ -1122,26 +1132,26 @@ def api_relocalize_robots(body: dict, db: Session = Depends(get_db)):
                 results.append(result)
                 continue
 
-            # 충전소 또는 대기지점 POI 결정
+            # 대기지점 또는 충전소 POI 결정 (standby 우선)
             poi = None
             poi_kind = ""
             use_docking_offset = False
 
-            if robot.charging_id:
-                poi = db.query(MapPOI).filter(
-                    MapPOI.id == robot.charging_id,
-                    MapPOI.is_active == True,
-                ).first()
-                poi_kind = "충전소"
-                use_docking_offset = True
-
-            if not poi and robot.standby_id:
+            if robot.standby_id:
                 poi = db.query(MapPOI).filter(
                     MapPOI.id == robot.standby_id,
                     MapPOI.is_active == True,
                 ).first()
                 poi_kind = "대기지점"
                 use_docking_offset = False
+
+            if not poi and robot.charging_id:
+                poi = db.query(MapPOI).filter(
+                    MapPOI.id == robot.charging_id,
+                    MapPOI.is_active == True,
+                ).first()
+                poi_kind = "충전소"
+                use_docking_offset = True
 
             if not poi:
                 result["message"] = "충전소 또는 대기지점이 지정되지 않았습니다."

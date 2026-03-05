@@ -152,6 +152,215 @@ def send_charge(ip: str, retry_count: int = 3,
         return False, "충전소 이동에 실패했습니다."
 
 
+def start_return_route(robot_id: int, robot_ip: str,
+                       route_poi_names: list[str],
+                       dest_name: str,
+                       charger_name: str | None = None) -> tuple[bool, str]:
+    """대기장소/충전소 복귀 (경유 경로 포함) — 백그라운드 스레드 시작
+    charger_name: 충전소 POI 이름 (예: "C1") — 도착 후 도킹 명령 전송. None이면 도킹 안 함.
+    """
+    stop_event = threading.Event()
+    with _lock:
+        # 기존 작업이 있으면 정지 시킨 후 교체
+        old = _stop_events.get(robot_id)
+        if old:
+            old.set()
+        _stop_events[robot_id] = stop_event
+        _run_info[robot_id] = {
+            "status": "returning",
+            "message": f"복귀 중 ({dest_name})",
+        }
+
+    # 잔여 이동 취소
+    cancel_current_move(robot_ip)
+
+    t = threading.Thread(
+        target=_return_route_runner,
+        args=(robot_id, robot_ip, route_poi_names, dest_name, charger_name, stop_event),
+        daemon=True,
+        name=f"return-robot-{robot_id}",
+    )
+    t.start()
+    logger.info(f"[Robot {robot_id}] 복귀 경로 스레드 시작: {route_poi_names} → {dest_name}")
+    return True, f"복귀 시작 (목적지: {dest_name})"
+
+
+def _return_route_runner(robot_id: int, robot_ip: str,
+                         route_poi_names: list[str],
+                         dest_name: str,
+                         charger_name: str | None = None,
+                         stop_event: threading.Event | None = None):
+    """백그라운드: 경유 POI 순차 이동 → 대기장소/충전소 도착
+    charger_name이 있으면 도착 후 충전 도킹 명령 전송.
+    """
+    ws = None
+    move_lock = _get_move_lock(robot_id)
+    if stop_event is None:
+        stop_event = threading.Event()
+
+    try:
+        route_pois = []
+        db = SessionLocal()
+        try:
+            first_poi = db.query(MapPOI).join(RobotMap).filter(
+                MapPOI.name == route_poi_names[0],
+                MapPOI.is_active == True,
+                RobotMap.is_active == True,
+            ).order_by(RobotMap.id.desc()).first()
+            if not first_poi:
+                logger.error(f"[Robot {robot_id}] 복귀 경로 POI '{route_poi_names[0]}' 없음")
+                return
+            target_map_id = first_poi.map_id
+
+            for name in route_poi_names:
+                poi = db.query(MapPOI).filter(
+                    MapPOI.name == name, MapPOI.is_active == True,
+                    MapPOI.map_id == target_map_id,
+                ).first()
+                if not poi:
+                    logger.error(f"[Robot {robot_id}] 복귀 경로 POI '{name}' 없음 (map_id={target_map_id})")
+                    return
+                db.expunge(poi)
+                route_pois.append(poi)
+        finally:
+            db.close()
+
+        if not route_pois:
+            logger.warning(f"[Robot {robot_id}] 복귀 경로 POI 없음 — 복귀 취소")
+            return
+
+        try:
+            ws = _create_planning_ws(robot_ip)
+        except Exception as e:
+            logger.warning(f"[Robot {robot_id}] 복귀 경로 WS 연결 실패: {e}")
+
+        target = route_pois[-1]
+        coords_parts = []
+        for p in route_pois:
+            px = p.world_x if p.world_x is not None else p.x
+            py = p.world_y if p.world_y is not None else p.y
+            coords_parts.extend([str(px), str(py)])
+
+        tx = target.world_x if target.world_x is not None else target.x
+        ty = target.world_y if target.world_y is not None else target.y
+        t_angle = target.angle if target.angle is not None else 0.0
+        route_coords = ",".join(coords_parts) if len(coords_parts) > 2 else ""
+
+        logger.info(f"[Robot {robot_id}] 복귀 경로 이동: "
+                    f"{'→'.join(p.name for p in route_pois)}")
+
+        with _lock:
+            _run_info[robot_id] = {
+                "status": "returning",
+                "message": f"복귀 중 ({dest_name})",
+            }
+
+        with move_lock:
+            ok, move_id, err = send_move(
+                robot_ip, tx, ty, t_angle, route_coords=route_coords)
+            if not ok:
+                logger.error(f"[Robot {robot_id}] 복귀 경로 이동 명령 실패: {err}")
+                with _lock:
+                    _run_info[robot_id] = {
+                        "status": "error",
+                        "message": "복귀 경로 이동에 실패했습니다.",
+                        "error_code": "ROBOT-007",
+                        "description": "_return_route_runner() — 복귀 경로 이동 명령 실패",
+                    }
+                return
+
+            logger.info(f"[Robot {robot_id}] 복귀 경로 Move {move_id} 전송")
+
+            if ws:
+                try:
+                    result, detail = _wait_for_move_ws(
+                        ws, move_id, robot_ip, stop_event)
+                    if result == "ws_error":
+                        try:
+                            ws.close()
+                        except Exception:
+                            pass
+                        ws = None
+                except (WebSocketException, OSError) as e:
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+                    ws = None
+                    result = "ws_error"
+                    detail = str(e)
+            else:
+                result, detail = _wait_for_move_http(
+                    robot_ip, move_id, stop_event)
+
+        logger.info(f"[Robot {robot_id}] 복귀 경로 이동 결과: {result} {detail}")
+
+        if result == "cancelled":
+            logger.info(f"[Robot {robot_id}] 복귀 경로 사용자 정지")
+            with _lock:
+                _run_info[robot_id] = {
+                    "status": "stopped",
+                    "message": "복귀가 취소되었습니다.",
+                }
+        elif result == "succeeded":
+            # 충전소 도착 시 도킹 명령 전송
+            if charger_name:
+                logger.info(f"[Robot {robot_id}] 충전소 도착 → 도킹 시작 ({charger_name})")
+                with _lock:
+                    _run_info[robot_id] = {
+                        "status": "charging",
+                        "message": f"충전소 도킹 중 ({charger_name})",
+                    }
+                charge_ok, charge_msg = send_charge(robot_ip, charger_name=charger_name)
+                if charge_ok:
+                    logger.info(f"[Robot {robot_id}] 충전 도킹 명령 성공: {charge_msg}")
+                    with _lock:
+                        _run_info[robot_id] = {
+                            "status": "charging",
+                            "message": f"충전 중 ({charger_name})",
+                        }
+                else:
+                    logger.error(f"[Robot {robot_id}] 충전 도킹 명령 실패: {charge_msg}")
+                    with _lock:
+                        _run_info[robot_id] = {
+                            "status": "error",
+                            "message": f"충전소 도킹 실패 ({charge_msg})",
+                        }
+            else:
+                with _lock:
+                    _run_info[robot_id] = {
+                        "status": "idle",
+                        "message": f"복귀 완료 ({dest_name})",
+                    }
+        else:
+            with _lock:
+                _run_info[robot_id] = {
+                    "status": "error",
+                    "message": f"복귀 경로 이동에 실패했습니다. ({detail})",
+                    "error_code": "ROBOT-007",
+                    "description": "_return_route_runner() — 복귀 경로 이동 실패",
+                }
+
+    except Exception as e:
+        logger.exception(f"[Robot {robot_id}] 복귀 경로 예외: {e}")
+        with _lock:
+            _run_info[robot_id] = {
+                "status": "error",
+                "message": "복귀 경로 실행 중 오류가 발생했습니다.",
+                "error_code": "ROBOT-007",
+                "description": "_return_route_runner() — 복귀 경로 예외",
+            }
+    finally:
+        with _lock:
+            _stop_events.pop(robot_id, None)
+        if ws:
+            try:
+                ws.close()
+            except Exception:
+                pass
+        logger.info(f"[Robot {robot_id}] 복귀 경로 스레드 종료")
+
+
 def start_charge_route(robot_id: int, robot_ip: str,
                        route_poi_names: list[str],
                        charger_name: str | None = None) -> tuple[bool, str]:

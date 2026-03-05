@@ -300,16 +300,6 @@ export function RobotDeviceInfo({
               }}
             />
             <span className="robot-info__range-value">{minBattery}%</span>
-            {!showChargingStation && (
-              <button
-                type="button"
-                className="robot-info__apply-btn"
-                disabled={!isChanged || isApplying}
-                onClick={handleApply}
-              >
-                {isApplying ? "적용 중..." : "적용"}
-              </button>
-            )}
           </div>
 
           {showChargingStation && (
@@ -362,14 +352,6 @@ export function RobotDeviceInfo({
                   </ul>
                 )}
               </div>
-              <button
-                type="button"
-                className="robot-info__apply-btn"
-                disabled={!isChanged || isApplying}
-                onClick={handleApply}
-              >
-                {isApplying ? "적용 중..." : "적용"}
-              </button>
             </div>
           )}
 
@@ -422,15 +404,17 @@ export function RobotDeviceInfo({
                   </ul>
                 )}
               </div>
-              <button
-                type="button"
-                className="robot-info__apply-btn"
-                disabled={!isChanged || isApplying}
-                onClick={handleApply}
-              >
-                {isApplying ? "적용 중..." : "적용"}
-              </button>
             </div>
+
+          <button
+            type="button"
+            className="robot-info__apply-btn"
+            style={{ display: "block", margin: "12px auto 0" }}
+            disabled={!isChanged || isApplying}
+            onClick={handleApply}
+          >
+            {isApplying ? "적용 중..." : "적용"}
+          </button>
 
           {isChanged && (
             <p className="robot-info__warning">

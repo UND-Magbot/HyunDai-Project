@@ -183,7 +183,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [loopStopping, setLoopStopping] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
-  const [simulatedRobots, setSimulatedRobots] = useState<RobotMarkerData[]>([]);
+  // simulatedRobots는 아래 useMemo로 계산 (useEffect+setState 연쇄 리렌더 방지)
 
   // ── 실제 로봇 데이터 (mock 대체) ──
   const [apiRobotsFull, setApiRobotsFull] = useState<ApiRobotFull[]>([]);
@@ -203,6 +203,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
   // }, {} as Record<string, number>);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [robotsLoaded, setRobotsLoaded] = useState(false);
+  const [liveLoaded, setLiveLoaded] = useState(false);
   const [currentDateTime, setCurrentDateTime] = useState(initialDateTime);
   const [selectedBusiness, setSelectedBusiness] = useState("");
 
@@ -222,13 +224,19 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
   // 로봇 실시간 위치 (다중 로봇)
   const [mapMeta, setMapMeta] = useState<MapMeta | null>(null);
-  const defaultMapRef = useRef<{ image_url: string | null; grid_origin_x: number; grid_origin_y: number; grid_resolution: number; area_id: number | null } | null>(null);
+  const defaultMapRef = useRef<{ map_id: number | null; image_url: string | null; grid_origin_x: number; grid_origin_y: number; grid_resolution: number; area_id: number | null } | null>(null);
   const [apiRobots, setApiRobots] = useState<ApiRobot[]>([]);
   const [robotPoses, setRobotPoses] = useState<Map<string, { pos: [number, number]; ori: number }>>(new Map());
   const poseWsRefs = useRef<Map<string, WebSocket>>(new Map());
 
+  // 로봇 목록 + 실시간 데이터 API 응답 완료 시 로딩 종료 (데이터 없어도 종료)
   useEffect(() => {
-    const t = setTimeout(() => setIsLoading(false), 3000);
+    if (robotsLoaded && liveLoaded) setIsLoading(false);
+  }, [robotsLoaded, liveLoaded]);
+
+  // 5초 타임아웃 — API 응답 없어도 강제 로딩 종료
+  useEffect(() => {
+    const t = setTimeout(() => setIsLoading(false), 5000);
     return () => clearTimeout(t);
   }, []);
 
@@ -240,7 +248,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
   // ── 기본 맵 + 사업장 목록을 동시에 로드 (race condition 방지) ──
   useEffect(() => {
     Promise.all([
-      apiFetch<{ image_url: string | null; grid_origin_x: number; grid_origin_y: number; grid_resolution: number; area_id: number | null }>("/api/map/default-map").catch(() => null),
+      apiFetch<{ map_id: number | null; image_url: string | null; grid_origin_x: number; grid_origin_y: number; grid_resolution: number; area_id: number | null }>("/api/map/default-map").catch(() => null),
       apiFetch<{ total: number; items: BusinessItem[] }>("/api/map/businesses").catch((err) => {
         console.error("[모니터링] 사업장 목록 로드 실패:", err);
         showAlert({ title: "알림", message: "사업장 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-001", errorType: "map", source: "모니터링 > 초기 로드", description: "MonitoringClient — 사업장 목록 로드", silent: false });
@@ -264,7 +272,12 @@ export function MonitoringClient({ initialDateTime }: Props) {
       // 사업장 목록 설정
       setApiBusinesses(bizData.items);
       if (!selectedBusiness) {
-        const defaultBiz = bizData.items.find((b) => b.name === "구미 본사");
+        // default-map의 area_id로 사업장 자동 매칭 (이름 하드코딩 대신)
+        const defAreaId = defaultMap?.area_id;
+        let defaultBiz = defAreaId
+          ? bizData.items.find((b) => b.areas?.some((a) => a.area_id === defAreaId))
+          : null;
+        if (!defaultBiz) defaultBiz = bizData.items[0] ?? null;
         if (defaultBiz) setSelectedBusiness(String(defaultBiz.business_id));
       }
     });
@@ -274,20 +287,29 @@ export function MonitoringClient({ initialDateTime }: Props) {
   // selectedArea는 BusinessSelectBox onChange(handleBusinessAreaChange)에서 직접 설정됨
   useEffect(() => {
     if (!selectedBusiness) {
-      setAreas([]);
-      setAreaMaps([]);
-      setMapSrc("");
+      setAreas((p) => (p.length === 0 ? p : []));
+      setAreaMaps((p) => (p.length === 0 ? p : []));
+      setMapSrc((p) => (p === "" ? p : ""));
       return;
     }
-    setAreaMaps([]);
-    setMapSrc("");
+    setAreaMaps((p) => (p.length === 0 ? p : []));
+    setMapSrc((p) => (p === "" ? p : ""));
     apiFetch<{ total: number; items: AreaItem[] }>(
       `/api/map/businesses/${selectedBusiness}/areas`
     )
       .then((data) => {
         setAreas(data.items);
         if (data.items.length > 0) {
-          setSelectedArea(String(data.items[0].area_id));
+          // default-map의 area_id가 있으면 그 area를 우선 선택
+          const defaultAreaId = defaultMapRef.current?.area_id;
+          const matchDefault = defaultAreaId
+            ? data.items.find((a) => a.area_id === defaultAreaId)
+            : null;
+          setSelectedArea(
+            matchDefault
+              ? String(matchDefault.area_id)
+              : String(data.items[0].area_id)
+          );
         } else {
           setSelectedArea("");
         }
@@ -295,7 +317,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       .catch((err) => {
         console.error("[모니터링] 영역 목록 로드 실패:", err);
         showAlert({ title: "알림", message: "영역 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-002", errorType: "map", source: "모니터링 > 영역 로드", description: "MonitoringClient — 영역 목록 로드", silent: false });
-        setAreas([]);
+        setAreas((p) => (p.length === 0 ? p : []));
       });
   }, [selectedBusiness]);
 
@@ -303,29 +325,31 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const applyDefaultMap = () => {
     const def = defaultMapRef.current;
     if (def?.image_url) {
-      if (def.image_url.startsWith("/static/")) {
-        setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}${def.image_url}`);
-      } else {
-        setMapSrc(`${process.env.NEXT_PUBLIC_API_URL}/api/map/proxy-image?url=${encodeURIComponent(def.image_url)}`);
-      }
-      setMapMeta({ grid_origin_x: def.grid_origin_x, grid_origin_y: def.grid_origin_y, grid_resolution: def.grid_resolution });
+      const url = def.image_url.startsWith("/static/")
+        ? `${process.env.NEXT_PUBLIC_API_URL}${def.image_url}`
+        : `${process.env.NEXT_PUBLIC_API_URL}/api/map/proxy-image?url=${encodeURIComponent(def.image_url)}`;
+      setMapSrc((p) => (p === url ? p : url));
+      setMapMeta((prev) => {
+        if (prev && prev.grid_origin_x === def.grid_origin_x && prev.grid_origin_y === def.grid_origin_y && prev.grid_resolution === def.grid_resolution) return prev;
+        return { grid_origin_x: def.grid_origin_x, grid_origin_y: def.grid_origin_y, grid_resolution: def.grid_resolution };
+      });
     } else {
-      setMapSrc("");
-      setMapMeta(null);
+      setMapSrc((p) => (p === "" ? p : ""));
+      setMapMeta((p) => (p === null ? p : null));
     }
   };
 
   useEffect(() => {
     if (!selectedArea) {
-      setAreaMaps([]);
-      setSelectedMapId(null);
+      setAreaMaps((p) => (p.length === 0 ? p : []));
+      setSelectedMapId((p) => (p === null ? p : null));
       applyDefaultMap();
-      setRawApiElements(null);
-      setApiPois([]);
-      setApiWaypoints([]);
-      setApiRouteWaypoints([]);
-      setApiRouteSegments([]);
-      setMapImageSize(null);
+      setRawApiElements((p) => (p === null ? p : null));
+      setApiPois((p) => (p.length === 0 ? p : []));
+      setApiWaypoints((p) => (p.length === 0 ? p : []));
+      setApiRouteWaypoints((p) => (p.length === 0 ? p : []));
+      setApiRouteSegments((p) => (p.length === 0 ? p : []));
+      setMapImageSize((p) => (p === null ? p : null));
       return;
     }
     apiFetch<{ total: number; items: MapItem[] }>(
@@ -334,7 +358,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
       .then((data) => {
         setAreaMaps(data.items);
         if (data.items.length > 0 && data.items[0].image_url) {
-          const map = data.items[0];
+          const defaultMapId = defaultMapRef.current?.map_id;
+          const map = (defaultMapId ? data.items.find((m) => m.id === defaultMapId) : null) ?? data.items[0];
           setSelectedMapId(map.id);
           setMapMeta({
             grid_origin_x: map.grid_origin_x,
@@ -360,48 +385,51 @@ export function MonitoringClient({ initialDateTime }: Props) {
               setRawApiElements(null);
             });
         } else {
-          setSelectedMapId(null);
+          setSelectedMapId((p) => (p === null ? p : null));
           applyDefaultMap();
-          setRawApiElements(null);
-          setApiPois([]);
-          setApiWaypoints([]);
-          setApiRouteWaypoints([]);
-          setApiRouteSegments([]);
+          setRawApiElements((p) => (p === null ? p : null));
+          setApiPois((p) => (p.length === 0 ? p : []));
+          setApiWaypoints((p) => (p.length === 0 ? p : []));
+          setApiRouteWaypoints((p) => (p.length === 0 ? p : []));
+          setApiRouteSegments((p) => (p.length === 0 ? p : []));
         }
       })
       .catch((err) => {
         console.error("[모니터링] 맵 목록 로드 실패:", err);
         showAlert({ title: "알림", message: "맵 목록을 불러오는 데 실패했습니다.", errorCode: "MAP-003", errorType: "map", source: "모니터링 > 맵 목록 로드", description: "MonitoringClient — 맵 목록 로드", silent: false });
-        setAreaMaps([]);
-        setSelectedMapId(null);
-        setMapSrc("");
-        setMapMeta(null);
-        setRawApiElements(null);
+        setAreaMaps((p) => (p.length === 0 ? p : []));
+        setSelectedMapId((p) => (p === null ? p : null));
+        setMapSrc((p) => (p === "" ? p : ""));
+        setMapMeta((p) => (p === null ? p : null));
+        setRawApiElements((p) => (p === null ? p : null));
       });
   }, [selectedArea]);
 
   // ── 맵 이미지 크기 로드 (좌표 변환용) ──
   useEffect(() => {
     if (!mapSrc) {
-      setMapImageSize(null);
+      setMapImageSize((p) => (p === null ? p : null));
       return;
     }
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      setMapImageSize({ w: img.naturalWidth, h: img.naturalHeight });
+      setMapImageSize((prev) => {
+        if (prev && prev.w === img.naturalWidth && prev.h === img.naturalHeight) return prev;
+        return { w: img.naturalWidth, h: img.naturalHeight };
+      });
     };
-    img.onerror = () => setMapImageSize(null);
+    img.onerror = () => setMapImageSize((p) => (p === null ? p : null));
     img.src = mapSrc;
   }, [mapSrc]);
 
   // ── SVG 좌표 → 이미지 픽셀 좌표 변환 (rawApiElements + mapImageSize) ──
   useEffect(() => {
     if (!rawApiElements || !mapImageSize) {
-      setApiPois([]);
-      setApiWaypoints([]);
-      setApiRouteWaypoints([]);
-      setApiRouteSegments([]);
+      setApiPois((prev) => (prev.length === 0 ? prev : []));
+      setApiWaypoints((prev) => (prev.length === 0 ? prev : []));
+      setApiRouteWaypoints((prev) => (prev.length === 0 ? prev : []));
+      setApiRouteSegments((prev) => (prev.length === 0 ? prev : []));
       return;
     }
 
@@ -416,8 +444,22 @@ export function MonitoringClient({ initialDateTime }: Props) {
     for (const p of rawApiElements.pois) {
       if (hiddenPoiNames.has(p.name)) continue;
 
-      const px = p.x + halfW;
-      const py = p.y + halfH;
+      let px = p.x + halfW;
+      let py = p.y + halfH;
+
+      // 충전소: DB 좌표가 실제 위치보다 앞에 설정되어 있으므로
+      // 충전소 angle 방향(뒤쪽)으로 0.9m 이동하여 실제 위치로 보정
+      if (
+        p.type === "charging" &&
+        p.angle != null &&
+        mapMeta &&
+        mapMeta.grid_resolution > 0
+      ) {
+        const DOCKING_OFFSET_M = 1.4;
+        const offsetPx = DOCKING_OFFSET_M / mapMeta.grid_resolution;
+        px += offsetPx * Math.cos(p.angle);
+        py -= offsetPx * Math.sin(p.angle);
+      }
 
       if (p.type === "waypoint") {
         convertedWaypoints.push({
@@ -490,7 +532,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
     setApiWaypoints(convertedWaypoints);
     setApiRouteWaypoints(routePoints);
     setApiRouteSegments(segments);
-  }, [rawApiElements, mapImageSize]);
+  }, [rawApiElements, mapImageSize, mapMeta]);
 
   // API 사업장 → BusinessSelectBox 형식 변환 (사업장×영역 쌍으로 펼침)
   const businessesForSelectBox: Business[] = useMemo(
@@ -514,8 +556,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
   // ── 로봇 목록 API 로드 (selectedArea 기반) ──
   useEffect(() => {
     if (!selectedArea) {
-      setApiRobotsFull([]);
-      setApiRobots([]);
+      setApiRobotsFull((p) => (p.length === 0 ? p : []));
+      setApiRobots((p) => (p.length === 0 ? p : []));
       return;
     }
     apiFetch<{ total: number; items: ApiRobotFull[] }>(
@@ -532,12 +574,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
               ip_address: r.ip_address!,
             }))
         );
+        setRobotsLoaded(true);
       })
       .catch((err) => {
         console.error("[모니터링] 로봇 목록 로드 실패:", err);
         showAlert({ title: "알림", message: "로봇 목록을 불러오는 데 실패했습니다.", errorCode: "ROBOT-010", errorType: "robot", source: "모니터링 > 로봇 목록 로드", description: "MonitoringClient — 로봇 목록 로드 실패", silent: false });
-        setApiRobotsFull([]);
-        setApiRobots([]);
+        setApiRobotsFull((p) => (p.length === 0 ? p : []));
+        setApiRobots((p) => (p.length === 0 ? p : []));
+        setRobotsLoaded(true);
       });
   }, [selectedArea]);
 
@@ -546,7 +590,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
     // 기존 연결 정리
     poseWsRefs.current.forEach((ws) => ws.close());
     poseWsRefs.current.clear();
-    setRobotPoses(new Map());
+    setRobotPoses((prev) => (prev.size === 0 ? prev : new Map()));
 
     if (!apiRobots.length) return;
 
@@ -563,10 +607,21 @@ export function MonitoringClient({ initialDateTime }: Props) {
           const msg = JSON.parse(e.data);
           if (msg.topic === "/tracked_pose" && msg.pos) {
             setRobotPoses((prev) => {
+              const existing = prev.get(robot.serial_number);
+              const newOri = msg.ori ?? 0;
+              // 값이 동일하면 이전 Map 참조를 그대로 반환 (불필요한 리렌더 방지)
+              if (
+                existing &&
+                existing.pos[0] === msg.pos[0] &&
+                existing.pos[1] === msg.pos[1] &&
+                existing.ori === newOri
+              ) {
+                return prev;
+              }
               const next = new Map(prev);
               next.set(robot.serial_number, {
                 pos: msg.pos,
-                ori: msg.ori ?? 0,
+                ori: newOri,
               });
               return next;
             });
@@ -596,7 +651,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
 
     if (apiRobotsFull.length === 0) {
-      setLiveRobots([]);
+      setLiveRobots((p) => (p.length === 0 ? p : []));
       return;
     }
 
@@ -608,7 +663,12 @@ export function MonitoringClient({ initialDateTime }: Props) {
         });
     };
 
-    fetchLive();
+    const fetchLiveOnce = () => {
+      apiFetch<{ total: number; items: LiveRobot[] }>("/api/robots/live")
+        .then((data) => { setLiveRobots(data.items); setLiveLoaded(true); })
+        .catch(() => { setLiveLoaded(true); });
+    };
+    fetchLiveOnce();
     livePollingRef.current = setInterval(fetchLive, 5000);
 
     return () => {
@@ -629,10 +689,10 @@ export function MonitoringClient({ initialDateTime }: Props) {
   }, [liveRobots]);
 
   // ── 다중 로봇 월드 좌표 → 이미지 픽셀 좌표 변환 (live 상태 반영) ──
-  // WS 데이터가 없는 로봇은 백엔드 status 값(position_x/y/yaw)을 초기값으로 사용
-  useEffect(() => {
+  // useMemo: useEffect+setState 연쇄 리렌더 방지 (WS 메시지 빈도 높을 때 Maximum update depth 해결)
+  const simulatedRobots = useMemo(() => {
     if (!mapMeta || !mapImageSize || mapMeta.grid_resolution <= 0) {
-      return;
+      return [];
     }
 
     const markers: RobotMarkerData[] = [];
@@ -641,6 +701,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
     // 1) 실시간 WS 데이터가 있는 로봇 (pose.ori 사용)
     robotPoses.forEach((pose, sn) => {
       posedSNs.add(sn);
+
+      const fullRobot = apiRobotsFull.find((r) => r.serial_number === sn);
+      const live = fullRobot?.ip_address ? liveByIp.get(fullRobot.ip_address) : null;
+      const power = live ? mapLiveOnlineToPower(live.ONLINE) : "online";
+
+      // 오프라인 로봇은 맵에 표시하지 않음
+      if (power === "offline") return;
+
       const ipx =
         (pose.pos[0] - mapMeta.grid_origin_x) / mapMeta.grid_resolution;
       const ipy =
@@ -648,8 +716,6 @@ export function MonitoringClient({ initialDateTime }: Props) {
         (pose.pos[1] - mapMeta.grid_origin_y) / mapMeta.grid_resolution;
 
       const robot = apiRobots.find((r) => r.serial_number === sn);
-      const fullRobot = apiRobotsFull.find((r) => r.serial_number === sn);
-      const live = fullRobot?.ip_address ? liveByIp.get(fullRobot.ip_address) : null;
 
       markers.push({
         robotId: sn,
@@ -657,7 +723,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
         position: { x: ipx, y: ipy },
         yaw: pose.ori,
         status: live ? mapLiveRunStateToDeviceStatus(live.RUNSTATE) : "running",
-        power: live ? mapLiveOnlineToPower(live.ONLINE) : "online",
+        power,
       });
     });
 
@@ -666,6 +732,12 @@ export function MonitoringClient({ initialDateTime }: Props) {
       if (posedSNs.has(fullRobot.serial_number)) continue;
       if (!fullRobot.status) continue;
 
+      const live = fullRobot.ip_address ? liveByIp.get(fullRobot.ip_address) : null;
+      const power = live ? mapLiveOnlineToPower(live.ONLINE) : "online";
+
+      // 오프라인 로봇은 맵에 표시하지 않음
+      if (power === "offline") continue;
+
       const { position_x, position_y, position_yaw } = fullRobot.status;
       const ipx =
         (position_x - mapMeta.grid_origin_x) / mapMeta.grid_resolution;
@@ -673,19 +745,17 @@ export function MonitoringClient({ initialDateTime }: Props) {
         mapImageSize.h -
         (position_y - mapMeta.grid_origin_y) / mapMeta.grid_resolution;
 
-      const live = fullRobot.ip_address ? liveByIp.get(fullRobot.ip_address) : null;
-
       markers.push({
         robotId: fullRobot.serial_number,
         robotName: fullRobot.name,
         position: { x: ipx, y: ipy },
         yaw: position_yaw,
         status: live ? mapLiveRunStateToDeviceStatus(live.RUNSTATE) : "running",
-        power: live ? mapLiveOnlineToPower(live.ONLINE) : "online",
+        power,
       });
     }
 
-    setSimulatedRobots(markers);
+    return markers;
   }, [robotPoses, mapMeta, mapImageSize, apiRobots, apiRobotsFull, liveByIp]);
 
   useEffect(() => {
@@ -752,17 +822,16 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
   };
 
-  const handleCharge = async (deviceId: string) => {
+  const handleReturn = async (deviceId: string) => {
     const robot = apiRobotsFull.find((r) => String(r.id) === deviceId);
     if (!robot) return;
     try {
-      // route_poi_names 미지정 → 백엔드에서 DB MapLine 그래프로 자동 탐색
-      await apiPost(`/api/tasks/charge/${robot.id}`, {});
+      await apiPost(`/api/tasks/return/${robot.id}`, {});
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "충전소 이동에 실패했습니다.";
+      const msg = err instanceof Error ? err.message : "복귀에 실패했습니다.";
       const code = err instanceof ApiError ? err.errorCode : undefined;
       const errorType = code?.startsWith("ROBOT") ? "robot" : "task";
-      showAlert({ title: "알림", message: msg, errorCode: code ?? "ROBOT-004", errorType, source: "모니터링 > 충전소 이동", description: (err instanceof ApiError ? err.description : undefined) ?? "handleCharge — 충전소 이동 API 호출 실패" });
+      showAlert({ title: "알림", message: msg, errorCode: code ?? "ROBOT-007", errorType, source: "모니터링 > 복귀", description: (err instanceof ApiError ? err.description : undefined) ?? "handleReturn — 복귀 API 호출 실패" });
     }
   };
 
@@ -773,7 +842,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       await apiPost(`/api/tasks/stop/${robot.id}`, {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "정지 실패";
-      setAlertModal({ title: "로봇 정지 실패", message: msg });
+      showAlert({ title: "로봇 정지 실패", message: msg });
     }
   };
 
@@ -1005,7 +1074,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
                     isExpanded={expandedDeviceId === device.id}
                     onToggleExpand={handleDeviceToggle}
                     onInfo={setOpenDeviceId}
-                    onCharge={handleCharge}
+                    onReturn={handleReturn}
                     onStop={handleStop}
                   />
                 ))

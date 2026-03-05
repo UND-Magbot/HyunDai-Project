@@ -26,7 +26,7 @@ export function DeviceRow({
   isExpanded = false,
   onToggleExpand,
   onInfo,
-  onCharge,
+  onReturn,
   onStop,
 }: DeviceRowProps) {
   const expanded = isExpanded;
@@ -73,8 +73,8 @@ export function DeviceRow({
           <IconButton aria-label="Suspend" disabled={!canSuspend} onClick={() => onStop?.(id)}>
             정지
           </IconButton>
-          <IconButton aria-label="Charge" disabled={!canCharge} onClick={() => onCharge?.(id)}>
-            충전소 이동
+          <IconButton aria-label="Return" disabled={!canCharge} onClick={() => onReturn?.(id)}>
+            복귀
           </IconButton>
           {/* <IconButton aria-label="Navigate" disabled={!canNav}>
             네비

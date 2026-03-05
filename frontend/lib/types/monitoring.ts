@@ -13,7 +13,7 @@ export type DeviceRowProps = {
   isExpanded?: boolean;
   onToggleExpand?: (deviceId: string) => void;
   onInfo?: (deviceId: string) => void;
-  onCharge?: (deviceId: string) => void;
+  onReturn?: (deviceId: string) => void;
   onStop?: (deviceId: string) => void;
 };
 

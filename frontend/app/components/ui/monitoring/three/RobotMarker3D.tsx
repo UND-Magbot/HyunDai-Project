@@ -2,7 +2,6 @@
 
 import { memo } from "react";
 import { Billboard, Text, RoundedBox } from "@react-three/drei";
-import { Shape } from "three";
 import type { RobotMarkerData } from "@/lib/types/map-markers";
 import { mapPixelToWorld } from "./mapCoords";
 
@@ -46,18 +45,6 @@ const SCREEN_TILT = -0.2;
 const LED_STRIP_W = 0.3;
 const LED_STRIP_H = 18;
 const LED_STRIP_D = 0.3;
-
-/* ── 방향 화살표 (커서 형태) ──────────────── */
-const ARROW_DEPTH = 0.5;
-const ARROW_CURSOR_SHAPE = (() => {
-  const s = new Shape();
-  s.moveTo(0, BASE_D / 2 + 14);    // tip (front)
-  s.lineTo(5, BASE_D / 2 + 2);     // bottom-right
-  s.lineTo(0, BASE_D / 2 + 6);     // notch center
-  s.lineTo(-5, BASE_D / 2 + 2);    // bottom-left
-  s.closePath();
-  return s;
-})();
 
 const LABEL_Y = PILLAR_BOT + PILLAR_H + 8;
 
@@ -256,19 +243,6 @@ function RobotMarker3DInner({ robot, imgW, imgH }: Props) {
             color="#ff3333"
             emissive="#ff3333"
             emissiveIntensity={0.5}
-          />
-        </mesh>
-      </group>
-
-      {/* ── 방향 화살표 (바닥, yaw 방향, 커서 형태) ── */}
-      <group rotation={[0, rotationY, 0]} position={[0, 0.3, 0]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <extrudeGeometry args={[ARROW_CURSOR_SHAPE, { depth: ARROW_DEPTH, bevelEnabled: false }]} />
-          <meshStandardMaterial
-            color={ledColor}
-            emissive={ledColor}
-            emissiveIntensity={0.6}
-            toneMapped={false}
           />
         </mesh>
       </group>

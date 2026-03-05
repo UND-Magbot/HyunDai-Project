@@ -77,10 +77,10 @@ export default function RobotsPage() {
   const PAGE_SIZE = 10;
   const PAGE_GROUP = 5;
 
+  // 로봇 데이터 수신 완료 시 로딩 종료
   useEffect(() => {
-    const t = setTimeout(() => setIsLoading(false), 3000);
-    return () => clearTimeout(t);
-  }, []);
+    if (devices.length > 0) setIsLoading(false);
+  }, [devices]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(formatDateTime()), 1000);
