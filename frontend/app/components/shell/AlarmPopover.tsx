@@ -55,9 +55,9 @@ export function AlarmPopover({
     resetUnreadCount,
   } = useAlert();
 
-  // ── 알람 목록 조회 (최근 24시간, 읽지 않은 것만) ──
+  // ── 알람 목록 조회 (당일 KST, 읽지 않은 것만) ──
   const fetchAlarms = useCallback(() => {
-    getAlarmLogs({ hours: 24, is_read: false, limit: 100 })
+    getAlarmLogs({ is_read: false, limit: 100 })
       .then((res) => setAlarms(res.items))
       .catch(() => {});
   }, []);
@@ -266,7 +266,7 @@ export function AlarmPopover({
             <div className="alarm-popover__list">
               {displayAlarms.length === 0 ? (
                 <div className="alarm-popover__empty">
-                  최근 24시간 내 알람이 없습니다.
+                  오늘 자 알람이 없습니다.
                 </div>
               ) : (
                 displayAlarms.map((alarm) => {

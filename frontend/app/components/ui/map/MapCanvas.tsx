@@ -162,6 +162,12 @@ export function MapCanvas({
     }
 
     if (isPanningRef.current && panStartRef.current) {
+      // 좌클릭(1) 또는 휠클릭(4)이 눌린 상태에서만 패닝
+      if (!(e.buttons & 1) && !(e.buttons & 4)) {
+        isPanningRef.current = false;
+        panStartRef.current = null;
+        return;
+      }
       const dx = e.clientX - panStartRef.current.x;
       const dy = e.clientY - panStartRef.current.y;
       onOffsetChange({

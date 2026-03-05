@@ -773,7 +773,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       await apiPost(`/api/tasks/stop/${robot.id}`, {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "정지 실패";
-      setAlertModal({ title: "로봇 정지 실패", message: msg });
+      showAlert({ title: "로봇 정지 실패", message: msg, errorCode: "ROBOT-005", errorType: "robot", source: "모니터링 > 로봇 정지" });
     }
   };
 
