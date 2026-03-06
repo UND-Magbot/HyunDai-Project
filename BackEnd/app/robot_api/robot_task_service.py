@@ -15,6 +15,7 @@ from websocket import create_connection, WebSocketException
 from app.database import SessionLocal
 from app.models.map import MapPOI, RobotMap
 from app.models.robot import Robot
+from app.crud.activity_log import log_activity
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,19 @@ def _get_move_lock(robot_id: int) -> threading.Lock:
         if robot_id not in _move_locks:
             _move_locks[robot_id] = threading.Lock()
         return _move_locks[robot_id]
+
+
+def _get_robot_name(robot_id: int) -> str:
+    """robot_id로 DB에서 로봇 이름 조회 (실패 시 fallback)"""
+    try:
+        db = SessionLocal()
+        try:
+            robot = db.query(Robot).filter(Robot.id == robot_id).first()
+            return robot.name if robot else f"로봇 {robot_id}"
+        finally:
+            db.close()
+    except Exception:
+        return f"로봇 {robot_id}"
 
 
 def is_move_locked(robot_id: int) -> bool:
@@ -176,10 +190,15 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
     stop_event = threading.Event()  # 충전 경로는 취소 미지원 (더미)
 
     try:
-        # POI 좌표 조회 (DB 세션 즉시 반환)
+        # POI 좌표 + 로봇 이름 조회 (DB 세션 즉시 반환)
         route_pois = []
+        robot_name = f"로봇 {robot_id}"
         db = SessionLocal()
         try:
+            _robot = db.query(Robot).filter(Robot.id == robot_id).first()
+            if _robot:
+                robot_name = _robot.name
+
             # ── 활성 맵 ID 자동 감지 (중복 POI 이름 방지) ──
             first_poi = db.query(MapPOI).join(RobotMap).filter(
                 MapPOI.name == route_poi_names[0],
@@ -227,8 +246,11 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
         t_angle = target.angle if target.angle is not None else 0.0
         route_coords = ",".join(coords_parts) if len(coords_parts) > 2 else ""
 
-        logger.info(f"[Robot {robot_id}] 충전 경로 이동: "
-                    f"{'→'.join(p.name for p in route_pois)}")
+        route_desc = '→'.join(p.name for p in route_pois)
+        logger.info(f"[Robot {robot_id}] 충전 경로 이동: {route_desc}")
+        log_activity("task", "charge_route_start",
+                     f"로봇 '{robot_name}' 충전소 경유 이동 시작 ({route_desc})",
+                     robot_id=robot_id, robot_name=robot_name, source="_charge_route_runner")
 
         with _lock:
             _run_info[robot_id] = {
@@ -299,6 +321,9 @@ def _charge_route_runner(robot_id: int, robot_ip: str,
         logger.info(f"[Robot {robot_id}] 충전 명령 (charger={charger_name}): ok={ok}, {msg}")
 
         if ok:
+            log_activity("task", "charge_start",
+                         f"로봇 '{robot_name}' 충전 명령 전송 완료",
+                         robot_id=robot_id, robot_name=robot_name, source="_charge_route_runner")
             with _lock:
                 _run_info[robot_id] = {
                     "status": "charging",
@@ -712,7 +737,8 @@ def _get_charging_config(db, robot_id: int) -> tuple[int, "MapPOI | None"]:
 def _navigate_to_charger(robot_id: int, robot_ip: str,
                          charging_poi, entry_poi_names: list[str] | None,
                          db, ws, move_lock: threading.Lock,
-                         stop_event: threading.Event) -> bool:
+                         stop_event: threading.Event,
+                         robot_name: str | None = None) -> bool:
     """배터리 부족 시 충전소까지 이동 후 충전 명령
     경로: entry_poi_names 역순 → 충전소
     반환: True(성공) / False(실패)
@@ -794,6 +820,12 @@ def _navigate_to_charger(robot_id: int, robot_ip: str,
     cname = charging_poi.name if charging_poi else None
     ok, msg = send_charge(robot_ip, charger_name=cname)
     logger.info(f"[Robot {robot_id}] 충전 명령 전송 (charger={cname}): ok={ok}, {msg}")
+
+    if ok:
+        _rname = robot_name or f"로봇 {robot_id}"
+        log_activity("task", "charge_arrive",
+                     f"로봇 '{_rname}' 충전소 도착 — 충전 시작",
+                     robot_id=robot_id, robot_name=_rname, source="_navigate_to_charger")
 
     with _lock:
         _run_info[robot_id] = {
@@ -940,11 +972,17 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
         _graceful_stop_events[robot_id] = graceful_stop
 
     try:
-        # DB에서 POI 좌표 조회 (세션 즉시 반환)
+        # DB에서 POI 좌표 + 로봇 이름 조회 (세션 즉시 반환)
         pois = []
         entry_pois = []
+        robot_name = f"로봇 {robot_id}"
         db = SessionLocal()
         try:
+            # 로봇 이름 조회
+            _robot = db.query(Robot).filter(Robot.id == robot_id).first()
+            if _robot:
+                robot_name = _robot.name
+
             # ── 활성 맵 ID 자동 감지 (중복 POI 이름 방지) ──
             first_poi = db.query(MapPOI).join(RobotMap).filter(
                 MapPOI.name == poi_names[0],
@@ -1001,8 +1039,11 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
 
             # 진입 경로 → CURPOS1(pois[0])까지 이어서 이동 (ENTERPOS3에서 멈추지 않음)
             first_loop_poi = pois[0]
-            logger.info(f"[Robot {robot_id}] 진입 경로 시작: "
-                        f"{'→'.join(p.name for p in entry_pois)}→{first_loop_poi.name}")
+            entry_desc = f"{'→'.join(p.name for p in entry_pois)}→{first_loop_poi.name}"
+            logger.info(f"[Robot {robot_id}] 진입 경로 시작: {entry_desc}")
+            log_activity("task", "entry_start",
+                         f"로봇 '{robot_name}' 진입 경로 이동 시작 ({entry_desc})",
+                         robot_id=robot_id, robot_name=robot_name, source="_task_runner")
 
             # route_coordinates: 진입 POI들 + CURPOS1 좌표를 이어서 한 번에 이동
             entry_target = first_loop_poi
@@ -1068,6 +1109,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                 return
 
             logger.info(f"[Robot {robot_id}] 진입 경로 완료 — 루프 작업 시작")
+            log_activity("task", "entry_complete",
+                         f"로봇 '{robot_name}' 진입 경로 완료 — 루프 작업 시작",
+                         robot_id=robot_id, robot_name=robot_name, source="_task_runner")
 
         # 구간 생성
         segments = _build_segments(pois, stop_set)
@@ -1094,6 +1138,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
         while not stop_event.is_set():
             loop += 1
             logger.info(f"[Robot {robot_id}] ── 루프 {loop}회 시작 ──")
+            log_activity("task", "loop_cycle",
+                         f"로봇 '{robot_name}' 루프 {loop}회차 시작",
+                         robot_id=robot_id, robot_name=robot_name, source="_task_runner")
 
             # ── 배터리 체크 (2회차 루프부터) ──
             # 배터리 부족 시: CURPOS1 복귀 → ENTERPOS 역순 → 충전소
@@ -1106,6 +1153,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                     if battery_pct <= min_bat:
                         logger.warning(f"[Robot {robot_id}] 배터리 부족! "
                                        f"{battery_pct:.1f}% <= {min_bat}%")
+                        log_activity("task", "low_battery",
+                                     f"로봇 '{robot_name}' 배터리 부족 ({battery_pct:.1f}% ≤ {min_bat}%) — 충전소 이동",
+                                     robot_id=robot_id, robot_name=robot_name, source="_task_runner")
 
                         if charging_poi:
                             with _lock:
@@ -1167,7 +1217,8 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                             # 2단계: ENTERPOS 역순 → 충전소 이동
                             _navigate_to_charger(
                                 robot_id, robot_ip, charging_poi,
-                                entry_poi_names, db, ws, move_lock, stop_event
+                                entry_poi_names, db, ws, move_lock, stop_event,
+                                robot_name=robot_name
                             )
 
                             # 모든 활성 로봇이 충전소로 갔는지 확인
@@ -1241,6 +1292,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                 logger.info(f"[Robot {robot_id}] [구간 {seg_idx + 1}/{len(segments)}] "
                             f"{'→'.join(wp_names + [target.name])} "
                             f"(target={tx},{ty}, route={route_coords})")
+                log_activity("task", "segment_move",
+                             f"로봇 '{robot_name}' {target.name}(으)로 이동 중 (구간 {seg_idx + 1}/{len(segments)})",
+                             robot_id=robot_id, robot_name=robot_name, source="_task_runner")
 
                 # 이동 실행 (최대 3회 재시도)
                 max_retries = 3
@@ -1310,6 +1364,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                     break
                 if result in ("failed", "timeout", "ws_error"):
                     logger.error(f"[Robot {robot_id}] 이동 최종 실패 ({result}) — {detail}")
+                    log_activity("task", "move_failed",
+                                 f"로봇 '{robot_name}' 이동 실패 ({detail})",
+                                 robot_id=robot_id, robot_name=robot_name, source="_task_runner")
                     with _lock:
                         _run_info[robot_id] = {
                             "status": "error",
@@ -1319,9 +1376,18 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                         }
                     return
 
+                # 이동 성공 로그
+                if result == "succeeded":
+                    log_activity("task", "segment_arrive",
+                                 f"로봇 '{robot_name}' {target.name} 도착",
+                                 robot_id=robot_id, robot_name=robot_name, source="_task_runner")
+
                 # ── 작업 포인트 도착 → 태블릿 확인 대기 ──
                 if result == "succeeded" and stop_set and target.name in stop_set:
                     logger.info(f"[Robot {robot_id}] 작업 포인트 '{target.name}' 도착 — 태블릿 확인 대기")
+                    log_activity("task", "waiting_confirm",
+                                 f"로봇 '{robot_name}' 작업 포인트 '{target.name}' 도착 — 확인 대기",
+                                 robot_id=robot_id, robot_name=robot_name, source="_task_runner")
                     confirm_event = threading.Event()
                     with _lock:
                         _confirm_events[robot_id] = confirm_event
@@ -1347,6 +1413,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                         break
 
                     logger.info(f"[Robot {robot_id}] 작업 포인트 '{target.name}' 확인 완료 — 다음 구간 진행")
+                    log_activity("task", "confirmed",
+                                 f"로봇 '{robot_name}' 작업 포인트 '{target.name}' 확인 완료",
+                                 robot_id=robot_id, robot_name=robot_name, source="_task_runner")
 
             else:
                 # for 루프가 break 없이 정상 완료 (모든 구간 수행 완료)
@@ -1354,6 +1423,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                     # ── CURPOS1으로 귀환 후 정지 ──
                     home_poi = pois[0]  # CURPOS1
                     logger.info(f"[Robot {robot_id}] 그레이스풀 정지 — {home_poi.name}으로 귀환 중")
+                    log_activity("task", "graceful_return",
+                                 f"로봇 '{robot_name}' 그레이스풀 정지 — {home_poi.name} 귀환 중",
+                                 robot_id=robot_id, robot_name=robot_name, source="_task_runner")
 
                     # trailing_waypoints + home_poi 경로 생성
                     home_coords_parts = []
@@ -1388,6 +1460,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                             logger.info(f"[Robot {robot_id}] 귀환 결과: {result}")
 
                     logger.info(f"[Robot {robot_id}] {home_poi.name} 도착 — 정지")
+                    log_activity("task", "graceful_stop",
+                                 f"로봇 '{robot_name}' {home_poi.name} 도착 — 작업 정지",
+                                 robot_id=robot_id, robot_name=robot_name, source="_task_runner")
                     with _lock:
                         _run_info[robot_id] = {"status": "stopped", "loop": loop}
                     return
@@ -1395,6 +1470,9 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
 
         # stop_event로 중단됨
         logger.info(f"[Robot {robot_id}] 즉시 정지 — {loop}회차 중단")
+        log_activity("task", "force_stop",
+                     f"로봇 '{robot_name}' 즉시 정지 ({loop}회차 중단)",
+                     robot_id=robot_id, robot_name=robot_name, source="_task_runner")
         with _lock:
             _run_info[robot_id] = {"status": "stopped", "loop": loop}
 
@@ -1454,6 +1532,10 @@ def start_loop(robot_id: int, robot_ip: str, poi_names: list[str],
     )
     t.start()
     logger.info(f"[Robot {robot_id}] 스레드 시작 — 진입: {entry_poi_names}, POI: {poi_names}, 작업포인트: {stop_names}")
+    _rname = _get_robot_name(robot_id)
+    log_activity("task", "loop_start",
+                 f"로봇 '{_rname}' 무한반복 작업 시작 (POI: {', '.join(poi_names)})",
+                 robot_id=robot_id, robot_name=_rname, source="start_loop")
     return True, "무한반복 작업이 시작되었습니다.", None
 
 
@@ -1470,6 +1552,10 @@ def confirm_loop(robot_id: int) -> tuple[bool, str, str | None]:
             return False, "확인 이벤트를 찾지 못했습니다.", "TASK-010"
     event.set()
     logger.info(f"[Robot {robot_id}] 태블릿 확인 신호 수신")
+    _rname = _get_robot_name(robot_id)
+    log_activity("task", "tablet_confirm",
+                 f"로봇 '{_rname}' 태블릿 확인 신호 수신",
+                 robot_id=robot_id, robot_name=_rname, source="confirm_loop")
     return True, "확인 완료 — 다음 구간으로 진행합니다.", None
 
 
@@ -1488,6 +1574,10 @@ def stop_loop(robot_id: int, robot_ip: str = "") -> tuple[bool, str, str | None]
     if graceful:
         graceful.set()
         logger.info(f"[Robot {robot_id}] 그레이스풀 정지 요청 — CURPOS1 도착 후 종료")
+        _rname = _get_robot_name(robot_id)
+        log_activity("task", "loop_stop_request",
+                     f"로봇 '{_rname}' 작업 정지 요청",
+                     robot_id=robot_id, robot_name=_rname, source="stop_loop")
         return True, "현재 루프 완료 후 CURPOS1에서 정지합니다.", None
     # graceful event가 없으면 즉시 정지 (폴백)
     event.set()

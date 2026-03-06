@@ -9,6 +9,7 @@ from app.models.map import MapPOI
 from app.robot_api.robot_task_service import start_loop, stop_loop, get_loop_status, confirm_loop, send_charge, start_charge_route, cancel_current_move
 from app.robot_api.robot_live_service import _collect_ws_topics, _to_runstate
 from app.robot_api.route_utils import find_route
+from app.crud.activity_log import log_activity
 
 router = APIRouter(prefix="/api/tasks", tags=["작업 관리"])
 
@@ -164,6 +165,10 @@ def api_charge(robot_id: int, req: ChargeRequest = None, db: Session = Depends(g
         ok, msg = send_charge(ip, charger_name=charger_name)
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
+    _rname = robot.name if robot else f"로봇 {robot_id}"
+    log_activity("robot", "robot_charge",
+                 f"로봇 '{_rname}' 충전소 이동 요청",
+                 robot_id=robot_id, robot_name=_rname, source="api_charge")
     return {"message": msg, "robot_id": robot_id, "route": route_names}
 
 
@@ -181,6 +186,11 @@ def api_stop_robot(robot_id: int, db: Session = Depends(get_db)):
     ok = cancel_current_move(ip)
     if not ok:
         raise HTTPException(status_code=400, detail="이동 취소 실패")
+    robot = db.query(Robot).filter(Robot.id == robot_id).first()
+    _rname = robot.name if robot else f"로봇 {robot_id}"
+    log_activity("robot", "robot_stop",
+                 f"로봇 '{_rname}' 이동 즉시 취소",
+                 robot_id=robot_id, robot_name=_rname, source="api_stop_robot")
     return {"message": "이동이 취소되었습니다", "robot_id": robot_id}
 
 

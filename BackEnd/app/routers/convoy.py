@@ -10,6 +10,7 @@ from app.models.map import MapPOI, ConvoyConfig
 from app.robot_api.robot_convoy_service import start_convoy, stop_convoy, force_stop_convoy, get_convoy_status
 from app.robot_api.robot_task_service import confirm_loop
 from app.robot_api.route_utils import find_work_loop_order
+from app.crud.activity_log import log_activity
 
 router = APIRouter(prefix="/api/convoy", tags=["Convoy 대열 작업"])
 
@@ -106,6 +107,9 @@ def api_convoy_config_update(req: ConvoyConfigUpdate, db: Session = Depends(get_
 
     db.commit()
     db.refresh(cfg)
+    log_activity("convoy", "convoy_config",
+                 "Convoy 설정 변경",
+                 source="api_convoy_config_update")
 
     return {
         "work_poi_names": json.loads(cfg.work_poi_names),

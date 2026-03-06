@@ -10,6 +10,7 @@ from app.crud.user import (
     update_user,
     delete_user,
 )
+from app.crud.activity_log import log_activity
 
 router = APIRouter(prefix="/api/users", tags=["사용자 관리"])
 
@@ -17,7 +18,11 @@ router = APIRouter(prefix="/api/users", tags=["사용자 관리"])
 @router.post("", response_model=UserResponse, status_code=201)
 def api_create_user(data: UserCreate, db: Session = Depends(get_db)):
     """DB-01 사용자 등록"""
-    return create_user(db, data)
+    result = create_user(db, data)
+    log_activity("system", "user_create",
+                 f"사용자 등록: {data.login_id}",
+                 source="api_create_user")
+    return result
 
 
 @router.get("", response_model=UserListResponse)
@@ -40,10 +45,22 @@ def api_get_user(user_id: int, db: Session = Depends(get_db)):
 @router.put("/{user_id}", response_model=UserResponse)
 def api_update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db)):
     """DB-02 사용자 수정"""
-    return update_user(db, user_id, data)
+    result = update_user(db, user_id, data)
+    user = get_user(db, user_id)
+    user_display = user.login_id if user else f"ID {user_id}"
+    log_activity("system", "user_update",
+                 f"사용자 정보 수정: {user_display}",
+                 source="api_update_user")
+    return result
 
 
 @router.delete("/{user_id}")
 def api_delete_user(user_id: int, db: Session = Depends(get_db)):
     """DB-03 사용자 삭제 (Soft Delete)"""
-    return delete_user(db, user_id)
+    user = get_user(db, user_id)
+    user_display = user.login_id if user else f"ID {user_id}"
+    result = delete_user(db, user_id)
+    log_activity("system", "user_delete",
+                 f"사용자 삭제: {user_display}",
+                 source="api_delete_user")
+    return result

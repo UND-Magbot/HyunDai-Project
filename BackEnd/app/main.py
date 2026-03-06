@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
-from app.routers import user, robot, auth, map, task, alarm_log, convoy
+from app.routers import user, robot, auth, map, task, alarm_log, convoy, activity_log, system_log, backup
 
 # 모델 import (테이블 메타데이터 등록용)
 import app.models  # noqa: F401
@@ -25,7 +25,24 @@ import app.models  # noqa: F401
 async def lifespan(application: FastAPI):
     # 서버 시작 시 DB + 테이블 자동 생성
     init_db()
+
+    # 시스템 로그 → DB 자동 저장
+    # uvicorn이 dictConfig로 로깅을 재설정하므로,
+    # lifespan 시점에 각 로거에 직접 핸들러를 등록해야 함
+    from app.log_handler import DBLogHandler
+    db_handler = DBLogHandler()
+    target_loggers = [
+        logging.getLogger(),              # 루트 (앱 코드)
+        logging.getLogger("uvicorn"),      # uvicorn 코어 (uvicorn.error가 여기로 전파됨)
+        logging.getLogger("uvicorn.access"),  # 접속 로그 (propagate=False라 별도 등록)
+    ]
+    for lgr in target_loggers:
+        lgr.addHandler(db_handler)
+
     yield
+
+    for lgr in target_loggers:
+        lgr.removeHandler(db_handler)
 
 
 app = FastAPI(
@@ -51,6 +68,9 @@ app.include_router(map.router)
 app.include_router(task.router)
 app.include_router(alarm_log.router)
 app.include_router(convoy.router)
+app.include_router(activity_log.router)
+app.include_router(system_log.router)
+app.include_router(backup.router)
 
 
 # 정적 파일 서빙 (맵 이미지 등)

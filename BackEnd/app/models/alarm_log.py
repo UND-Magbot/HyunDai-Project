@@ -10,6 +10,7 @@ class AlarmLog(Base):
     severity: info | warning | error
     """
     __tablename__ = "alarm_logs"
+    __table_args__ = {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     error_code = Column(String(20), nullable=False, index=True)
