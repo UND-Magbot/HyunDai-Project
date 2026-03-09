@@ -38,11 +38,16 @@ router = APIRouter(prefix="/api/robots", tags=["로봇 관리"])
 
 # ── 로봇 정보/Lits API 호출 ──
 ROBOTS = [
-    {"ip": "192.168.10.42", "secret": "19a11878aaab420fba94577ce3620dce"},
-    {"ip": "192.168.10.44", "secret": "19a11878aaab420fba94577ce3620dce"},
-    {"ip": "192.168.10.46", "secret": "19a11878aaab420fba94577ce3620dce"},
-    {"ip": "192.168.10.212", "secret": "19a11878aaab420fba94577ce3620dce"},
-    {"ip": "192.168.10.73", "secret": "19a11878aaab420fba94577ce3620dce"},
+    # {"ip": "192.168.10.42", "secret": "19a11878aaab420fba94577ce3620dce"},
+    # {"ip": "192.168.10.44", "secret": "19a11878aaab420fba94577ce3620dce"},
+    # {"ip": "192.168.10.46", "secret": "19a11878aaab420fba94577ce3620dce"},
+    # {"ip": "192.168.10.212", "secret": "19a11878aaab420fba94577ce3620dce"},
+    # {"ip": "192.168.10.73", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.0.27", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.0.30", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.0.31", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.0.33", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.0.34", "secret": "19a11878aaab420fba94577ce3620dce"},
 ]
 
 @router.get("/live")
