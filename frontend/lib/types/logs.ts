@@ -1,39 +1,17 @@
-export type LogType =
-  | "Request"
-  | "Response"
-  | "Receive"
-  | "Send"
-  | "Event"
-  | "Logic"
-  | "Error";
-
-export type LogTag =
-  | "OpentcsAPI"
-  | "WebEvent"
-  | "AppEvent"
-  | "LogicEvent"
-  | "ProcessEvent"
-  | "VehicleEvent"
-  | "TransportOrderEvent"
-  | "ModelEvent"
-  | "ConnectionEvent";
+export type ErrorCategory = "시스템" | "로봇" | "사용자";
 
 export type LogItem = {
   id: string;
   time: string;
+  errorType: ErrorCategory;
+  ip: string;
   message: string;
-  user: string;
-  level: string;
-  tag: LogTag;
-  type: LogType;
   data: string | null;
 };
 
 export type LogFilterState = {
   message: string;
-  robotSn: string;
-  logType: LogType | "";
-  logTag: LogTag | "";
+  errorType: ErrorCategory | "";
   date: string | null;
   startTime: string;
   endTime: string;
