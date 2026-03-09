@@ -23,9 +23,10 @@ type TimeDropdownProps = {
   value: string;
   onChange: (v: string) => void;
   hasError: boolean;
+  disabled?: boolean;
 };
 
-function TimeDropdown({ value, onChange, hasError }: TimeDropdownProps) {
+function TimeDropdown({ value, onChange, hasError, disabled }: TimeDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -41,7 +42,6 @@ function TimeDropdown({ value, onChange, hasError }: TimeDropdownProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [isOpen]);
 
-  // Scroll active item into view when opened
   useEffect(() => {
     if (!isOpen || !listRef.current) return;
     const active = listRef.current.querySelector(
@@ -64,14 +64,15 @@ function TimeDropdown({ value, onChange, hasError }: TimeDropdownProps) {
     <div className="trp__dropdown" ref={wrapperRef}>
       <button
         type="button"
-        className={`trp__trigger${hasError ? " trp__trigger--error" : ""}`}
-        onClick={() => setIsOpen((v) => !v)}
+        className={`trp__trigger${hasError ? " trp__trigger--error" : ""}${disabled ? " trp__trigger--disabled" : ""}`}
+        onClick={() => !disabled && setIsOpen((v) => !v)}
+        disabled={disabled}
       >
         {value}
         <span className="trp__arrow" />
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="trp__popup" ref={listRef}>
           {TIME_OPTIONS.map((t) => (
             <button
@@ -89,21 +90,23 @@ function TimeDropdown({ value, onChange, hasError }: TimeDropdownProps) {
   );
 }
 
-export function TimeRangePicker({ startTime, endTime, onChange }: TimeRangePickerProps) {
-  const hasError = endTime < startTime;
+export function TimeRangePicker({ startTime, endTime, onChange, disabled }: TimeRangePickerProps) {
+  const hasError = !disabled && endTime < startTime;
 
   return (
-    <div className="trp">
+    <div className={`trp${disabled ? " trp--disabled" : ""}`}>
       <TimeDropdown
         value={startTime}
         onChange={(v) => onChange(v, endTime)}
         hasError={hasError}
+        disabled={disabled}
       />
       <span className="trp__separator">&ndash;</span>
       <TimeDropdown
         value={endTime}
         onChange={(v) => onChange(startTime, v)}
         hasError={hasError}
+        disabled={disabled}
       />
     </div>
   );

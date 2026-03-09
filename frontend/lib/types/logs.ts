@@ -1,12 +1,15 @@
 export type ErrorCategory = "시스템" | "로봇" | "사용자";
 
 export type LogItem = {
-  id: string;
-  time: string;
-  errorType: ErrorCategory;
-  ip: string;
+  id: number;
+  category: string;
+  action: string;
   message: string;
-  data: string | null;
+  detail: string | null;
+  robot_id: number | null;
+  robot_name: string | null;
+  source: string | null;
+  created_at: string;
 };
 
 export type LogFilterState = {
@@ -27,4 +30,5 @@ export type TimeRangePickerProps = {
   startTime: string;
   endTime: string;
   onChange: (start: string, end: string) => void;
+  disabled?: boolean;
 };

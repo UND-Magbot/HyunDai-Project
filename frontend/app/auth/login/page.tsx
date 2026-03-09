@@ -4,11 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LoginFormState, LoginFormErrors } from "@/lib/types/auth";
 import { apiFetch } from "@/lib/api";
+import { MENU_ITEMS } from "@/lib/types/settings";
+import type { MenuPermissionItem } from "@/lib/types/settings";
 import { ForgotPasswordModal } from "./ForgotPasswordModal";
 import "./login.css";
 
 const ID_REGEX = /^[a-zA-Z][a-zA-Z0-9]*$/;
 const PW_REGEX = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9\s]).{6,}$/;
+
+const DEFAULT_USER_MENUS = new Set(["모니터링", "설정"]);
 
 export default function LoginPage() {
   const router = useRouter();
@@ -50,15 +54,34 @@ export default function LoginPage() {
     try {
       const res = await apiFetch<{
         access_token: string;
-        user: { login_id: string; role: number };
+        user: { id: number; login_id: string; role: number };
       }>("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login_id: form.loginId, password: form.password }),
       });
       localStorage.setItem("auth_token", res.access_token);
+      localStorage.setItem("user_id", String(res.user.id));
       localStorage.setItem("user_login_id", res.user.login_id);
       localStorage.setItem("user_role", String(res.user.role));
+
+      // 메뉴 권한 로드
+      const isAdmin = res.user.role === 1;
+      let allowedLabels: string[];
+
+      if (isAdmin) {
+        allowedLabels = MENU_ITEMS.map((m) => m.label);
+      } else {
+        const stored = localStorage.getItem(`menu_perm_${res.user.id}`);
+        if (stored) {
+          const perms = JSON.parse(stored) as MenuPermissionItem[];
+          allowedLabels = perms.filter((p) => p.isAllowed).map((p) => p.menuLabel);
+        } else {
+          allowedLabels = MENU_ITEMS.filter((m) => DEFAULT_USER_MENUS.has(m.label)).map((m) => m.label);
+        }
+      }
+      localStorage.setItem("allowed_menus", JSON.stringify(allowedLabels));
+
       router.push("/monitoring");
     } catch (err: any) {
       const msg = err?.message ?? "";

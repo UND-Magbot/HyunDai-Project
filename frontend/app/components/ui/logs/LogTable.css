@@ -123,23 +123,35 @@
 
 /* ── View button ── */
 .log-table__view-btn {
-  background: none;
-  border: none;
-  color: var(--color-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
-  text-decoration: underline;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-button);
+  color: var(--text-on-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
-  padding: 0;
+  white-space: nowrap;
+  transition: background var(--transition-fast) var(--ease-default),
+    border-color var(--transition-fast) var(--ease-default);
 }
 
 .log-table__view-btn:hover {
-  opacity: 0.8;
+  background: rgba(90, 143, 245, 0.85);
+  border-color: rgba(90, 143, 245, 0.85);
+}
+
+.log-table__view-btn:active {
+  background: rgba(90, 143, 245, 0.70);
 }
 
 /* ── JSON viewer modal ── */
 .log-table__json-viewer {
-  max-height: 400px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   background: var(--bg-surface-2);
   border-radius: var(--radius-control);
@@ -168,10 +180,18 @@
 .log-table__json-viewer pre {
   margin: 0;
   font-family: monospace;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ── Log detail modal ── */
+.log-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 /* ── Empty State ── */

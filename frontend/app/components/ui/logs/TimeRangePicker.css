@@ -106,3 +106,15 @@
   color: var(--color-primary);
   font-weight: var(--font-weight-semibold);
 }
+
+/* ── Disabled state ── */
+.trp--disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.trp__trigger--disabled {
+  cursor: not-allowed;
+  background: var(--bg-surface-1);
+  color: var(--text-muted);
+}

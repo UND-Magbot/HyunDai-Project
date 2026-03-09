@@ -74,7 +74,7 @@ export function UserDropdown({
             className="user-dropdown__icon-img"
           />
         </span>
-        <span>{userName}</span>
+        <span>{displayName}</span>
         <span
           className={
             open

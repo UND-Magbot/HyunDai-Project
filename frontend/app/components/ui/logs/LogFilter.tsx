@@ -42,7 +42,7 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">오류 타입</label>
+        <label className="log-filter__label">로그 타입</label>
         <select
           className="log-filter__select"
           value={filters.errorType}
@@ -73,6 +73,7 @@ export function LogFilter({
           startTime={filters.startTime}
           endTime={filters.endTime}
           onChange={(startTime, endTime) => update({ startTime, endTime })}
+          disabled={!filters.date}
         />
       </div>
 
