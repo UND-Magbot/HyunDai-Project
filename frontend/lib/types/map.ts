@@ -90,11 +90,8 @@ export type MapToolbarLeftProps = {
 export type MapFloatingPanelProps = {
   open: boolean;
   onToggle: () => void;
-  robotConnected: boolean;
   onStartMapping: () => void;
   onClearMap: () => void;
-  onRemoteImage: () => void;
-  onRemoteControl: () => void;
 };
 
 export type RobotConnectModalProps = {

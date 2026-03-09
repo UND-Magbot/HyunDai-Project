@@ -24,7 +24,6 @@ type MapTopBarProps = {
   onSave: () => void;
   onSync: () => void;
   onRelocalize: () => void;
-  onCreate: () => void;
   onDelete: () => void;
   syncDisabled?: boolean;
 };
@@ -41,7 +40,6 @@ export function MapTopBar({
   onSave,
   onSync,
   onRelocalize,
-  onCreate,
   onDelete,
   syncDisabled = true,
 }: MapTopBarProps) {
@@ -85,7 +83,6 @@ export function MapTopBar({
           <button className="map-top-bar__btn" onClick={onSave}>저장</button>
           <button className="map-top-bar__btn" onClick={onSync} disabled={syncDisabled}>동기화</button>
           <button className="map-top-bar__btn" onClick={onRelocalize}>위치재조정</button>
-          <button className="map-top-bar__btn" onClick={onCreate}>생성</button>
           <button className="map-top-bar__btn" onClick={onDelete}>삭제</button>
         </div>
 

@@ -11,6 +11,16 @@ from app.schemas.alarm_log import (
     SEVERITY_MAP,
 )
 
+KST = timezone(timedelta(hours=9))
+
+
+def _today_range() -> tuple[datetime, datetime]:
+    """오늘 자정(KST) ~ 내일 자정(KST)을 naive datetime 튜플로 반환"""
+    now_kst = datetime.now(KST)
+    start = now_kst.replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+    end = start + timedelta(days=1)
+    return start, end
+
 
 def _to_response(log: AlarmLog) -> AlarmLogResponse:
     return AlarmLogResponse(
@@ -55,7 +65,7 @@ def get_alarm_logs(
     is_read: bool | None = None,
     error_code: str | None = None,
     message: str | None = None,
-    hours: int | None = 24,
+    hours: int | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
 ) -> tuple[list[AlarmLogResponse], int]:
@@ -69,6 +79,9 @@ def get_alarm_logs(
     elif hours is not None and hours > 0:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         query = query.filter(AlarmLog.created_at >= cutoff)
+    else:
+        today_start, today_end = _today_range()
+        query = query.filter(AlarmLog.created_at >= today_start, AlarmLog.created_at < today_end)
     if error_type:
         query = query.filter(AlarmLog.error_type == error_type)
     if severity:
@@ -88,11 +101,12 @@ def get_alarm_logs(
 
 
 def get_unread_count(db: Session) -> int:
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    today_start, today_end = _today_range()
     return db.query(AlarmLog).filter(
         AlarmLog.is_active == True,
         AlarmLog.is_read == False,
-        AlarmLog.created_at >= cutoff,
+        AlarmLog.created_at >= today_start,
+        AlarmLog.created_at < today_end,
     ).count()
 
 

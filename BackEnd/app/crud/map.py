@@ -17,7 +17,7 @@ def _safe_json_loads(value: str | None):
     try:
         return json.loads(value)
     except (json.JSONDecodeError, TypeError) as e:
-        print(f"[crud/map] JSON 파싱 실패: {e}")
+        logger.warning(f"JSON 파싱 실패: {e}")
         return None
 
 

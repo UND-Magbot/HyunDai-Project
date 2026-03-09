@@ -1,6 +1,10 @@
+import logging
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 import pymysql
+
+logger = logging.getLogger(__name__)
 
 # MariaDB 접속 정보 (환경변수 우선, 없으면 기본값)
 import os
@@ -33,7 +37,7 @@ def create_database_if_not_exists():
             charset="utf8mb4",
         )
     except Exception as e:
-        print(f"[DB] 데이터베이스 서버 연결 실패 ({DB_HOST}:{DB_PORT}): {e}")
+        logger.critical(f"데이터베이스 서버 연결 실패 ({DB_HOST}:{DB_PORT}): {e}")
         raise
 
     try:
@@ -44,7 +48,7 @@ def create_database_if_not_exists():
             )
         conn.commit()
     except Exception as e:
-        print(f"[DB] 데이터베이스 생성 실패 ({DB_NAME}): {e}")
+        logger.critical(f"데이터베이스 생성 실패 ({DB_NAME}): {e}")
         raise
     finally:
         conn.close()
@@ -66,7 +70,7 @@ def init_db():
 
         Base.metadata.create_all(bind=engine)
     except Exception as e:
-        print(f"[DB] 데이터베이스 초기화 실패: {e}")
+        logger.critical(f"데이터베이스 초기화 실패: {e}")
         raise
 
 
@@ -77,7 +81,7 @@ def get_db():
         yield db
     except Exception as e:
         db.rollback()
-        print(f"[DB] 세션 처리 중 오류 발생, 롤백 수행: {e}")
+        logger.error(f"세션 처리 중 오류 발생, 롤백 수행: {e}")
         raise
     finally:
         db.close()

@@ -1,10 +1,13 @@
 import json
+import logging
 import threading
 import time
 from typing import Any, Optional
 
 import requests
 from websocket import WebSocketException, create_connection
+
+logger = logging.getLogger(__name__)
 
 
 PORT = 8090
@@ -45,7 +48,7 @@ def _request(
             error_body = res.text[:500]
         except Exception:
             pass
-        print(f"[robot_api] {method} {path} → {res.status_code}: {error_body}")
+        logger.error(f"{method} {path} → {res.status_code}: {error_body}")
         res.raise_for_status()
     if res.status_code == 204 or not res.content:
         return {}

@@ -28,6 +28,7 @@ import type {
 } from "@/lib/types/map";
 import { apiFetch } from "@/lib/api";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
+import { ConfirmModal } from "../components/ui/robots/ConfirmModal";
 import { useAlert } from "@/lib/context/AlertContext";
 import "./map.css";
 
@@ -115,6 +116,7 @@ export default function MapPage() {
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [relocalizeModalOpen, setRelocalizeModalOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [connectedRobot, setConnectedRobot] = useState<ConnectedRobot>(null);
 
   // Mapping flow
@@ -126,6 +128,8 @@ export default function MapPage() {
 
   // Popups
   const [editingPOI, setEditingPOI] = useState<POI | null>(null);
+  const [pendingPOIId, setPendingPOIId] = useState<string | null>(null);
+  const [deletePOITarget, setDeletePOITarget] = useState<POI | null>(null);
   const [editingLine, setEditingLine] = useState<PathLine | null>(null);
   const [lineDirectionPopup, setLineDirectionPopup] = useState<{
     fromId: string;
@@ -406,6 +410,15 @@ export default function MapPage() {
   const handleCanvasClick = useCallback(
     (x: number, y: number) => {
       if (activeTool === "point") {
+        // 기존 POI 위 클릭 시 새 POI 생성 방지
+        const hitPOI = pois.find(
+          (p) => Math.abs(p.x - x) < 15 / zoom && Math.abs(p.y - y) < 15 / zoom
+        );
+        if (hitPOI) {
+          setSelectedPOI(hitPOI.id);
+          setEditingPOI(hitPOI);
+          return;
+        }
         pushHistory();
         const newPOI: POI = {
           id: generateId("poi"),
@@ -417,27 +430,43 @@ export default function MapPage() {
         setPois((prev) => [...prev, newPOI]);
         setEditingPOI(newPOI);
         setSelectedPOI(newPOI.id);
+        setPendingPOIId(newPOI.id);
       } else if ((activeTool === "line" || activeTool === "curveLine") && lineStartPOI) {
-        // 라인 모드에서 빈 캔버스 클릭 → 직교 스냅 위치에 새 POI 생성 후 라인 연결
-        pushHistory();
-        const newPOI: POI = {
-          id: generateId("poi"),
-          x,
-          y,
-          name: `POINT${pois.length + 1}`,
-          type: "waypoint",
-        };
-        setPois((prev) => [...prev, newPOI]);
+        // 기존 POI 클릭 시 그대로 연결, 빈 캔버스 클릭 시 새 POI 생성 후 연결
+        const hitPOI = pois.find(
+          (p) => Math.abs(p.x - x) < 15 / zoom && Math.abs(p.y - y) < 15 / zoom
+        );
 
-        // 방향 선택 팝업 표시
+        let toId: string;
+        let toX: number;
+        let toY: number;
+        if (hitPOI) {
+          toId = hitPOI.id;
+          toX = hitPOI.x;
+          toY = hitPOI.y;
+        } else {
+          pushHistory();
+          const newPOI: POI = {
+            id: generateId("poi"),
+            x,
+            y,
+            name: `POINT${pois.length + 1}`,
+            type: "waypoint",
+          };
+          setPois((prev) => [...prev, newPOI]);
+          toId = newPOI.id;
+          toX = x;
+          toY = y;
+        }
+
         const from = pois.find((p) => p.id === lineStartPOI);
         if (from) {
           setLineDirectionPopup({
             fromId: lineStartPOI,
-            toId: newPOI.id,
+            toId,
             position: {
-              x: ((from.x + x) / 2) * zoom + offset.x,
-              y: ((from.y + y) / 2) * zoom + offset.y,
+              x: ((from.x + toX) / 2) * zoom + offset.x,
+              y: ((from.y + toY) / 2) * zoom + offset.y,
             },
           });
         }
@@ -452,13 +481,9 @@ export default function MapPage() {
   const handlePOIClick = useCallback(
     (id: string) => {
       if (activeTool === "del") {
-        pushHistory();
-        setPois((prev) => prev.filter((p) => p.id !== id));
-        setLines((prev) =>
-          prev.filter((l) => l.fromId !== id && l.toId !== id)
-        );
-        setSelectedPOI(null);
-        setEditingPOI(null);
+        const target = pois.find((p) => p.id === id);
+        if (!target) return;
+        setDeletePOITarget(target);
         return;
       }
 
@@ -570,6 +595,9 @@ export default function MapPage() {
       setPois((prev) =>
         prev.map((p) => (p.id === id ? { ...p, ...data } : p))
       );
+      setPendingPOIId(null);
+      setEditingPOI(null);
+      setSelectedPOI(null);
     },
     [pushHistory]
   );
@@ -665,8 +693,12 @@ export default function MapPage() {
 
   const handleResetBearing = useCallback(() => {
     setZoom(1);
-    setOffset({ x: 0, y: 0 });
     setRotation(0);
+    const el = canvasWrapRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setOffset({ x: rect.width / 2, y: rect.height / 2 });
+    }
   }, []);
 
   const handleRotateLeft = useCallback(() => {
@@ -678,7 +710,12 @@ export default function MapPage() {
   }, []);
 
   // ── Clear Map ──
+  const [clearMapConfirmOpen, setClearMapConfirmOpen] = useState(false);
   const handleClearMap = useCallback(() => {
+    setClearMapConfirmOpen(true);
+  }, []);
+  const handleClearMapConfirm = useCallback(() => {
+    setClearMapConfirmOpen(false);
     pushHistory();
     setPois([]);
     setLines([]);
@@ -750,7 +787,33 @@ export default function MapPage() {
   };
   const handleRelocalize = () => setRelocalizeModalOpen(true);
   const handleCreate = () => console.log("Create");
-  const handleDelete = () => console.log("Delete");
+  const handleDelete = () => {
+    if (!selectedArea) {
+      showInfo("안내", "삭제할 영역을 선택해주세요.");
+      return;
+    }
+    setDeleteConfirmOpen(true);
+  };
+  const handleDeleteConfirm = async () => {
+    setDeleteConfirmOpen(false);
+    try {
+      const deletedIdx = areas.findIndex((a) => String(a.area_id) === selectedArea);
+      await apiFetch(`/api/map/areas/${selectedArea}`, { method: "DELETE" });
+      if (selectedBusiness) {
+        const res = await apiFetch<{ items: AreaItem[] }>(`/api/map/businesses/${selectedBusiness}/areas`);
+        setAreas(res.items);
+        const nextArea = res.items[deletedIdx] ?? res.items[deletedIdx - 1];
+        setSelectedArea(nextArea ? String(nextArea.area_id) : "");
+      } else {
+        setAreas([]);
+        setSelectedArea("");
+      }
+      setAreaMaps([]);
+      setSelectedMapId(null);
+    } catch {
+      showAlert({ title: "알림", message: "영역 삭제에 실패했습니다.", errorCode: "MAP-015", errorType: "map", source: "맵 관리 > 영역 삭제" });
+    }
+  };
 
   const handleStartMapping = () => setMappingSetupOpen(true);
   const handleMappingSetupConfirm = (businessId: number, areaId: string, areaName: string) => {
@@ -825,7 +888,6 @@ export default function MapPage() {
               onSave={handleSave}
               onSync={handleSync}
               onRelocalize={handleRelocalize}
-              onCreate={handleCreate}
               onDelete={handleDelete}
               syncDisabled={!selectedMapId || !selectedMappingId}
             />
@@ -873,11 +935,8 @@ export default function MapPage() {
               <MapFloatingPanel
                 open={floatingPanelOpen}
                 onToggle={() => setFloatingPanelOpen((v) => !v)}
-                robotConnected={!!connectedRobot}
                 onStartMapping={handleStartMapping}
                 onClearMap={handleClearMap}
-                onRemoteImage={handleRemoteImage}
-                onRemoteControl={handleRemoteControl}
               />
 
               {/* Bottom Left: Zoom, Rotate, Reset */}
@@ -913,6 +972,11 @@ export default function MapPage() {
                   onUpdate={handlePOIUpdate}
                   onDelete={handlePOIDelete}
                   onClose={() => {
+                    if (pendingPOIId) {
+                      setPois((prev) => prev.filter((p) => p.id !== pendingPOIId));
+                      setLines((prev) => prev.filter((l) => l.fromId !== pendingPOIId && l.toId !== pendingPOIId));
+                      setPendingPOIId(null);
+                    }
                     setEditingPOI(null);
                     setSelectedPOI(null);
                   }}
@@ -986,6 +1050,42 @@ export default function MapPage() {
           <MapRelocalizeModal
             open={relocalizeModalOpen}
             onClose={() => setRelocalizeModalOpen(false)}
+          />
+
+          {/* 영역 삭제 확인 Modal */}
+          <ConfirmModal
+            open={deleteConfirmOpen}
+            title="영역 삭제"
+            message={`영역 "${areas.find((a) => String(a.area_id) === selectedArea)?.name ?? ""}"을(를) 삭제하시겠습니까?`}
+            onConfirm={handleDeleteConfirm}
+            onCancel={() => setDeleteConfirmOpen(false)}
+          />
+
+          {/* POI 삭제 확인 Modal */}
+          <ConfirmModal
+            open={!!deletePOITarget}
+            title="POI 삭제"
+            message={`POI "${deletePOITarget?.name ?? ""}"을(를) 삭제하시겠습니까?\n연결된 라인이 있으면 함께 삭제될 수 있습니다.`}
+            onConfirm={() => {
+              if (deletePOITarget) {
+                pushHistory();
+                setPois((prev) => prev.filter((p) => p.id !== deletePOITarget.id));
+                setLines((prev) => prev.filter((l) => l.fromId !== deletePOITarget.id && l.toId !== deletePOITarget.id));
+                setSelectedPOI(null);
+                setEditingPOI(null);
+              }
+              setDeletePOITarget(null);
+            }}
+            onCancel={() => setDeletePOITarget(null)}
+          />
+
+          {/* 맵 초기화 확인 Modal */}
+          <ConfirmModal
+            open={clearMapConfirmOpen}
+            title="맵 초기화"
+            message="화면에 표시된 모든 POI와 라인을 초기화하시겠습니까?"
+            onConfirm={handleClearMapConfirm}
+            onCancel={() => setClearMapConfirmOpen(false)}
           />
         </main>
       </div>

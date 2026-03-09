@@ -29,6 +29,8 @@ from app.crud.robot import (
     update_min_battery_by_sn,
 )
 
+from app.crud.activity_log import log_activity
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/robots", tags=["로봇 관리"])
@@ -188,6 +190,9 @@ def api_sync_live_robots(db: Session = Depends(get_db)):
 
     db.commit()
     logger.info(f"sync-live: created={created}, updated={updated}, skipped={skipped}")
+    log_activity("robot", "robot_sync",
+                 f"로봇 동기화 완료: 생성 {created}, 갱신 {updated}, 건너뜀 {skipped}",
+                 source="api_sync_live_robots")
 
     return {
         "message": f"동기화 완료: 생성 {created}, 갱신 {updated}, 건너뜀 {skipped}",
@@ -201,7 +206,11 @@ def api_sync_live_robots(db: Session = Depends(get_db)):
 @router.post("", response_model=RobotResponse, status_code=201)
 def api_create_robot(data: RobotCreate, db: Session = Depends(get_db)):
     """RB-01 로봇 등록"""
-    return create_robot(db, data)
+    result = create_robot(db, data)
+    log_activity("robot", "robot_create",
+                 f"로봇 등록: {data.name} (SN: {data.serial_number})",
+                 source="api_create_robot")
+    return result
 
 
 @router.get("", response_model=RobotListResponse)
@@ -228,7 +237,11 @@ def api_get_min_battery(sn: str, db: Session = Depends(get_db)):
 @router.patch("/sn/{sn}/min-battery")
 def api_update_min_battery(sn: str, data: MinBatteryUpdate, db: Session = Depends(get_db)):
     """SN 기반 최소 배터리 수정"""
-    return update_min_battery_by_sn(db, sn, data)
+    result = update_min_battery_by_sn(db, sn, data)
+    log_activity("robot", "battery_setting",
+                 f"로봇 {sn} 배터리 설정 변경",
+                 source="api_update_min_battery")
+    return result
 
 
 @router.get("/sn/{sn}/charging-pois")
@@ -331,13 +344,23 @@ def api_get_robot(robot_id: int, db: Session = Depends(get_db)):
 @router.put("/{robot_id}", response_model=RobotResponse)
 def api_update_robot(robot_id: int, data: RobotUpdate, db: Session = Depends(get_db)):
     """RB-02 로봇 정보 수정"""
-    return update_robot(db, robot_id, data)
+    result = update_robot(db, robot_id, data)
+    log_activity("robot", "robot_update",
+                 f"로봇 정보 수정: {result.name} (SN: {result.serial_number})",
+                 robot_id=robot_id, source="api_update_robot")
+    return result
 
 
 @router.delete("/{robot_id}")
 def api_delete_robot(robot_id: int, db: Session = Depends(get_db)):
     """RB-03 로봇 삭제 (Soft Delete)"""
-    return delete_robot(db, robot_id)
+    robot = db.query(Robot).filter(Robot.id == robot_id).first()
+    robot_label = f"{robot.name} (SN: {robot.serial_number})" if robot else f"ID:{robot_id}"
+    result = delete_robot(db, robot_id)
+    log_activity("robot", "robot_delete",
+                 f"로봇 삭제: {robot_label}",
+                 robot_id=robot_id, source="api_delete_robot")
+    return result
 
 
 # ── 로봇 상태 관련 ──

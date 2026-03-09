@@ -1,8 +1,11 @@
 import asyncio
+import logging
 import math
 import uuid
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 import requests as http_requests
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
@@ -13,8 +16,9 @@ STATIC_MAPS_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "ma
 STATIC_MAPS_DIR.mkdir(parents=True, exist_ok=True)
 
 from app.database import get_db
+from app.crud.activity_log import log_activity
 from app.models.robot import Robot
-from app.models.map import RobotMap
+from app.models.map import RobotMap, Business, Area
 from app.routers.robot import ROBOTS
 from app.crud.map import (
     get_businesses,
@@ -113,9 +117,9 @@ def _update_robots_area(db: Session, area_id: str):
             )
             res.raise_for_status()
             robot.area_id = area_id
-            print(f"[save_map] 로봇 {robot.serial_number} area_id={area_id} 업데이트")
+            logger.info(f"[save_map] 로봇 {robot.serial_number} area_id={area_id} 업데이트")
         except Exception:
-            print(f"[save_map] 로봇 {robot.serial_number} ({robot.ip_address}) 연결 불가 → 건너뜀")
+            logger.warning(f"[save_map] 로봇 {robot.serial_number} ({robot.ip_address}) 연결 불가 → 건너뜀")
     db.commit()
 
 
@@ -166,8 +170,8 @@ def _correct_map_grid_origin(db: Session, map_id: int) -> bool:
         if abs(db_gx - actual_gx) < 0.1 and abs(db_gy - actual_gy) < 0.1:
             return False  # 보정 불필요
 
-        print(f"[map-correct] grid_origin 불일치 감지 (map_id={map_id}): "
-              f"DB=({db_gx}, {db_gy}) vs 로봇=({actual_gx}, {actual_gy})")
+        logger.warning(f"[map-correct] grid_origin 불일치 감지 (map_id={map_id}): "
+                       f"DB=({db_gx}, {db_gy}) vs 로봇=({actual_gx}, {actual_gy})")
 
         # ── 1) DB grid_origin 갱신 ──
         rm.grid_origin_x = actual_gx
@@ -182,7 +186,7 @@ def _correct_map_grid_origin(db: Session, map_id: int) -> bool:
             img_filepath.write_bytes(img_bytes)
             rm.image_url = f"/static/maps/{img_filename}"
         except Exception as img_err:
-            print(f"[map-correct] 이미지 갱신 실패 (무시): {img_err}")
+            logger.warning(f"[map-correct] 이미지 갱신 실패 (무시): {img_err}")
 
         # ── 3) JSON 매핑 데이터의 grid_origin 갱신 ──
         if rm.download_url and rm.download_url.startswith("/static/"):
@@ -200,15 +204,15 @@ def _correct_map_grid_origin(db: Session, map_id: int) -> bool:
                     new_json_path.write_text(_json.dumps(raw))
                     rm.download_url = f"/static/maps/{new_json_name}"
             except Exception as json_err:
-                print(f"[map-correct] JSON 갱신 실패 (무시): {json_err}")
+                logger.warning(f"[map-correct] JSON 갱신 실패 (무시): {json_err}")
 
         db.commit()
-        print(f"[map-correct] 보정 완료: grid_origin=({actual_gx}, {actual_gy}), "
-              f"image={rm.image_url}, json={rm.download_url}")
+        logger.info(f"[map-correct] 보정 완료: grid_origin=({actual_gx}, {actual_gy}), "
+                    f"image={rm.image_url}, json={rm.download_url}")
         return True
 
     except Exception as e:
-        print(f"[map-correct] 보정 실패 (로봇 연결 문제?): {e}")
+        logger.error(f"[map-correct] 보정 실패 (로봇 연결 문제?): {e}")
         return False
 
 
@@ -364,7 +368,11 @@ def api_create_business(body: dict, db: Session = Depends(get_db)):
         name = body.get("name", "").strip()
         if not name:
             raise HTTPException(status_code=400, detail="사업장 이름은 필수입니다.")
-        return create_business(db, name)
+        result = create_business(db, name)
+        log_activity("map", "business_create",
+                     f"사업장 생성: {name}",
+                     source="api_create_business")
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -375,7 +383,13 @@ def api_create_business(body: dict, db: Session = Depends(get_db)):
 def api_delete_business(business_id: int, db: Session = Depends(get_db)):
     """사업장 비활성화"""
     try:
-        return delete_business(db, business_id)
+        biz = db.query(Business).filter(Business.business_id == business_id).first()
+        biz_name = biz.name if biz else f"ID:{business_id}"
+        result = delete_business(db, business_id)
+        log_activity("map", "business_delete",
+                     f"사업장 삭제: {biz_name}",
+                     source="api_delete_business")
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -406,7 +420,11 @@ def api_create_area(body: dict, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="business_id는 필수입니다.")
         if not name:
             raise HTTPException(status_code=400, detail="영역 이름은 필수입니다.")
-        return create_area(db, business_id, name)
+        result = create_area(db, business_id, name)
+        log_activity("map", "area_create",
+                     f"영역 생성: {name}",
+                     source="api_create_area")
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -417,7 +435,13 @@ def api_create_area(body: dict, db: Session = Depends(get_db)):
 def api_delete_area(area_id: int, db: Session = Depends(get_db)):
     """영역 비활성화"""
     try:
-        return delete_area(db, area_id)
+        area = db.query(Area).filter(Area.area_id == area_id).first()
+        area_name = area.name if area else f"ID:{area_id}"
+        result = delete_area(db, area_id)
+        log_activity("map", "area_delete",
+                     f"영역 삭제: {area_name}",
+                     source="api_delete_area")
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -443,7 +467,7 @@ def _download_robot_image(url: str, prefix: str = "map") -> str | None:
         filepath.write_bytes(res.content)
         return f"/static/maps/{filename}"
     except Exception as e:
-        print(f"[save_map] 이미지 다운로드 실패 ({url}): {e}")
+        logger.error(f"[save_map] 이미지 다운로드 실패 ({url}): {e}")
         return None
 
 
@@ -460,7 +484,7 @@ def _download_robot_map_data(download_url: str, secret: str | None = None) -> st
         filepath.write_bytes(res.content)
         return f"/static/maps/{filename}"
     except Exception as e:
-        print(f"[save_map] 맵 데이터 다운로드 실패 ({download_url}): {e}")
+        logger.error(f"[save_map] 맵 데이터 다운로드 실패 ({download_url}): {e}")
         return None
 
 
@@ -477,7 +501,7 @@ def _download_robot_file(url: str, prefix: str, ext: str, secret: str | None = N
         filepath.write_bytes(res.content)
         return f"/static/maps/{filename}"
     except Exception as e:
-        print(f"[save_map] 파일 다운로드 실패 ({url}): {e}")
+        logger.error(f"[save_map] 파일 다운로드 실패 ({url}): {e}")
         return None
 
 
@@ -494,7 +518,7 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
             robot_ip = urlparse(download_url).hostname
             robot_secret = _find_secret(robot_ip)
         except Exception as e:
-            print(f"[save_map] 로봇 Secret 조회 에 실패했습니다: {e}")
+            logger.warning(f"[save_map] 로봇 Secret 조회 실패: {e}")
             pass
 
     # 로봇 URL → 로컬 서버 파일로 다운로드
@@ -529,7 +553,7 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
     try:
         result = save_robot_map(db, body)
     except Exception as e:
-        print(f"[save_map] DB 저장 에 실패했습니다: {e}")
+        logger.error(f"[save_map] DB 저장 실패: {e}")
         raise HTTPException(status_code=500, detail=f"맵 DB 저장 에 실패했습니다: {e}")
 
     # 맵 저장 성공 시, 연결 가능한 모든 로봇의 area_id 업데이트
@@ -538,7 +562,7 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
         try:
             _update_robots_area(db, str(area_id))
         except Exception as e:
-            print(f"[save_map] 로봇 area_id 업데이트 에 실패했습니다: {e}")
+            logger.error(f"[save_map] 로봇 area_id 업데이트 실패: {e}")
 
     # ── 자동 동기화: 서버 데이터 기반으로 즉시 동기화 + 후속 DB 보정 ──
     saved_map_id = result.get("id")
@@ -556,13 +580,13 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
                 ).first()
                 source_ip = source_robot.ip_address if source_robot else None
                 if not source_ip:
-                    print(f"[auto-sync] 소스 로봇 IP를 찾지 못했습니다: {source_sn}")
+                    logger.warning(f"[auto-sync] 소스 로봇 IP를 찾지 못했습니다: {source_sn}")
                     return
 
                 # ── 1) 서버 데이터 기반 즉시 동기화 (소스 로봇 대기 불필요) ──
                 targets = [r["ip"] for r in ROBOTS if r["ip"] != source_ip]
                 if targets:
-                    print(f"[auto-sync] 서버 데이터 기반 즉시 동기화: → {targets}")
+                    logger.info(f"[auto-sync] 서버 데이터 기반 즉시 동기화: → {targets}")
                     for target_ip in targets:
                         try:
                             api_sync_map_to_robot(
@@ -570,11 +594,11 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
                                 body={"robot_ip": target_ip, "area_name": area_name, "method": "full"},
                                 db=sync_db,
                             )
-                            print(f"[auto-sync] ✓ {target_ip} 동기화 완료")
+                            logger.info(f"[auto-sync] {target_ip} 동기화 완료")
                         except Exception as e:
-                            print(f"[auto-sync] ✗ {target_ip} 동기화 에 실패했습니다: {e}")
+                            logger.error(f"[auto-sync] {target_ip} 동기화 실패: {e}")
                 else:
-                    print("[auto-sync] 동기화할 타겟 로봇이 없습니다.")
+                    logger.info("[auto-sync] 동기화할 타겟 로봇이 없습니다.")
 
                 # ── 2) 소스 로봇의 새 맵 생성 대기 → DB 보정 (grid_origin + image + JSON) ──
                 import time as _time
@@ -583,7 +607,7 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
                 old_map_id = old_maps[0]["id"] if isinstance(old_maps, list) and old_maps else None
                 old_map_version = old_maps[0].get("map_version", 0) if old_map_id else 0
 
-                print(f"[auto-sync] DB 보정용 새 맵 대기 중... (현재 id={old_map_id}, ver={old_map_version})")
+                logger.info(f"[auto-sync] DB 보정용 새 맵 대기 중... (현재 id={old_map_id}, ver={old_map_version})")
                 new_map_found = False
                 for wait_i in range(24):  # 최대 120초 (5초 × 24)
                     _time.sleep(5)
@@ -592,30 +616,33 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
                         cur_id = cur_maps[0]["id"]
                         cur_ver = cur_maps[0].get("map_version", 0)
                         if cur_id != old_map_id or cur_ver != old_map_version:
-                            print(f"[auto-sync] 새 맵 감지: id={cur_id}, ver={cur_ver} ({(wait_i+1)*5}초)")
+                            logger.info(f"[auto-sync] 새 맵 감지: id={cur_id}, ver={cur_ver} ({(wait_i+1)*5}초)")
                             new_map_found = True
                             break
                     if wait_i % 6 == 5:
-                        print(f"[auto-sync] 대기 중... ({(wait_i+1)*5}초 경과)")
+                        logger.debug(f"[auto-sync] 대기 중... ({(wait_i+1)*5}초 경과)")
 
                 if not new_map_found:
-                    print("[auto-sync] 120초 내 새 맵 미생성 — DB 보정은 api_get_default_map에서 재시도됨")
+                    logger.warning("[auto-sync] 120초 내 새 맵 미생성 — DB 보정은 api_get_default_map에서 재시도됨")
                     return
 
                 # ── _correct_map_grid_origin()으로 한 번에 보정 (grid_origin + image + JSON) ──
                 corrected = _correct_map_grid_origin(sync_db, saved_map_id)
                 if corrected:
-                    print("[auto-sync] DB 보정 완료 (grid_origin + image + JSON)")
+                    logger.info("[auto-sync] DB 보정 완료 (grid_origin + image + JSON)")
                 else:
-                    print("[auto-sync] DB 보정 불필요 또는 실패 — api_get_default_map에서 재시도됨")
+                    logger.info("[auto-sync] DB 보정 불필요 또는 실패 — api_get_default_map에서 재시도됨")
 
             except Exception as e:
-                print(f"[auto-sync] 오류: {e}")
+                logger.error(f"[auto-sync] 오류: {e}")
             finally:
                 sync_db.close()
 
         threading.Thread(target=_auto_sync, daemon=True).start()
 
+    log_activity("map", "map_save",
+                 f"맵 저장 완료: {body.get('name', '')}",
+                 source="api_save_map")
     return result
 
 
@@ -686,7 +713,13 @@ def api_get_map_detail(map_id: int, db: Session = Depends(get_db)):
 def api_delete_saved_map(map_id: int, db: Session = Depends(get_db)):
     """맵 비활성화"""
     try:
-        return crud_delete_map(db, map_id)
+        rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
+        map_label = rm.name if rm and rm.name else f"ID:{map_id}"
+        result = crud_delete_map(db, map_id)
+        log_activity("map", "map_delete",
+                     f"맵 삭제: {map_label}",
+                     source="api_delete_saved_map")
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -717,6 +750,8 @@ def api_sync_map_to_robot(map_id: int, body: dict, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="robot_ip는 필수입니다.")
 
     target_secret = _find_secret(robot_ip)
+    target_robot = db.query(Robot).filter(Robot.ip_address == robot_ip).first()
+    robot_label = target_robot.name if target_robot else robot_ip
 
     # DB에서 맵 조회
     rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
@@ -730,7 +765,7 @@ def api_sync_map_to_robot(map_id: int, body: dict, db: Session = Depends(get_db)
         if local_path.exists():
             import json as _json_load
             mapping_data = _json_load.loads(local_path.read_text())
-            print(f"[sync] 서버 매핑 데이터 로드: {rm.download_url}")
+            logger.info(f"[sync] 서버 매핑 데이터 로드: {rm.download_url}")
 
     if not mapping_data:
         raise HTTPException(
@@ -746,31 +781,39 @@ def api_sync_map_to_robot(map_id: int, body: dict, db: Session = Depends(get_db)
         charging_pois = get_charging_pois(db, map_id)
         if charging_pois:
             new_features = _build_charging_overlay_features(charging_pois)
-            print(f"[sync] 충전소 POI {len(charging_pois)}개 → Feature {len(new_features)}개 생성")
+            logger.info(f"[sync] 충전소 POI {len(charging_pois)}개 → Feature {len(new_features)}개 생성")
             overlay_data["features"] = new_features
             overlay_synced = True
         else:
-            print("[sync] 충전소 POI 없음")
+            logger.info("[sync] 충전소 POI 없음")
     except Exception as e:
         overlay_error = str(e)
-        print(f"[sync] 충전소 오버레이 처리 에 실패했습니다: {e}")
+        logger.error(f"[sync] 충전소 오버레이 처리 실패: {e}")
 
-    print(f"[sync] 타겟: {robot_ip} ({sync_method}), "
-          f"carto_map: {len(mapping_data.get('carto_map', ''))}자, "
-          f"오버레이: {len(overlay_data.get('features', []))}개")
+    logger.info(f"[sync] 타겟: {robot_ip} ({sync_method}), "
+                f"carto_map: {len(mapping_data.get('carto_map', ''))}자, "
+                f"오버레이: {len(overlay_data.get('features', []))}개")
 
     # ── 3) full 방식: 서버 데이터로 전체 동기화 ──
     if sync_method == "full":
-        return _sync_full_from_server(
+        result = _sync_full_from_server(
             mapping_data, robot_ip, target_secret, area_name,
             overlay_data, overlay_synced, overlay_error,
         )
+        log_activity("map", "map_sync",
+                     f"맵 동기화 완료 → 로봇 '{robot_label}'",
+                     source="api_sync_map_to_robot")
+        return result
 
     # ── 4) patch 방식: 오버레이만 동기화 ──
-    return _sync_patch_to_robot(
+    result = _sync_patch_to_robot(
         robot_ip, target_secret,
         overlay_data, overlay_synced, overlay_error,
     )
+    log_activity("map", "map_sync",
+                 f"맵 동기화 완료 → 로봇 '{robot_label}'",
+                 source="api_sync_map_to_robot")
+    return result
 
 
 def _sync_full_from_server(
@@ -797,8 +840,8 @@ def _sync_full_from_server(
     grid_y = mapping_data.get("grid_origin_y", 0)
     grid_res = mapping_data.get("grid_resolution", 0.05)
 
-    print(f"[sync:full] 서버 데이터 → {target_ip}: "
-          f"carto_map={len(carto_map)}자, grid_origin=({grid_x}, {grid_y})")
+    logger.info(f"[sync:full] 서버 데이터 → {target_ip}: "
+                f"carto_map={len(carto_map)}자, grid_origin=({grid_x}, {grid_y})")
 
     overlay_json = _json.dumps(overlay_data)
 
@@ -820,8 +863,8 @@ def _sync_full_from_server(
     except Exception:
         pass
 
-    print(f"[sync:full] 타겟 {target_ip}: native={native_map_id}({native_map_name}), "
-          f"sync맵={sync_map_ids}")
+    logger.info(f"[sync:full] 타겟 {target_ip}: native={native_map_id}({native_map_name}), "
+                f"sync맵={sync_map_ids}")
 
     # ── 2. 네이티브 맵 PUT 전체 교체 시도 (재부팅 생존) ──
     put_success = False
@@ -838,23 +881,23 @@ def _sync_full_from_server(
         try:
             update_map_by_id(target_ip, target_secret, native_map_id, put_data)
             put_success = True
-            print(f"[sync:full] ✓ 네이티브 맵 PUT 성공: id={native_map_id}")
+            logger.info(f"[sync:full] 네이티브 맵 PUT 성공: id={native_map_id}")
         except Exception as e:
-            print(f"[sync:full] ✗ 네이티브 맵 PUT 실패: {e} → fallback 진행")
+            logger.warning(f"[sync:full] 네이티브 맵 PUT 실패: {e} → fallback 진행")
 
     if put_success:
         # PUT 후 서비스 재시작 → py_axbot이 carto_map에서 맵 재생성
         try:
             restart_robot_service(target_ip, target_secret)
-            print(f"[sync:full] 서비스 재시작 요청 완료 (약 60-90초)")
+            logger.info(f"[sync:full] 서비스 재시작 요청 완료 (약 60-90초)")
         except Exception as e:
-            print(f"[sync:full] 서비스 재시작 에 실패했습니다: {e}")
+            logger.error(f"[sync:full] 서비스 재시작 실패: {e}")
 
         # 이전 sync 맵 삭제
         for sid in sync_map_ids:
             try:
                 delete_map_by_id(target_ip, target_secret, sid)
-                print(f"[sync:full] sync 맵 삭제: id={sid}")
+                logger.info(f"[sync:full] sync 맵 삭제: id={sid}")
             except Exception:
                 pass
 
@@ -870,7 +913,7 @@ def _sync_full_from_server(
         }
 
     # ── 3. PUT 실패 fallback: POST sync 맵 생성 ──
-    print("[sync:full] fallback: POST sync 맵 생성")
+    logger.warning("[sync:full] fallback: POST sync 맵 생성")
 
     # 네이티브 맵에 overlay만 PATCH
     if native_map_id is not None:
@@ -878,9 +921,9 @@ def _sync_full_from_server(
             patch_map_by_id(target_ip, target_secret, native_map_id, {
                 "overlays": overlay_json,
             })
-            print(f"[sync:full:fb] 네이티브 맵 overlay PATCH: id={native_map_id}")
+            logger.info(f"[sync:full:fb] 네이티브 맵 overlay PATCH: id={native_map_id}")
         except Exception as e:
-            print(f"[sync:full:fb] overlay PATCH 에 실패했습니다: {e}")
+            logger.warning(f"[sync:full:fb] overlay PATCH 실패: {e}")
 
     # 이전 sync 맵 삭제
     for sid in sync_map_ids:
@@ -907,13 +950,13 @@ def _sync_full_from_server(
         raise HTTPException(status_code=502, detail=f"타겟 로봇 맵 생성 에 실패했습니다: {e}")
 
     new_map_id = created.get("id")
-    print(f"[sync:full:fb] sync 맵 생성: id={new_map_id}")
+    logger.info(f"[sync:full:fb] sync 맵 생성: id={new_map_id}")
 
     try:
         set_current_map(target_ip, target_secret, {"map_id": new_map_id})
-        print(f"[sync:full:fb] current-map → sync id={new_map_id}")
+        logger.info(f"[sync:full:fb] current-map → sync id={new_map_id}")
     except Exception as e:
-        print(f"[sync:full:fb] current-map 설정 에 실패했습니다: {e}")
+        logger.error(f"[sync:full:fb] current-map 설정 실패: {e}")
 
     return {
         "message": "맵 동기화 완료 (fallback: sync 맵 — 재부팅 시 삭제됨)",
@@ -964,7 +1007,7 @@ def _sync_patch_to_robot(
 
     try:
         patch_map_by_id(target_ip, target_secret, target_map_id, patch_data)
-        print(f"[sync:patch] ✓ PATCH 완료: {target_ip} id={target_map_id}")
+        logger.info(f"[sync:patch] PATCH 완료: {target_ip} id={target_map_id}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"타겟 로봇 맵 PATCH 에 실패했습니다: {e}")
 
@@ -1007,7 +1050,13 @@ def api_get_robot_map_detail(robot_ip: str, robot_map_id: int):
 def api_save_map_elements(map_id: int, body: dict, db: Session = Depends(get_db)):
     """맵의 POI·라인을 전체 교체 방식으로 저장"""
     try:
-        return save_map_elements(db, map_id, body)
+        result = save_map_elements(db, map_id, body)
+        rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
+        map_label = rm.name if rm and rm.name else ""
+        log_activity("map", "elements_save",
+                     f"맵 요소 저장 완료: {map_label}",
+                     source="api_save_map_elements")
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -1187,17 +1236,17 @@ def api_relocalize_robots(body: dict, db: Session = Depends(get_db)):
             })
 
             result["success"] = True
-            result["message"] = (
-                f"{poi_kind} 위치재조정 완료: ({target_x:.2f}, {target_y:.2f}, "
-                f"θ={math.degrees(target_yaw):.0f}°)"
-            )
-            print(f"[relocalize] ✓ {robot_ip}: {result['message']}")
+            result["message"] = f"{poi_kind} '{poi.name}' 위치재조정 완료"
+            logger.info(f"[relocalize] {robot_ip}: {result['message']}")
+            log_activity("map", "relocalize",
+                         f"로봇 '{robot.name}' 위치재조정 완료 → {poi_kind} '{poi.name}'",
+                         source="api_relocalize_robots")
 
         except HTTPException:
             result["message"] = f"등록되지 않은 로봇: {robot_ip}"
         except Exception as e:
             result["message"] = f"위치재조정 실패: {e}"
-            print(f"[relocalize] ✗ {robot_ip}: {e}")
+            logger.error(f"[relocalize] {robot_ip}: {e}")
 
         results.append(result)
 
@@ -1214,10 +1263,15 @@ def api_get_mappings(robot_ip: str):
 
 
 @router.post("/{robot_ip}/mappings", status_code=201)
-def api_create_mapping(robot_ip: str, body: dict):
+def api_create_mapping(robot_ip: str, body: dict, db: Session = Depends(get_db)):
     """맵핑 시작"""
     secret = _find_secret(robot_ip)
-    return _proxy(create_mapping, robot_ip, secret, body)
+    result = _proxy(create_mapping, robot_ip, secret, body)
+    robot = db.query(Robot).filter(Robot.ip_address == robot_ip).first()
+    log_activity("map", "mapping_start",
+                 f"맵핑 시작 (로봇: {robot.name if robot else '알 수 없는 로봇'})",
+                 source="api_create_mapping")
+    return result
 
 
 @router.put("/{robot_ip}/mappings")
@@ -1265,10 +1319,15 @@ def api_update_current_mapping(robot_ip: str, body: dict):
 
 
 @router.delete("/{robot_ip}/mappings/current")
-def api_delete_current_mapping(robot_ip: str):
+def api_delete_current_mapping(robot_ip: str, db: Session = Depends(get_db)):
     """현재 맵핑 중지"""
     secret = _find_secret(robot_ip)
-    return _proxy(delete_current_mapping, robot_ip, secret)
+    result = _proxy(delete_current_mapping, robot_ip, secret)
+    robot = db.query(Robot).filter(Robot.ip_address == robot_ip).first()
+    log_activity("map", "mapping_stop",
+                 f"맵핑 중지 (로봇: {robot.name if robot else '알 수 없는 로봇'})",
+                 source="api_delete_current_mapping")
+    return result
 
 
 @router.patch("/{robot_ip}/mappings/current")
@@ -1317,7 +1376,7 @@ async def ws_map_relay(websocket: WebSocket, robot_ip: str, topics: Optional[str
     try:
         relay.start()
     except Exception as e:
-        print(f"[ws_map_relay] 로봇 WS 릴레이 시작 실패 ({robot_ip}): {e}")
+        logger.error(f"[ws_map_relay] 로봇 WS 릴레이 시작 실패 ({robot_ip}): {e}")
         await websocket.send_text(f'{{"error": "로봇 WebSocket 연결 실패: {e}"}}')
         await websocket.close(code=1011)
         return
@@ -1340,8 +1399,8 @@ async def ws_map_relay(websocket: WebSocket, robot_ip: str, topics: Optional[str
                 await asyncio.sleep(0.02)
 
     except WebSocketDisconnect:
-        print(f"[ws_map_relay] 클라이언트 연결 종료 ({robot_ip})")
+        logger.info(f"[ws_map_relay] 클라이언트 연결 종료 ({robot_ip})")
     except Exception as e:
-        print(f"[ws_map_relay] 릴레이 중 오류 ({robot_ip}): {e}")
+        logger.error(f"[ws_map_relay] 릴레이 중 오류 ({robot_ip}): {e}")
     finally:
         relay.stop()
