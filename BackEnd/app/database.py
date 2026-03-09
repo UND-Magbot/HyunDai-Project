@@ -6,7 +6,9 @@ import pymysql
 import os
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "unde5466")
-DB_HOST = os.getenv("DB_HOST", "192.168.10.5")
+# DB_HOST = os.getenv("DB_HOST", "192.168.10.5")
+DB_HOST = os.getenv("DB_HOST", "192.168.0.31")
+
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_NAME = os.getenv("DB_NAME", "rcs_db")
 

@@ -6,13 +6,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DB_HOST=${DB_HOST:-192.168.10.5}
+      - DB_HOST=host.docker.internal
       - DB_PORT=${DB_PORT:-3306}
       - DB_USER=${DB_USER:-root}
       - DB_PASSWORD=${DB_PASSWORD:-unde5466}
       - DB_NAME=${DB_NAME:-rcs_db}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      # 맵 파일(이미지/bag/json) 영구 보존
       - ./BackEnd/static:/app/static
     restart: unless-stopped
     healthcheck:
