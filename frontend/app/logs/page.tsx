@@ -5,9 +5,10 @@ import { TopBar } from "../components/shell/TopBar";
 import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { LogFilter } from "../components/ui/logs/LogFilter";
 import { LogTable } from "../components/ui/logs/LogTable";
-import { mockLogList, getDistinctRobotSNs } from "@/lib/mock/logList";
+import { mockLogList } from "@/lib/mock/logList";
 import type { LogFilterState, LogItem } from "@/lib/types/logs";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
+import * as XLSX from "xlsx";
 import "./logs.css";
 
 function formatDateTime() {
@@ -22,9 +23,7 @@ function formatDateTime() {
 
 const defaultFilters: LogFilterState = {
   message: "",
-  robotSn: "",
-  logType: "",
-  logTag: "",
+  errorType: "",
   date: null,
   startTime: "00:00",
   endTime: "23:59",
@@ -39,8 +38,7 @@ function applyFilters(
       const keyword = filters.message.toLowerCase();
       if (!log.message.toLowerCase().includes(keyword)) return false;
     }
-    if (filters.logType && log.type !== filters.logType) return false;
-    if (filters.logTag && log.tag !== filters.logTag) return false;
+    if (filters.errorType && log.errorType !== filters.errorType) return false;
     if (filters.date) {
       const logDate = log.time.split(" ")[0];
       if (logDate !== filters.date) return false;
@@ -53,7 +51,7 @@ function applyFilters(
   });
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 8;
 const PAGE_GROUP = 5;
 
 export default function LogsPage() {
@@ -74,8 +72,6 @@ export default function LogsPage() {
   const [filters, setFilters] = useState<LogFilterState>(defaultFilters);
   const [appliedFilters, setAppliedFilters] = useState<LogFilterState>(defaultFilters);
   const [currentPage, setCurrentPage] = useState(1);
-
-  const robotSns = useMemo(() => getDistinctRobotSNs(), []);
 
   const displayLogs = useMemo(
     () => applyFilters(mockLogList, appliedFilters),
@@ -105,6 +101,26 @@ export default function LogsPage() {
     setCurrentPage(1);
   };
 
+  const handleReset = () => {
+    setFilters(defaultFilters);
+    setAppliedFilters(defaultFilters);
+    setCurrentPage(1);
+  };
+
+  const handleExport = () => {
+    const rows = displayLogs.map((log) => ({
+      "발생 일시": log.time,
+      "오류 타입": log.errorType,
+      IP: log.ip,
+      "메세지": log.message,
+      "데이터": log.data ?? "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "로그");
+    XLSX.writeFile(wb, `logs_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   return (
     <>
       {isLoading && <LoadingScreen pageName="로그 관리" />}
@@ -125,13 +141,20 @@ export default function LogsPage() {
           <div className="logs-page">
             <header className="logs-page__header">
               <h1 className="logs-page__title">로그 관리</h1>
+              <button
+                type="button"
+                className="logs-page__export-btn"
+                onClick={handleExport}
+              >
+                Excel 내보내기
+              </button>
             </header>
 
             <LogFilter
               filters={filters}
-              robotSns={robotSns}
               onFilterChange={setFilters}
               onSearch={handleSearch}
+              onReset={handleReset}
             />
 
             <LogTable logs={pagedLogs} />
@@ -161,7 +184,7 @@ export default function LogsPage() {
                 다음
               </button>
               <span className="pagination__info">
-                총 {displayLogs.length}개
+                총 {displayLogs.length} 개
               </span>
             </div>
           </div>

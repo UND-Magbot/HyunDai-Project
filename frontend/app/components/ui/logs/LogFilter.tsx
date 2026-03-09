@@ -2,43 +2,23 @@
 
 import { DatePicker } from "./DatePicker";
 import { TimeRangePicker } from "./TimeRangePicker";
-import type { LogFilterState, LogType, LogTag } from "@/lib/types/logs";
+import type { LogFilterState, ErrorCategory } from "@/lib/types/logs";
 import "./LogFilter.css";
 
 type LogFilterProps = {
   filters: LogFilterState;
-  robotSns: string[];
   onFilterChange: (filters: LogFilterState) => void;
   onSearch: () => void;
+  onReset: () => void;
 };
 
-const LOG_TYPES: LogType[] = [
-  "Request",
-  "Response",
-  "Receive",
-  "Send",
-  "Event",
-  "Logic",
-  "Error",
-];
-
-const LOG_TAGS: LogTag[] = [
-  "OpentcsAPI",
-  "WebEvent",
-  "AppEvent",
-  "LogicEvent",
-  "ProcessEvent",
-  "VehicleEvent",
-  "TransportOrderEvent",
-  "ModelEvent",
-  "ConnectionEvent",
-];
+const ERROR_CATEGORIES: ErrorCategory[] = ["시스템", "로봇", "사용자"];
 
 export function LogFilter({
   filters,
-  robotSns,
   onFilterChange,
   onSearch,
+  onReset,
 }: LogFilterProps) {
   const update = (patch: Partial<LogFilterState>) => {
     onFilterChange({ ...filters, ...patch });
@@ -62,52 +42,18 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">로봇 SN</label>
+        <label className="log-filter__label">오류 타입</label>
         <select
           className="log-filter__select"
-          value={filters.robotSn}
-          onChange={(e) => update({ robotSn: e.target.value })}
-        >
-          <option value="">All</option>
-          {robotSns.map((sn) => (
-            <option key={sn} value={sn}>
-              {sn}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="log-filter__field">
-        <label className="log-filter__label">로그 유형</label>
-        <select
-          className="log-filter__select"
-          value={filters.logType}
+          value={filters.errorType}
           onChange={(e) =>
-            update({ logType: e.target.value as LogFilterState["logType"] })
+            update({ errorType: e.target.value as LogFilterState["errorType"] })
           }
         >
           <option value="">전체</option>
-          {LOG_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="log-filter__field">
-        <label className="log-filter__label">로그 세부 유형</label>
-        <select
-          className="log-filter__select"
-          value={filters.logTag}
-          onChange={(e) =>
-            update({ logTag: e.target.value as LogFilterState["logTag"] })
-          }
-        >
-          <option value="">전체</option>
-          {LOG_TAGS.map((t) => (
-            <option key={t} value={t}>
-              {t}
+          {ERROR_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
             </option>
           ))}
         </select>
@@ -130,6 +76,9 @@ export function LogFilter({
         />
       </div>
 
+      <button type="button" className="btn" onClick={onReset}>
+        초기화
+      </button>
       <button type="button" className="btn btn--primary" onClick={onSearch}>
         조회
       </button>
