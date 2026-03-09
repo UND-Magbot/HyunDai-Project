@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { MonitoringMapProps } from "@/lib/types/map-markers";
@@ -24,6 +24,7 @@ export function MonitoringMap3D(props: MonitoringMapProps) {
     routeSegments,
   } = props;
 
+  const [contextLost, setContextLost] = useState(false);
   const occupancy = useOccupancyGrid(mapSrc);
 
   const cameraPosition = useMemo<[number, number, number]>(() => {
@@ -32,12 +33,30 @@ export function MonitoringMap3D(props: MonitoringMapProps) {
     return [dist * 0.4, dist * 0.5, dist * 0.4];
   }, [occupancy]);
 
+  if (contextLost) {
+    return (
+      <div className="monitoring-map3d-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "center", color: "#4a90b8", fontSize: "0.875rem" }}>
+        3D 렌더링을 사용할 수 없습니다. (WebGL 컨텍스트 손실)
+      </div>
+    );
+  }
+
   return (
     <div className="monitoring-map3d-wrap">
       <Canvas
         camera={{ position: cameraPosition, fov: 50, near: 1, far: 10000 }}
-        gl={{ antialias: true, alpha: false }}
+        gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
+        dpr={[1, 1.5]}
         style={{ background: "#080e1a" }}
+        onCreated={({ gl }) => {
+          gl.domElement.addEventListener("webglcontextlost", (e) => {
+            e.preventDefault();
+            setContextLost(true);
+          });
+          gl.domElement.addEventListener("webglcontextrestored", () => {
+            setContextLost(false);
+          });
+        }}
       >
         <ambientLight intensity={1.0} />
         <directionalLight position={[200, 500, 300]} intensity={1.0} />

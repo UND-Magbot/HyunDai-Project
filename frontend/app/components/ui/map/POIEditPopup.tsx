@@ -26,7 +26,6 @@ export function POIEditPopup({
       type,
       angle: parsedAngle != null && !isNaN(parsedAngle) ? parsedAngle : undefined,
     });
-    onClose();
   };
 
   return (

@@ -34,8 +34,16 @@ export function useOccupancyGrid(mapSrc: string): OccupancyResult | null {
 
     img.onload = () => {
       if (cancelled) return;
-      const data = processImage(img);
-      if (!cancelled) setResult(data);
+      // Defer heavy processing so WebGL Canvas can initialize first
+      setTimeout(() => {
+        if (cancelled) return;
+        try {
+          const data = processImage(img);
+          if (!cancelled) setResult(data);
+        } catch {
+          if (!cancelled) setResult(null);
+        }
+      }, 0);
     };
 
     img.onerror = () => {

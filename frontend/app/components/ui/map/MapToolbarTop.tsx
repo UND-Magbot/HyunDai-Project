@@ -4,9 +4,8 @@ import type { MapToolbarTopProps } from "@/lib/types/map";
 
 const toolbarItems = [
   { key: "undo", icon: "↩", label: "되돌리기" },
-  { key: "edit", icon: "✎", label: "편집" },
-  { key: "charging", icon: "⚡", label: "충전소" },
-  { key: "location", icon: "◎", label: "현재 위치" },
+  { key: "charging", icon: "⚡", label: "충전소 생성" },
+  { key: "location", icon: "◎", label: "현 위치에서 포인트 생성" },
 ];
 
 export function MapToolbarTop({

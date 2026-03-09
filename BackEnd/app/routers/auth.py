@@ -5,6 +5,7 @@ from app.database import get_db
 from app.schemas.auth import LoginRequest, LoginResponse, AuthUser
 from app.schemas.user import ROLE_MAP
 from app.crud.auth import authenticate_user, create_access_token, get_current_user
+from app.crud.activity_log import log_activity
 
 router = APIRouter(prefix="/api/auth", tags=["인증"])
 
@@ -20,6 +21,9 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     """
     user, role_code = authenticate_user(db, data.login_id, data.password)
     token = create_access_token(user.id, role_code)
+    log_activity("system", "user_login",
+                 f"사용자 '{data.login_id}' 로그인",
+                 source="login")
 
     return LoginResponse(
         access_token=token,

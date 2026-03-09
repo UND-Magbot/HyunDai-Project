@@ -2,6 +2,10 @@
   background: var(--bg-surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  min-height: 476px;
+  max-height: 600px;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .log-table {
@@ -24,7 +28,7 @@
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wide);
   padding: var(--space-3) var(--space-3);
-  text-align: left;
+  text-align: center;
   border-bottom: 1px solid var(--border-table-header);
   white-space: nowrap;
 }
@@ -42,11 +46,11 @@
   font-size: var(--font-size-md);
   color: var(--text-primary);
   border-bottom: 1px solid var(--divider);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   height: 53px;
   vertical-align: middle;
+  text-align: center;
 }
 
 .log-table tbody tr:last-child td {
@@ -61,29 +65,40 @@
   border-bottom-right-radius: var(--radius-card);
 }
 
-/* ── Error row highlight ── */
-.log-table__row--error {
-  background: var(--bg-error-subtle);
+/* ── Row ── */
+.log-table__row--expandable {
+  cursor: pointer;
 }
 
-/* ── Message column ── */
+.log-table__row--expandable:hover {
+  background: var(--bg-surface-2);
+}
+
+/* ── Message column (2-line clamp) ── */
+.log-table__message-cell {
+  text-align: left;
+}
+
 .log-table__message {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 
-/* ── Data column ── */
-.log-table__data {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: monospace;
-  font-size: var(--font-size-sm);
+.log-table__message--expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
 }
 
-/* ── Level badges ── */
-.log-table__level {
+/* ── Error type badges ── */
+.log-table__error-type {
   display: inline-block;
   padding: 2px 8px;
   border-radius: var(--radius-badge);
@@ -91,24 +106,72 @@
   font-weight: var(--font-weight-semibold);
 }
 
-.log-table__level--error {
-  background: var(--bg-error-subtle);
-  color: var(--color-error);
-}
-
-.log-table__level--warning {
-  background: var(--bg-warning-subtle);
-  color: var(--color-warning);
-}
-
-.log-table__level--info {
+.log-table__error-type--시스템 {
   background: var(--bg-primary-subtle);
   color: var(--color-primary);
 }
 
-.log-table__level--debug {
+.log-table__error-type--로봇 {
+  background: var(--bg-warning-subtle);
+  color: var(--color-warning);
+}
+
+.log-table__error-type--사용자 {
   background: var(--bg-selected);
   color: var(--text-muted);
+}
+
+/* ── View button ── */
+.log-table__view-btn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.log-table__view-btn:hover {
+  opacity: 0.8;
+}
+
+/* ── JSON viewer modal ── */
+.log-table__json-viewer {
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-control);
+  padding: var(--space-4);
+
+  /* WebKit scrollbar */
+  &::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: var(--scrollbar-radius);
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.log-table__json-viewer pre {
+  margin: 0;
+  font-family: monospace;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* ── Empty State ── */

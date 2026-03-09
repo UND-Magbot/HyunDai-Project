@@ -37,6 +37,7 @@ from app.robot_api.robot_task_service import (
     RECOVERY_DELAY,
 )
 from websocket import WebSocketException
+from app.crud.activity_log import log_activity
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,14 @@ def _reassign_convoy_positions(
             logger.info(f"[Convoy 재배치] 로봇 {rid} ({pct:.0f}%) → {pos_name} (poi_id={poi.id})")
 
         db.commit()
+        reassign_desc = ", ".join(
+            f"로봇{rid}({pct:.0f}%)→{pos}"
+            for (rid, pct), pos in zip(battery_levels, positions)
+        )
         logger.info("[Convoy 재배치] DB 업데이트 완료")
+        log_activity("convoy", "convoy_reassign",
+                     f"Convoy 위치 재배치 완료 ({reassign_desc})",
+                     source="_reassign_convoy_positions")
     except Exception as e:
         db.rollback()
         logger.error(f"[Convoy 재배치] DB 업데이트 실패: {e}")
@@ -248,7 +256,12 @@ def start_convoy(
         name="convoy-orchestrator",
     )
     t.start()
-    logger.info(f"[Convoy] 오케스트레이터 시작 — 로봇: {[rc['robot_id'] for rc in robots_config]}")
+    robot_ids = [rc['robot_id'] for rc in robots_config]
+    robot_names = [rc.get('robot_name') or f"로봇 {rc['robot_id']}" for rc in robots_config]
+    logger.info(f"[Convoy] 오케스트레이터 시작 — 로봇: {robot_ids}")
+    log_activity("convoy", "convoy_start",
+                 f"Convoy 대열 작업 시작 (로봇: {', '.join(robot_names)})",
+                 source="start_convoy")
     return True, "Convoy 대열 작업이 시작되었습니다"
 
 
@@ -266,6 +279,9 @@ def stop_convoy() -> tuple[bool, str]:
         _convoy_phase = "returning"
 
     logger.info("[Convoy] 그레이스풀 정지 요청")
+    log_activity("convoy", "convoy_stop_request",
+                 "Convoy 그레이스풀 정지 요청",
+                 source="stop_convoy")
     return True, "Convoy 정지 요청 — 모든 로봇이 WORK1 복귀 후 충전소로 돌아갑니다"
 
 
@@ -310,6 +326,9 @@ def force_stop_convoy() -> tuple[bool, str]:
         t.join(timeout=6.0)
 
     logger.info("[Convoy] 즉시 정지 완료 — 모든 이동 취소됨")
+    log_activity("convoy", "convoy_force_stop",
+                 "Convoy 즉시 정지 — 모든 로봇 이동 취소",
+                 source="force_stop_convoy")
     return True, "Convoy 즉시 정지 — 모든 로봇 이동 취소됨"
 
 
@@ -355,6 +374,25 @@ def _trigger_standby_robot() -> bool:
     t.start()
     logger.info(f"[Convoy Hot Swap] 로봇 {rc['robot_id']} 워커 스레드 시작 완료")
     return True
+
+
+def _schedule_requeue(robot_id: int, robot_ip: str, requeue_rc: dict):
+    """배터리 부족으로 복귀한 로봇을 standby pool에 즉시 재등록.
+    convoy가 여전히 running 상태일 때만 등록 (중복 방지 포함).
+    """
+    with _convoy_lock:
+        if _convoy_phase != "running":
+            logger.info(f"[Robot {robot_id}] convoy 미실행 — requeue 취소")
+            return
+        already = any(r["robot_id"] == robot_id for r in _convoy_standby_pool)
+        if already:
+            logger.info(f"[Robot {robot_id}] 이미 standby pool에 등록됨 — 중복 방지")
+            return
+        _convoy_standby_pool.append(requeue_rc)
+        logger.info(
+            f"[Robot {robot_id}] 복귀 완료 → standby pool 재등록 "
+            f"(pool 크기: {len(_convoy_standby_pool)})"
+        )
 
 
 def _mark_hot_swap_charger(robot_id: int):
@@ -432,7 +470,11 @@ def _convoy_orchestrator(
             if stop_event.is_set():
                 break
 
+            _rname = rc.get('robot_name') or f"로봇 {rc['robot_id']}"
             logger.info(f"[Convoy] 로봇 {rc['robot_id']} 워커 시작 (#{i+1})")
+            log_activity("convoy", "convoy_robot_depart",
+                         f"Convoy 로봇 '{_rname}' 출발 (#{i+1})",
+                         robot_id=rc['robot_id'], robot_name=_rname, source="_convoy_orchestrator")
             t.start()
 
             if i < len(robots_config) - 1:
@@ -455,12 +497,18 @@ def _convoy_orchestrator(
         with _convoy_lock:
             if _convoy_phase == "entering":
                 _convoy_phase = "running"
+                log_activity("convoy", "convoy_phase_running",
+                             "Convoy 전체 진입 완료 — 순환 작업 시작",
+                             source="_convoy_orchestrator")
 
         # 모든 워커 종료 대기
         for t in worker_threads:
             t.join()
 
         logger.info("[Convoy] 모든 로봇 워커 종료")
+        log_activity("convoy", "convoy_complete",
+                     "Convoy 모든 로봇 작업 종료",
+                     source="_convoy_orchestrator")
 
         with _convoy_lock:
             _convoy_phase = "stopped"
@@ -1191,6 +1239,23 @@ def _convoy_robot_worker(
                         "status": "charging",
                         "message": "충전 중",
                     }
+
+            # ── 배터리 부족 복귀 시 standby pool 자동 재등록 ──
+            # (convoy가 계속 running 중이고 graceful/stop 아닐 때만)
+            if low_battery_break and not stop_event.is_set() and not graceful_event.is_set():
+                requeue_rc = {
+                    **rc,
+                    "start_poi_type": _cur_start_type,
+                    "charging_poi_name": (
+                        _cur_charging_poi.name if _cur_charging_poi
+                        else rc.get("charging_poi_name")
+                    ),
+                    "standby_poi_name": (
+                        _cur_standby_poi.name if _cur_standby_poi
+                        else rc.get("standby_poi_name")
+                    ),
+                }
+                _schedule_requeue(robot_id, robot_ip, requeue_rc)
 
             # return_ready_event 세팅 (앞 로봇 복귀 허용)
             return_ready_event.set()

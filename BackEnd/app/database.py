@@ -5,8 +5,10 @@ import pymysql
 # MariaDB 접속 정보 (환경변수 우선, 없으면 기본값)
 import os
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "unde5466")
-DB_HOST = os.getenv("DB_HOST", "192.168.10.5")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
+# DB_HOST = os.getenv("DB_HOST", "192.168.10.5")
+DB_HOST = os.getenv("DB_HOST", "192.168.0.12")
+
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_NAME = os.getenv("DB_NAME", "rcs_db")
 

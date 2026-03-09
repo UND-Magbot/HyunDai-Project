@@ -831,7 +831,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       const msg = err instanceof Error ? err.message : "복귀에 실패했습니다.";
       const code = err instanceof ApiError ? err.errorCode : undefined;
       const errorType = code?.startsWith("ROBOT") ? "robot" : "task";
-      showAlert({ title: "알림", message: msg, errorCode: code ?? "ROBOT-007", errorType, source: "모니터링 > 복귀", description: (err instanceof ApiError ? err.description : undefined) ?? "handleReturn — 복귀 API 호출 실패" });
+      showAlert({ title: "알림", message: `${msg} (로봇: ${robot.name})`, errorCode: code ?? "ROBOT-007", errorType, source: "모니터링 > 복귀", description: (err instanceof ApiError ? err.description : undefined) ?? "handleReturn — 복귀 API 호출 실패" });
     }
   };
 
@@ -842,7 +842,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
       await apiPost(`/api/tasks/stop/${robot.id}`, {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "정지 실패";
-      showAlert({ title: "로봇 정지 실패", message: msg });
+      showAlert({ title: "로봇 정지 실패", message: `${msg} (로봇: ${robot.name})`, errorCode: "ROBOT-005", errorType: "robot", source: "모니터링 > 로봇 정지" });
     }
   };
 

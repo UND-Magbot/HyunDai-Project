@@ -40,12 +40,12 @@ def api_get_alarm_logs(
     is_read: bool | None = Query(None),
     error_code: str | None = Query(None),
     message: str | None = Query(None),
-    hours: int | None = Query(24, ge=0),
+    hours: int | None = Query(None, ge=0),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """알람 로그 목록 조회 (기본: 최근 24시간, hours=0이면 전체)"""
+    """알람 로그 목록 조회 (기본: 당일 KST, hours=N이면 최근 N시간, hours=0이면 전체)"""
     items, total = get_alarm_logs(
         db, skip=skip, limit=limit,
         error_type=error_type, severity=severity,

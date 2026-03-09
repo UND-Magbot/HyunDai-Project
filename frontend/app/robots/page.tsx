@@ -113,7 +113,7 @@ export default function RobotsPage() {
   useEffect(() => {
     const fetchRobots = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:8000/api/robots/live", {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/robots/live`, {
           cache: "no-store",
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -219,7 +219,7 @@ export default function RobotsPage() {
     setSyncMessage(null);
     setErrorMessage(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/robots/sync-live", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/robots/sync-live`, {
         method: "POST",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

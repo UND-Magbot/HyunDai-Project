@@ -26,13 +26,20 @@ export function MapFloor({ mapSrc, width, height }: Props) {
 
     img.onload = () => {
       if (cancelled) return;
-      const processed = removeOutsideBackground(img);
-      const tex = new THREE.CanvasTexture(processed);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.minFilter = THREE.LinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      tex.generateMipmaps = false;
-      setTexture(tex);
+      setTimeout(() => {
+        if (cancelled) return;
+        try {
+          const processed = removeOutsideBackground(img);
+          const tex = new THREE.CanvasTexture(processed);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.generateMipmaps = false;
+          setTexture(tex);
+        } catch {
+          // ignore — canvas 텍스처 처리 실패 시 맵 바닥 생략
+        }
+      }, 0);
     };
 
     return () => {
