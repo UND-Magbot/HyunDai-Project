@@ -24,21 +24,20 @@ export function PasswordChangeTab() {
     async (e: React.FormEvent) => {
       e.preventDefault();
 
-      if (!PW_REGEX.test(newPw)) {
-        showInfo("알림", "비밀번호 규칙에 맞게 설정해주세요.\n(영문 + 숫자 + 특수문자, 6자 이상)");
-        return;
-      }
-
       setIsChanging(true);
       try {
         const { valid } = await verifyPassword(currentPw);
         if (!valid) {
-          showInfo("알림", "기존 비밀번호가 일치하지 않습니다.");
+          showInfo("알림", "현재 비밀번호가 일치하지 않습니다.");
           return;
         }
 
-        const userId = Number(localStorage.getItem("user_id") ?? "0");
-        await changePassword(userId, newPw);
+        if (!PW_REGEX.test(newPw)) {
+          showInfo("알림", "비밀번호 규칙에 맞게 설정해주세요.\n(영문 + 숫자 + 특수문자, 6자 이상)");
+          return;
+        }
+
+        await changePassword(currentPw, newPw);
         shouldReloadRef.current = true;
         showInfo("알림", "비밀번호가 변경되었습니다.");
       } catch {

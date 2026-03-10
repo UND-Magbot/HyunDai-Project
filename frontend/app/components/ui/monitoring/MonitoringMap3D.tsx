@@ -12,6 +12,7 @@ import { RobotMarker3D } from "./three/RobotMarker3D";
 import { PoiMarker3D } from "./three/PoiMarker3D";
 import { WaypointMarker3D } from "./three/WaypointMarker3D";
 import { RouteLines3D } from "./three/RouteLines3D";
+import { FirewallWall3D } from "./three/FirewallWall3D";
 import "./MonitoringMap3D.css";
 
 export function MonitoringMap3D(props: MonitoringMapProps) {
@@ -87,6 +88,15 @@ export function MonitoringMap3D(props: MonitoringMapProps) {
               imgW={occupancy.imageWidth}
               imgH={occupancy.imageHeight}
               showArrows={props.showDirectionArrows}
+            />
+          )}
+
+          {/* Firewall walls (3D orange wall) */}
+          {occupancy && routeSegments && (
+            <FirewallWall3D
+              segments={routeSegments}
+              imgW={occupancy.imageWidth}
+              imgH={occupancy.imageHeight}
             />
           )}
 

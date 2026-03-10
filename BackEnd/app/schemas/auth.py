@@ -24,3 +24,14 @@ class AuthUser(BaseModel):
     role_name: str
 
     model_config = {"from_attributes": True}
+
+
+class VerifyPasswordRequest(BaseModel):
+    """현재 비밀번호 확인 요청"""
+    password: str = Field(..., min_length=1)
+
+
+class ChangePasswordRequest(BaseModel):
+    """비밀번호 변경 요청"""
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=6)

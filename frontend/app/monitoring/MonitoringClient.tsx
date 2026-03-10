@@ -181,6 +181,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [isRunning, setIsRunning] = useState(false);
   const [loopRunning, setLoopRunning] = useState(false);
   const [loopStopping, setLoopStopping] = useState(false);
+  const [emergencyStopped, setEmergencyStopped] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   // simulatedRobots는 아래 useMemo로 계산 (useEffect+setState 연쇄 리렌더 방지)
@@ -848,6 +849,26 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
   };
 
+  const handleEmergencyStop = async () => {
+    try {
+      await apiPost("/api/convoy/force-stop", {});
+      setEmergencyStopped(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "비상정지 실패";
+      showAlert({ title: "비상정지", message: msg, errorCode: "ESTOP-001", errorType: "task", source: "모니터링 > 비상정지" });
+    }
+  };
+
+  const handleReturnAll = async () => {
+    try {
+      await apiPost("/api/convoy/return-all", {});
+      setEmergencyStopped(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "전체 복귀 실패";
+      showAlert({ title: "전체 복귀", message: msg, errorCode: "ESTOP-002", errorType: "task", source: "모니터링 > 전체 복귀" });
+    }
+  };
+
   const handleStopAll = () => {
     setStopConfirmOpen(true);
   };
@@ -1098,6 +1119,41 @@ export function MonitoringClient({ initialDateTime }: Props) {
                 selectedId={`${selectedBusiness}:${selectedArea}`}
                 onChange={handleBusinessAreaChange}
               />
+              <button
+                type="button"
+                className="estop-btn"
+                onClick={handleEmergencyStop}
+                title="비상정지 — 모든 로봇 즉시 정지"
+              >
+                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                  {/* 광선 - 위 */}
+                  <line x1="32" y1="21" x2="32" y2="11" stroke="#ffcc00" strokeWidth="3" strokeLinecap="round"/>
+                  {/* 광선 - 왼쪽 위 */}
+                  <line x1="17" y1="27" x2="9" y2="19" stroke="#ffcc00" strokeWidth="3" strokeLinecap="round"/>
+                  {/* 광선 - 오른쪽 위 */}
+                  <line x1="47" y1="27" x2="55" y2="19" stroke="#ffcc00" strokeWidth="3" strokeLinecap="round"/>
+                  {/* 광선 - 왼쪽 */}
+                  <line x1="11" y1="38" x2="3" y2="38" stroke="#ffcc00" strokeWidth="3" strokeLinecap="round"/>
+                  {/* 광선 - 오른쪽 */}
+                  <line x1="53" y1="38" x2="61" y2="38" stroke="#ffcc00" strokeWidth="3" strokeLinecap="round"/>
+                  {/* 베이스 */}
+                  <rect x="14" y="48" width="36" height="9" rx="3" fill="#9aa3b2"/>
+                  {/* 돔 — A rx ry x-rot large-arc sweep ex ey */}
+                  <path d="M 14 48 A 18 22 0 0 1 50 48 Z" fill="#ff4444"/>
+                  {/* 돔 하이라이트 */}
+                  <path d="M 20 45 C 20 34 28 30 33 31" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none" opacity="0.5"/>
+                </svg>
+              </button>
+              {emergencyStopped && (
+                <button
+                  type="button"
+                  className="return-all-btn"
+                  onClick={handleReturnAll}
+                  title="비상정지 후 모든 로봇을 충전소/대기지점으로 순차 복귀"
+                >
+                  전체 복귀
+                </button>
+              )}
               {!selectedArea && !isLoading ? (
                 <div className="monitoring-map__empty">
                   <p>현재 사업장에 등록된 영역이 없습니다.</p>
@@ -1245,7 +1301,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
               onClose={() => setOpenDeviceId(null)}
               onEnableToggle={handleDeviceEnableToggle}
               togglingDeviceId={togglingDeviceId}
-              showChargingStation={false}
+              showChargingStation
+              readOnly
             />
           )}
           <TaskInfoModal

@@ -32,10 +32,19 @@ function formatCreatedAt(raw: string): string {
 }
 
 
+function todayStr(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 const defaultFilters: LogFilterState = {
   message: "",
   errorType: "",
-  date: null,
+  startDate: todayStr(),
+  endDate: todayStr(),
   startTime: "00:00",
   endTime: "23:59",
 };
@@ -49,10 +58,8 @@ function buildParams(f: LogFilterState, skip: number, limit: number): string {
   p.set("limit", String(limit));
   if (f.message) p.set("message", f.message);
   if (f.errorType) p.set("display_category", f.errorType);
-  if (f.date) {
-    p.set("date_from", `${f.date}T${f.startTime}:00`);
-    p.set("date_to", `${f.date}T${f.endTime}:59`);
-  }
+  p.set("date_from", `${f.startDate}T${f.startTime}:00`);
+  p.set("date_to", `${f.endDate}T${f.endTime}:59`);
   return p.toString();
 }
 
@@ -112,8 +119,14 @@ export default function LogsPage() {
   };
 
   const handleReset = () => {
-    setFilters(defaultFilters);
-    setAppliedFilters(defaultFilters);
+    const today = todayStr();
+    const resetFilters: LogFilterState = {
+      ...defaultFilters,
+      startDate: today,
+      endDate: today,
+    };
+    setFilters(resetFilters);
+    setAppliedFilters(resetFilters);
     setCurrentPage(1);
   };
 

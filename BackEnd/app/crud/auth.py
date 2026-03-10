@@ -1,3 +1,5 @@
+import logging
+
 from jose import jwt, JWTError
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
@@ -9,6 +11,8 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.user import ROLE_MAP
 from app.schemas.auth import AuthUser
+
+logger = logging.getLogger(__name__)
 
 # JWT 설정
 SECRET_KEY = "rcs-secret-key-change-in-production"
@@ -44,18 +48,21 @@ def authenticate_user(db: Session, login_id: str, password: str) -> tuple[User, 
     """login_id + 비밀번호로 사용자 인증"""
     user = db.query(User).filter(User.login_id == login_id).first()
     if not user:
+        logger.warning(f"[Auth] 로그인 실패 — 존재하지 않는 아이디: '{login_id}'")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="존재하지 않는 아이디입니다.",
         )
 
     if not user.is_active:
+        logger.warning(f"[Auth] 로그인 실패 — 비활성화된 계정: '{login_id}'")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="비활성화된 계정입니다.",
         )
 
     if not bcrypt.verify(password, user.password_hash):
+        logger.warning(f"[Auth] 로그인 실패 — 비밀번호 오류: '{login_id}'")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="비밀번호가 올바르지 않습니다.",
@@ -88,3 +95,15 @@ def get_current_user(
         role=role_code,
         role_name=ROLE_MAP.get(role_code, "Unknown"),
     )
+
+
+def require_admin(
+    current_user: AuthUser = Depends(get_current_user),
+) -> AuthUser:
+    """관리자(role=1) 전용 Dependency"""
+    if current_user.role != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+    return current_user

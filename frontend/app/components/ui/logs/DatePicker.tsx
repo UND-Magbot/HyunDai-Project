@@ -109,8 +109,12 @@ export function DatePicker({
   }, [tempDate, onChange]);
 
   const handleClear = useCallback(() => {
-    setTempDate(null);
-    onChange(null);
+    const t = todayStr();
+    setTempDate(t);
+    const now = new Date();
+    setViewYear(now.getFullYear());
+    setViewMonth(now.getMonth());
+    onChange(t);
     setIsOpen(false);
     setShowMyPicker(false);
   }, [onChange]);

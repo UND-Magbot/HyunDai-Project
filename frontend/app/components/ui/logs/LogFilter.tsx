@@ -2,6 +2,7 @@
 
 import { DatePicker } from "./DatePicker";
 import { TimeRangePicker } from "./TimeRangePicker";
+import { useAlert } from "@/lib/context/AlertContext";
 import type { LogFilterState, ErrorCategory } from "@/lib/types/logs";
 import "./LogFilter.css";
 
@@ -20,8 +21,28 @@ export function LogFilter({
   onSearch,
   onReset,
 }: LogFilterProps) {
+  const { showInfo } = useAlert();
+
   const update = (patch: Partial<LogFilterState>) => {
     onFilterChange({ ...filters, ...patch });
+  };
+
+  const handleStartDateChange = (date: string | null) => {
+    const newStart = date ?? filters.startDate;
+    if (newStart > filters.endDate) {
+      showInfo("알림", "시작일은 종료일 이후로 설정할 수 없습니다.");
+      return;
+    }
+    update({ startDate: newStart });
+  };
+
+  const handleEndDateChange = (date: string | null) => {
+    const newEnd = date ?? filters.endDate;
+    if (newEnd < filters.startDate) {
+      showInfo("알림", "종료일은 시작일 이전으로 설정할 수 없습니다.");
+      return;
+    }
+    update({ endDate: newEnd });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -60,10 +81,19 @@ export function LogFilter({
       </div>
 
       <div className="log-filter__field">
-        <label className="log-filter__label">조회 날짜</label>
+        <label className="log-filter__label">시작일</label>
         <DatePicker
-          value={filters.date}
-          onChange={(date) => update({ date })}
+          value={filters.startDate}
+          onChange={handleStartDateChange}
+        />
+      </div>
+
+      <div className="log-filter__field">
+        <label className="log-filter__label">종료일</label>
+        <DatePicker
+          value={filters.endDate}
+          onChange={handleEndDateChange}
+          popupAlign="right"
         />
       </div>
 
@@ -73,7 +103,6 @@ export function LogFilter({
           startTime={filters.startTime}
           endTime={filters.endTime}
           onChange={(startTime, endTime) => update({ startTime, endTime })}
-          disabled={!filters.date}
         />
       </div>
 

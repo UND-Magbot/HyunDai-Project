@@ -1501,10 +1501,6 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                 logger.info(f"[Robot {robot_id}] [구간 {seg_idx + 1}/{len(segments)}] "
                             f"{'→'.join(wp_names + [target.name])} "
                             f"(target={tx},{ty}, route={route_coords})")
-                log_activity("task", "segment_move",
-                             f"로봇 '{robot_name}' {target.name}(으)로 이동 중 (구간 {seg_idx + 1}/{len(segments)})",
-                             robot_id=robot_id, robot_name=robot_name, source="_task_runner")
-
                 # 이동 실행 (최대 3회 재시도)
                 max_retries = 3
                 result = ""

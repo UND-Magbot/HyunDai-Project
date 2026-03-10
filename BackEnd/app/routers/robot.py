@@ -243,8 +243,13 @@ def api_get_min_battery(sn: str, db: Session = Depends(get_db)):
 def api_update_min_battery(sn: str, data: MinBatteryUpdate, db: Session = Depends(get_db)):
     """SN 기반 최소 배터리 수정"""
     result = update_min_battery_by_sn(db, sn, data)
+    changes = [f"최소배터리={data.min_battery}%"]
+    if data.charging_id is not None:
+        changes.append(f"충전소 변경(ID={data.charging_id})")
+    if data.standby_id is not None:
+        changes.append(f"귀환장소 변경(ID={data.standby_id})")
     log_activity("robot", "battery_setting",
-                 f"로봇 {sn} 배터리 설정 변경",
+                 f"로봇 {sn} 설정 변경 — {', '.join(changes)}",
                  source="api_update_min_battery")
     return result
 

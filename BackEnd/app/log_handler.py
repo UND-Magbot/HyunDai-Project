@@ -21,7 +21,11 @@ class DBLogHandler(logging.Handler):
         "sqlalchemy",
         "pymysql",
         "app.log_handler",
+        "uvicorn.access",   # HTTP 요청 접속 로그 제외 (하루 수만 건)
     })
+
+    # WARNING 미만(INFO, DEBUG)은 DB에 저장하지 않음
+    MIN_LEVEL = logging.WARNING
 
     def __init__(self):
         super().__init__()
@@ -30,6 +34,10 @@ class DBLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         # 재귀 방지
         if getattr(self._local, "is_writing", False):
+            return
+
+        # INFO/DEBUG 제외 — WARNING 이상만 DB 저장
+        if record.levelno < self.MIN_LEVEL:
             return
 
         # DB 엔진·커넥션 풀 로그 스킵

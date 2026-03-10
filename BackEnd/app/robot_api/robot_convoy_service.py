@@ -29,7 +29,6 @@ from app.robot_api.robot_task_service import (
     _wait_for_move_http,
     _get_battery_percentage,
     _get_move_lock,
-    _get_session,
     _lock as _task_lock,
     _confirm_events,
     _run_info,
@@ -207,6 +206,7 @@ _convoy_return_requested: set[int] = set()   # 시간 기반 복귀 요청된 ro
 _convoy_hourly_timer: Optional[threading.Timer] = None  # 1시간 배터리 체크 타이머
 _convoy_hotswap_threads: list[threading.Thread] = []    # hot swap으로 투입된 워커 스레드 목록
 _convoy_map_id: int | None = None                        # 현재 convoy 작업 맵 ID
+_fire_event = threading.Event()                           # 화재 경보 이벤트
 
 CONVOY_BATTERY_CHECK_INTERVAL = 3600  # 1시간(초)
 
@@ -355,7 +355,7 @@ def force_stop_convoy() -> tuple[bool, str]:
     for t in cancel_threads:
         t.join(timeout=6.0)
 
-    logger.info("[Convoy] 즉시 정지 완료 — 모든 이동 취소됨")
+    logger.warning("[Convoy] 즉시 정지 완료 — 모든 이동 취소됨")
     log_activity("convoy", "convoy_force_stop",
                  "Convoy 즉시 정지 — 모든 로봇 이동 취소",
                  source="force_stop_convoy")
@@ -404,6 +404,9 @@ def _trigger_standby_robot() -> bool:
     with _convoy_lock:
         _convoy_hotswap_threads.append(t)
     logger.info(f"[Convoy Hot Swap] 로봇 {rc['robot_id']} 워커 스레드 시작 완료")
+    log_activity("convoy", "hot_swap_deploy",
+                 f"Convoy Hot Swap — 대기 로봇 {rc['robot_id']} 투입",
+                 robot_id=rc["robot_id"], source="_trigger_standby_robot")
     return True
 
 
@@ -913,47 +916,15 @@ def _convoy_robot_worker(
             current_poi = work_pois[current_node]
             next_stop_name = _find_next_stop(work_pois, current_node, stop_set)
 
-            # ── 다음 노드 점유 대기 (모든 로봇에 대해 확인) ──
-            waited = False
-            while not stop_event.is_set():
-                with _convoy_lock:
-                    occupied = any(
-                        pos == next_node
-                        for rid, pos in _convoy_node_positions.items()
-                        if rid != robot_id
-                    )
-                if not occupied:
-                    break
-                if not waited:
-                    with _task_lock:
-                        _run_info[robot_id] = {
-                            "status": "running", "loop": loop_count,
-                            "current_poi": current_poi.name,
-                            "next_stop": next_stop_name,
-                            "message": f"{next_poi.name} 대기 중",
-                        }
-                    waited = True
-                time.sleep(0.5)
-
             if stop_event.is_set():
                 break
 
-            # ── 대기 후 2초 딜레이 + WS 재연결 (센서 간섭 방지) ──
-            if waited:
-                time.sleep(2.0)
-                cancel_and_verify(robot_ip)
-
-            # WS 재연결
-            try:
-                if ws:
-                    ws.close()
-            except Exception:
-                pass
-            ws = None
-            try:
-                ws = _create_planning_ws(robot_ip)
-            except Exception as e:
-                logger.warning(f"[Robot {robot_id}] 이동 전 WS 재연결 실패 — HTTP 폴백: {e}")
+            # WS 없으면 재연결 (에러 발생 시에만 ws가 None으로 초기화됨)
+            if ws is None:
+                try:
+                    ws = _create_planning_ws(robot_ip)
+                except Exception as e:
+                    logger.warning(f"[Robot {robot_id}] 이동 전 WS 재연결 실패 — HTTP 폴백: {e}")
 
             # ── 이동 (현재 노드 → 다음 노드) ──
             cx = current_poi.world_x if current_poi.world_x is not None else current_poi.x
@@ -1307,6 +1278,9 @@ def _convoy_robot_worker(
                         "status": "standby",
                         "message": "대기지점 복귀 완료",
                     }
+                log_activity("convoy", "robot_standby_arrive",
+                             f"로봇 {robot_id} 대기지점 복귀 완료",
+                             robot_id=robot_id, source="_convoy_robot_worker")
                 # 대기지점 도착 완료 후 대기 로봇 투입
                 if low_battery_break and not stop_event.is_set() and not graceful_event.is_set():
                     logger.info(f"[Robot {robot_id}] 대기지점 도착 완료 → 대기 로봇 투입")
@@ -1322,6 +1296,9 @@ def _convoy_robot_worker(
                         "status": "charging",
                         "message": "충전 중",
                     }
+                log_activity("convoy", "robot_charging_arrive",
+                             f"로봇 {robot_id} 충전소 복귀 완료 — 충전 시작",
+                             robot_id=robot_id, source="_convoy_robot_worker")
                 # 충전 도킹 명령 후 대기 로봇 투입
                 if low_battery_break and not stop_event.is_set() and not graceful_event.is_set():
                     logger.info(f"[Robot {robot_id}] 충전소 도킹 완료 → 대기 로봇 투입")
@@ -1355,6 +1332,9 @@ def _convoy_robot_worker(
     except Exception as e:
         logger.exception(f"[Robot {robot_id}] 워커 예외: {e}")
         _update_robot_status(robot_id, "error", message=str(e))
+        log_activity("convoy", "robot_worker_error",
+                     f"로봇 {robot_id} 워커 에러: {e}",
+                     robot_id=robot_id, source="_convoy_robot_worker")
         arrival_event.set()  # 뒤 로봇 블록 방지
         return_ready_event.set()
     finally:
@@ -1379,6 +1359,376 @@ def _update_robot_status(robot_id: int, status: str, **kwargs):
     """convoy 로봇 상태 업데이트"""
     with _convoy_lock:
         _convoy_robot_status[robot_id] = {"status": status, **kwargs}
+
+
+# ─── 화재 대피 ─────────────────────────────────────────────────────────────────
+
+def _get_tracked_pose(robot_ip: str) -> tuple[float, float] | None:
+    """WS /tracked_pose로 로봇 실제 현재 좌표 조회"""
+    try:
+        ws = _create_planning_ws(robot_ip)
+        import json as _json
+        ws.send(_json.dumps({"enable_topic": "/tracked_pose"}))
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            raw = ws.recv()
+            if not raw:
+                continue
+            pkt = _json.loads(raw)
+            if pkt.get("topic") == "/tracked_pose":
+                pos = pkt.get("pos", [])
+                if len(pos) >= 2:
+                    ws.close()
+                    return float(pos[0]), float(pos[1])
+        ws.close()
+    except Exception as e:
+        logger.warning(f"[Fire/{robot_ip}] tracked_pose 조회 실패: {e}")
+    return None
+
+
+def _determine_safe_side(robot_id: int, robot_ip: str) -> str:
+    """로봇 실제 현재 좌표(/tracked_pose) vs 방화벽 선분 cross product → 'L' 또는 'R'
+    ORDER BY name으로 FW1→FW2 방향 고정"""
+    db = SessionLocal()
+    try:
+        map_id = _convoy_map_id
+
+        fw_pois = db.query(MapPOI).filter(
+            MapPOI.map_id == map_id,
+            MapPOI.is_active == True,
+            MapPOI.poi_type == "firewall",
+        ).order_by(MapPOI.name).limit(2).all()
+
+        if len(fw_pois) >= 2:
+            fx1 = float(fw_pois[0].world_x or fw_pois[0].x or 0)
+            fy1 = float(fw_pois[0].world_y or fw_pois[0].y or 0)
+            fx2 = float(fw_pois[1].world_x or fw_pois[1].x or 0)
+            fy2 = float(fw_pois[1].world_y or fw_pois[1].y or 0)
+
+            pos = _get_tracked_pose(robot_ip)
+            if pos:
+                rx, ry = pos
+                cross = (fx2 - fx1) * (ry - fy1) - (fy2 - fy1) * (rx - fx1)
+                side = "R" if cross >= 0 else "L"
+                logger.info(
+                    f"[Fire/Robot {robot_id}] 실제위치({rx:.2f},{ry:.2f}) "
+                    f"cross={cross:.3f} → {side}측"
+                )
+                return side
+    except Exception as e:
+        logger.warning(f"[Fire/Robot {robot_id}] 사이드 판단 실패: {e}")
+    finally:
+        db.close()
+
+    # fallback: convoy 투입 순서
+    with _convoy_lock:
+        ids = [rc["robot_id"] for rc in _convoy_robots]
+    n = len(ids)
+    idx = ids.index(robot_id) if robot_id in ids else 0
+    side = "L" if idx < n / 2 else "R"
+    logger.warning(f"[Fire/Robot {robot_id}] fallback 순서({idx}/{n}) → {side}측")
+    return side
+
+
+def _evacuate_robot(rc: dict, side_counter: dict, side_lock: threading.Lock):
+    """개별 로봇 대피 스레드"""
+    robot_id = rc["robot_id"]
+    robot_ip = rc["ip"]
+
+    # 1. 이동 취소
+    try:
+        cancel_and_verify(robot_ip)
+    except Exception as e:
+        logger.warning(f"[Fire/Robot {robot_id}] cancel 실패: {e}")
+    time.sleep(3.0)
+
+    # 2. SAFE POI 결정
+    side = _determine_safe_side(robot_id, robot_ip)
+    with side_lock:
+        side_counter[side] = side_counter.get(side, 0) + 1
+        num = side_counter[side]
+    safe_poi_name = f"SAFE-{side}-{num}"
+
+    # 3. SAFE POI 좌표 조회
+    db = SessionLocal()
+    try:
+        safe_poi = db.query(MapPOI).filter(
+            MapPOI.name == safe_poi_name,
+            MapPOI.is_active == True,
+            MapPOI.map_id == _convoy_map_id,
+        ).first()
+        if not safe_poi:
+            logger.error(f"[Fire/Robot {robot_id}] SAFE POI '{safe_poi_name}' 없음")
+            _update_robot_status(robot_id, "error", message=f"{safe_poi_name} 없음")
+            return
+        tx = float(safe_poi.world_x if safe_poi.world_x is not None else safe_poi.x)
+        ty = float(safe_poi.world_y if safe_poi.world_y is not None else safe_poi.y)
+        t_angle = float(safe_poi.angle or 0.0)
+    except Exception as e:
+        logger.error(f"[Fire/Robot {robot_id}] POI 조회 실패: {e}")
+        return
+    finally:
+        db.close()
+
+    # 4. 이동
+    _update_robot_status(robot_id, "evacuating", current_poi=safe_poi_name)
+    logger.info(f"[Fire/Robot {robot_id}] 대피 시작: {safe_poi_name} ({tx:.2f}, {ty:.2f})")
+
+    move_lock = _get_move_lock(robot_id)
+    stop_event = threading.Event()  # 대피는 외부 중단 없음
+    ws = None
+    try:
+        ws = _create_planning_ws(robot_ip)
+    except Exception:
+        pass
+
+    ws, result, _ = _execute_move(
+        robot_id, robot_ip, tx, ty, t_angle,
+        "", ws, move_lock, stop_event, max_retries=2
+    )
+
+    if result == "success":
+        _update_robot_status(robot_id, "evacuated", current_poi=safe_poi_name)
+        logger.info(f"[Fire/Robot {robot_id}] 대피 완료: {safe_poi_name}")
+    else:
+        logger.error(f"[Fire/Robot {robot_id}] 대피 실패: {result}")
+        _update_robot_status(robot_id, "error", message=f"대피 실패({result})")
+
+    if ws:
+        try:
+            ws.close()
+        except Exception:
+            pass
+
+
+def fire_evacuate() -> tuple[bool, str]:
+    """화재 경보 수신 → 모든 convoy 로봇 대피 (SAFE-L/R-N으로 이동)"""
+    global _convoy_phase
+
+    _fire_event.set()
+
+    with _convoy_lock:
+        if _convoy_phase == "idle":
+            return False, "convoy가 실행 중이 아닙니다"
+        robots = _convoy_robots[:]
+        prev_phase = _convoy_phase
+        _convoy_phase = "evacuating"
+
+    logger.warning(f"[Fire] 화재 경보 발령 — convoy {len(robots)}대 대피 시작 (이전 phase={prev_phase})")
+
+    # convoy 루프 중단
+    if _convoy_stop_event:
+        _convoy_stop_event.set()
+
+    # 각 로봇 대피 스레드 실행
+    side_counter: dict[str, int] = {}
+    side_lock = threading.Lock()
+    threads = []
+    for rc in robots:
+        t = threading.Thread(
+            target=_evacuate_robot,
+            args=(rc, side_counter, side_lock),
+            daemon=True,
+        )
+        t.start()
+        threads.append(t)
+
+    return True, f"{len(robots)}대 로봇 대피 시작"
+
+
+def reset_fire() -> None:
+    """화재 해제 (상태 초기화)"""
+    _fire_event.clear()
+    global _convoy_phase
+    with _convoy_lock:
+        if _convoy_phase == "evacuating":
+            _convoy_phase = "stopped"
+
+
+def _return_robot_simple(rc: dict):
+    """비상정지 후 개별 로봇을 충전소/대기지점으로 복귀 (표준 내비게이션)"""
+    robot_id = rc["robot_id"]
+    robot_ip = rc["ip"]
+    move_lock = _get_move_lock(robot_id)
+    stop_event = threading.Event()  # 이 복귀 전용 stop_event
+    ws = None
+
+    _update_robot_status(robot_id, "returning", message="비상정지 후 복귀 중")
+    with _task_lock:
+        _run_info[robot_id] = {"status": "returning", "message": "비상정지 후 복귀 중"}
+
+    try:
+        dest_poi = None
+        dest_type = None
+
+        db = SessionLocal()
+        try:
+            robot_row = db.query(Robot).filter(Robot.id == robot_id).first()
+            if not robot_row:
+                logger.warning(f"[ReturnAll/Robot {robot_id}] DB 로봇 없음")
+                return
+
+            # convoy_map_id 우선, 없으면 최신 활성 맵 자동 탐지
+            map_id = _convoy_map_id
+            if not map_id:
+                latest_map = db.query(RobotMap).filter(
+                    RobotMap.is_active == True
+                ).order_by(RobotMap.id.desc()).first()
+                if latest_map:
+                    map_id = latest_map.id
+            if not map_id:
+                logger.warning(f"[ReturnAll/Robot {robot_id}] 활성 맵 없음 — 복귀 불가")
+                _update_robot_status(robot_id, "error", message="활성 맵 없음")
+                return
+
+            # 복귀 목적지 결정 (standby 우선)
+            if robot_row.standby_id:
+                ref = db.query(MapPOI).filter(MapPOI.id == robot_row.standby_id).first()
+                if ref:
+                    poi = db.query(MapPOI).filter(
+                        MapPOI.name == ref.name, MapPOI.is_active == True,
+                        MapPOI.map_id == map_id,
+                    ).first()
+                    if poi:
+                        db.expunge(poi)
+                        dest_poi = poi
+                        dest_type = "standby"
+
+            if not dest_poi and robot_row.charging_id:
+                ref = db.query(MapPOI).filter(MapPOI.id == robot_row.charging_id).first()
+                if ref:
+                    poi = db.query(MapPOI).filter(
+                        MapPOI.name == ref.name, MapPOI.is_active == True,
+                        MapPOI.map_id == map_id,
+                    ).first()
+                    if poi:
+                        db.expunge(poi)
+                        dest_poi = poi
+                        dest_type = "charging"
+
+            if not dest_poi:
+                logger.warning(f"[ReturnAll/Robot {robot_id}] 복귀 목적지 없음 (standby_id={robot_row.standby_id}, charging_id={robot_row.charging_id})")
+                _update_robot_status(robot_id, "error", message="복귀 목적지 없음")
+                return
+
+            # ENTER-LAST 경유 POI 조회
+            entry_last = db.query(MapPOI).filter(
+                MapPOI.name == "ENTER-LAST", MapPOI.is_active == True,
+                MapPOI.map_id == map_id,
+            ).first()
+            if entry_last:
+                db.expunge(entry_last)
+
+            dest_name_1 = f"{dest_poi.name}-1"
+            dest_approach = db.query(MapPOI).filter(
+                MapPOI.name == dest_name_1, MapPOI.is_active == True,
+                MapPOI.map_id == map_id,
+            ).first()
+            if dest_approach:
+                db.expunge(dest_approach)
+
+            waypoints = [p for p in [entry_last, dest_approach] if p]
+            all_pois = waypoints + [dest_poi]
+            _ensure_world_coords(db, all_pois, robot_id)
+        finally:
+            db.close()
+
+        # ── 이미 목적지 근처면 이동 생략 ──
+        dx = dest_poi.world_x if dest_poi.world_x is not None else dest_poi.x
+        dy = dest_poi.world_y if dest_poi.world_y is not None else dest_poi.y
+        cur_pos = _get_tracked_pose(robot_ip)
+        if cur_pos:
+            dist = math.sqrt((cur_pos[0] - float(dx)) ** 2 + (cur_pos[1] - float(dy)) ** 2)
+            if dist < 1.0:
+                logger.info(f"[ReturnAll/Robot {robot_id}] 이미 목적지({dest_poi.name}) 근처 (dist={dist:.2f}m) — 이동 생략")
+                _update_robot_status(robot_id, "standby" if dest_type == "standby" else "charging",
+                                     message="이미 목적지에 있음")
+                with _task_lock:
+                    _run_info[robot_id] = {"status": "standby" if dest_type == "standby" else "charging",
+                                           "message": "이미 목적지에 있음"}
+                return
+
+        ws = _create_planning_ws(robot_ip)
+
+        # 경유 POI 순서대로 표준 내비게이션 이동
+        for poi in waypoints:
+            px = poi.world_x if poi.world_x is not None else poi.x
+            py = poi.world_y if poi.world_y is not None else poi.y
+            p_angle = poi.angle if poi.angle is not None else 0.0
+            ws, result, _ = _execute_move(
+                robot_id, robot_ip, px, py, p_angle, "",
+                ws, move_lock, stop_event)
+            if result != "succeeded":
+                logger.warning(f"[ReturnAll/Robot {robot_id}] 경유 {poi.name} 이동 실패: {result}")
+
+        # 최종 목적지 이동
+        tx = dest_poi.world_x if dest_poi.world_x is not None else dest_poi.x
+        ty = dest_poi.world_y if dest_poi.world_y is not None else dest_poi.y
+        t_angle = dest_poi.angle if dest_poi.angle is not None else 0.0
+
+        if dest_type == "standby":
+            ws, result, _ = _execute_move(
+                robot_id, robot_ip, tx, ty, t_angle, "",
+                ws, move_lock, stop_event)
+            if result == "succeeded":
+                _update_robot_status(robot_id, "standby", message="대기지점 복귀 완료")
+                with _task_lock:
+                    _run_info[robot_id] = {"status": "standby", "message": "대기지점 복귀 완료"}
+            else:
+                logger.warning(f"[ReturnAll/Robot {robot_id}] 대기지점 이동 실패: {result}")
+                _update_robot_status(robot_id, "error", message=f"복귀 실패: {result}")
+        else:
+            time.sleep(1)
+            send_charge(robot_ip, charger_name=dest_poi.name)
+            _update_robot_status(robot_id, "charging", message="충전 중")
+            with _task_lock:
+                _run_info[robot_id] = {"status": "charging", "message": "충전 중"}
+
+        logger.info(f"[ReturnAll/Robot {robot_id}] 복귀 완료 ({dest_type}: {dest_poi.name})")
+
+    except Exception as e:
+        logger.exception(f"[ReturnAll/Robot {robot_id}] 복귀 예외: {e}")
+        _update_robot_status(robot_id, "error", message=str(e))
+    finally:
+        if ws:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+
+def return_all_convoy(interval: float = 7.0) -> tuple[bool, str]:
+    """비상정지 후 전체 복귀 — DB에서 활성 로봇 조회 후 1대씩 interval초 간격으로 순차 출발"""
+    db = SessionLocal()
+    try:
+        active_robots = db.query(Robot).filter(
+            Robot.is_active == True,
+            Robot.ip_address.isnot(None),
+        ).all()
+
+        robots_info = []
+        for r in active_robots:
+            if r.ip_address:
+                robots_info.append({"robot_id": r.id, "ip": r.ip_address})
+    finally:
+        db.close()
+
+    if not robots_info:
+        return False, "복귀할 로봇이 없습니다 (활성 로봇 없음)"
+
+    def _sequential_return():
+        for i, rc in enumerate(robots_info):
+            if i > 0:
+                time.sleep(interval)
+            logger.info(f"[ReturnAll] 로봇 {rc['robot_id']} 복귀 출발 ({i + 1}/{len(robots_info)})")
+            t = threading.Thread(target=_return_robot_simple, args=(rc,), daemon=True)
+            t.start()
+
+    threading.Thread(target=_sequential_return, daemon=True).start()
+    log_activity("convoy", "convoy_return_all",
+                 f"비상정지 후 전체 복귀 시작 ({len(robots_info)}대, 간격 {interval}초)",
+                 source="return_all_convoy")
+    return True, f"{len(robots_info)}대 순차 복귀 시작 (간격 {interval}초)"
 
 
 def _execute_move(
