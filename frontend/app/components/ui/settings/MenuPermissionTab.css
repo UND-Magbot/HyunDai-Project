@@ -278,6 +278,14 @@
   margin-bottom: var(--space-1);
 }
 
+.menu-tree__item--child {
+  padding-left: calc(var(--space-3) + 16px);
+  color: var(--text-muted);
+  font-size: calc(var(--font-size-sm) - 1px);
+  border-left: 2px solid var(--divider);
+  margin-left: var(--space-3);
+}
+
 .menu-tree__checkbox {
   accent-color: var(--color-primary);
   width: 16px;

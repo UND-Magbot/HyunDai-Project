@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.robot_api.robot_convoy_service import fire_evacuate
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/acs", tags=["ACS 인터페이스"])
@@ -23,7 +25,8 @@ def receive_fire_info(body: FireInfoRequest):
     data = body.model_dump()
     logger.warning(f"[ACS] 화재 경보 수신: {data}")
 
-    # TODO: 화재 수신 시 로봇 동작 정의 (일시 정지, 대피 등) WCS 협의 후 구현
+    ok, msg = fire_evacuate()
+    logger.warning(f"[ACS] 대피 시작: {msg} (ok={ok})")
 
     return {
         "httpStatus": "OK",

@@ -12,14 +12,31 @@ export async function apiFetch<T = unknown>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
+  // localStorage는 브라우저 환경에서만 접근 가능
+  const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (!headers["Content-Type"] && options?.body) headers["Content-Type"] = "application/json";
+
   let res: Response;
   try {
-    res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}${path}`,
-      options
-    );
+    res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
+      ...options,
+      headers,
+    });
   } catch (err) {
     throw new ApiError("서버에 연결하지 못했습니다.", "NET-001");
+  }
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("auth_token");
+      window.location.href = "/auth/login";
+    }
+    throw new ApiError("인증이 만료되었습니다. 다시 로그인해 주세요.", "AUTH-401");
   }
 
   if (!res.ok) {

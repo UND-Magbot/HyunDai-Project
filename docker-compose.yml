@@ -15,6 +15,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./BackEnd/static:/app/static
+      - /home/und/app/backups:/home/und/app/backups
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]

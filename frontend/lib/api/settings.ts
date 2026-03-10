@@ -137,6 +137,7 @@ export async function getMyMenuPermissions(): Promise<MenuPermissionItem[]> {
     menuLabel: m.menu_name,
     isAllowed: allowedIds.has(m.id),
     menuId: m.id,
+    parentId: m.parent_id,
   }));
 }
 
@@ -161,6 +162,7 @@ export async function getMenuPermissions(
     menuLabel: m.menu_name,
     isAllowed: allowedIds.has(m.id),
     menuId: m.id,
+    parentId: m.parent_id,
   }));
 }
 
