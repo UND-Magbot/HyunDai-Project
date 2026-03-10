@@ -34,7 +34,7 @@ export type RouteSegment = {
   from: MapPixelCoord;
   to: MapPixelCoord;
   direction: "forward" | "backward" | "bidirectional";
-  lineType: "straight" | "curve";
+  lineType: "straight" | "curve" | "firewall";
   controlPoints?: MapPixelCoord[];
 };
 

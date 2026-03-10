@@ -281,6 +281,39 @@ export function MapCanvas({
 
             const isSelected = false;
 
+            // ── 방화벽: 틱마크 배리어 렌더링 ──────────────────────────
+            if (line.lineType === "firewall") {
+              const dx = to.x - from.x;
+              const dy = to.y - from.y;
+              const len = Math.sqrt(dx * dx + dy * dy);
+              if (len === 0) return null;
+              const ux = dx / len; const uy = dy / len;
+              const px = -uy;    const py = ux;
+              const STEP = 7; const H = 5;
+              const ticks: { x1: number; y1: number; x2: number; y2: number }[] = [];
+              for (let t = 0; t <= len; t += STEP) {
+                const cx = from.x + ux * t;
+                const cy = from.y + uy * t;
+                ticks.push({ x1: cx - px * H, y1: cy - py * H, x2: cx + px * H, y2: cy + py * H });
+              }
+              return (
+                <g
+                  key={line.id}
+                  className="map-line"
+                  onClick={(e) => { e.stopPropagation(); onLineClick(line.id); }}
+                >
+                  {/* 중심선 */}
+                  <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="map-line__path--firewall-axis" />
+                  {/* 수직 틱마크 */}
+                  {ticks.map((t, i) => (
+                    <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} className="map-line__path--firewall-tick" />
+                  ))}
+                  {/* 클릭 영역 */}
+                  <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="transparent" strokeWidth={12} />
+                </g>
+              );
+            }
+
             return (
               <g
                 key={line.id}
@@ -296,9 +329,7 @@ export function MapCanvas({
                   x2={to.x}
                   y2={to.y}
                   className={
-                    line.lineType === "firewall"
-                      ? "map-line__path--firewall"
-                      : isSelected
+                    isSelected
                       ? "map-line__path map-line__path--selected"
                       : "map-line__path"
                   }
@@ -312,12 +343,10 @@ export function MapCanvas({
                   stroke="transparent"
                   strokeWidth={12}
                 />
-                {/* Direction arrows — 방화벽 라인은 화살표 없음 */}
-                {line.lineType !== "firewall" && (line.direction === "forward" ||
-                  line.direction === "bidirectional") &&
+                {/* Direction arrows */}
+                {(line.direction === "forward" || line.direction === "bidirectional") &&
                   renderArrow(from.x, from.y, to.x, to.y, line.id, "fwd", isSelected)}
-                {line.lineType !== "firewall" && (line.direction === "backward" ||
-                  line.direction === "bidirectional") &&
+                {(line.direction === "backward" || line.direction === "bidirectional") &&
                   renderArrow(to.x, to.y, from.x, from.y, line.id, "bwd", isSelected)}
               </g>
             );
