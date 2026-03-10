@@ -396,6 +396,41 @@ function drawRouteSegment(
   resetShadow(ctx);
 }
 
+function drawFirewallSegment(
+  ctx: CanvasRenderingContext2D,
+  seg: RouteSegment,
+  bounds: MapBounds
+) {
+  const from = mapToCanvas(seg.from.x, seg.from.y, bounds);
+  const to = mapToCanvas(seg.to.x, seg.to.y, bounds);
+  const dx = to.cx - from.cx;
+  const dy = to.cy - from.cy;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return;
+  const ux = dx / len; const uy = dy / len;
+  const px = -uy;    const py = ux;
+  const STEP = 10; const H = 7;
+
+  ctx.strokeStyle = "rgba(255, 60, 60, 0.9)";
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = "round";
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(from.cx, from.cy);
+  ctx.lineTo(to.cx, to.cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (let t = 0; t <= len; t += STEP) {
+    const cx = from.cx + ux * t;
+    const cy = from.cy + uy * t;
+    ctx.beginPath();
+    ctx.moveTo(cx - px * H, cy - py * H);
+    ctx.lineTo(cx + px * H, cy + py * H);
+    ctx.stroke();
+  }
+}
+
 function drawRoutes(
   ctx: CanvasRenderingContext2D,
   data: DrawData,
@@ -406,19 +441,29 @@ function drawRoutes(
   const ROUTE_ALPHA = 0.35;
 
   if (segments.length > 0) {
-    // 오프스크린 캔버스에 불투명으로 그린 뒤 한 번에 합성 → 노드 겹침 제거
-    const offCanvas = document.createElement("canvas");
-    offCanvas.width = ctx.canvas.width;
-    offCanvas.height = ctx.canvas.height;
-    const offCtx = offCanvas.getContext("2d");
-    if (offCtx) {
-      for (const seg of segments) {
-        drawRouteSegment(offCtx, seg, bounds, "rgb(25, 188, 126)", ROUTE_WIDTH);
+    const normalSegs = segments.filter((s) => s.lineType !== "firewall");
+    const firewallSegs = segments.filter((s) => s.lineType === "firewall");
+
+    // 일반 경로: 오프스크린 캔버스에 불투명으로 그린 뒤 한 번에 합성
+    if (normalSegs.length > 0) {
+      const offCanvas = document.createElement("canvas");
+      offCanvas.width = ctx.canvas.width;
+      offCanvas.height = ctx.canvas.height;
+      const offCtx = offCanvas.getContext("2d");
+      if (offCtx) {
+        for (const seg of normalSegs) {
+          drawRouteSegment(offCtx, seg, bounds, "rgb(25, 188, 126)", ROUTE_WIDTH);
+        }
+        ctx.save();
+        ctx.globalAlpha = ROUTE_ALPHA;
+        ctx.drawImage(offCanvas, 0, 0);
+        ctx.restore();
       }
-      ctx.save();
-      ctx.globalAlpha = ROUTE_ALPHA;
-      ctx.drawImage(offCanvas, 0, 0);
-      ctx.restore();
+    }
+
+    // 방화벽: 틱마크 배리어로 표시
+    for (const seg of firewallSegs) {
+      drawFirewallSegment(ctx, seg, bounds);
     }
   } else {
     // 기존 fallback: routeWaypoints 기반

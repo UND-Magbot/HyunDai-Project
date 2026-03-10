@@ -215,9 +215,16 @@
   filter: drop-shadow(0 0 6px rgba(90, 143, 245, 0.6));
 }
 
-.map-line__path--firewall {
-  stroke: #ff8c00;
-  stroke-width: 2.5;
+.map-line__path--firewall-axis {
+  stroke: #ff3333;
+  stroke-width: 1.5;
+  fill: none;
+  stroke-dasharray: 3 2;
+}
+
+.map-line__path--firewall-tick {
+  stroke: #ff3333;
+  stroke-width: 1.5;
   fill: none;
 }
 

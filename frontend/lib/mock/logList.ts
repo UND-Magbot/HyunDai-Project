@@ -2,8 +2,8 @@ import type { LogItem } from "@/lib/types/logs";
 
 export const mockLogList: LogItem[] = [
   {
-    id: 1,
-    category: "system",
+    id: "s1",
+    display_category: "시스템",
     action: "조회",
     message: 'INFO: 127.0.0.1:63450 - "GET /api/robots/live HTTP/1.1" 200 OK',
     detail: null,
@@ -13,8 +13,8 @@ export const mockLogList: LogItem[] = [
     created_at: "2026-02-11T09:01:12",
   },
   {
-    id: 2,
-    category: "robot",
+    id: "a2",
+    display_category: "로봇",
     action: "상태조회",
     message: 'INFO: 192.168.1.101:8080 - "GET /api/vehicles/AMR-001/full-report HTTP/1.1" 200 OK',
     detail: '{"vehicleSn":"AMR-001","battery":72,"state":"EXECUTING","position":"P-22"}',
@@ -24,8 +24,8 @@ export const mockLogList: LogItem[] = [
     created_at: "2026-02-11T09:01:12",
   },
   {
-    id: 3,
-    category: "system",
+    id: "s3",
+    display_category: "시스템",
     action: "생성",
     message: 'INFO: 127.0.0.1:63450 - "POST /api/transport-orders HTTP/1.1" 201 Created',
     detail: '{"orderId":"TO-1001","robotSn":"AMR-001"}',
@@ -35,8 +35,8 @@ export const mockLogList: LogItem[] = [
     created_at: "2026-02-11T09:01:13",
   },
   {
-    id: 4,
-    category: "robot",
+    id: "a4",
+    display_category: "로봇",
     action: "연결",
     message: 'INFO: 192.168.1.101:8080 - "POST /api/vehicles/AMR-001/connect HTTP/1.1" 200 OK',
     detail: '{"vehicleSn":"AMR-001","state":"Connected"}',
@@ -46,8 +46,8 @@ export const mockLogList: LogItem[] = [
     created_at: "2026-02-11T09:02:05",
   },
   {
-    id: 5,
-    category: "system",
+    id: "s5",
+    display_category: "시스템",
     action: "생성",
     message: 'ERROR: 127.0.0.1:63450 - "POST /api/transport-orders HTTP/1.1" 500 Internal Server Error',
     detail: '{"error":"InvalidDestination","point":"P-99"}',
@@ -57,8 +57,8 @@ export const mockLogList: LogItem[] = [
     created_at: "2026-02-11T09:05:45",
   },
   {
-    id: 6,
-    category: "task",
+    id: "a6",
+    display_category: "사용자",
     action: "로그인",
     message: 'INFO: 10.0.0.52:4200 - "POST /api/auth/login HTTP/1.1" 200 OK',
     detail: '{"user":"admin","role":"administrator"}',
@@ -68,8 +68,8 @@ export const mockLogList: LogItem[] = [
     created_at: "2026-02-11T09:07:12",
   },
   {
-    id: 7,
-    category: "robot",
+    id: "a7",
+    display_category: "로봇",
     action: "배터리조회",
     message: 'WARNING: 192.168.1.102:8080 - Battery level critical (12%)',
     detail: '{"vehicleSn":"AMR-002","battery":12,"threshold":15}',
@@ -79,8 +79,8 @@ export const mockLogList: LogItem[] = [
     created_at: "2026-02-11T09:10:00",
   },
   {
-    id: 8,
-    category: "system",
+    id: "s8",
+    display_category: "시스템",
     action: "조회",
     message: 'INFO: 127.0.0.1:63450 - "GET /api/maps/current HTTP/1.1" 200 OK',
     detail: null,
