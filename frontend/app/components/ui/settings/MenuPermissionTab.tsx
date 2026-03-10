@@ -8,7 +8,6 @@ import {
   fetchUsers,
   getMenuPermissions,
   saveMenuPermissions as apiSavePermissions,
-  downloadDbBackup,
 } from "@/lib/api/settings";
 import type {
   BusinessGroup,
@@ -23,7 +22,6 @@ export function MenuPermissionTab() {
   const [selectedUser, setSelectedUser] = useState<BusinessUser | null>(null);
   const [permissions, setPermissions] = useState<MenuPermissionItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [isBackingUp, setIsBackingUp] = useState(false);
 
   useEffect(() => {
     fetchUsers().then(setGroups).catch(() => {});
@@ -51,31 +49,10 @@ export function MenuPermissionTab() {
     }
   }, [selectedUser, permissions, showInfo]);
 
-  const handleBackup = useCallback(async () => {
-    setIsBackingUp(true);
-    try {
-      await downloadDbBackup();
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      const msg =
-        err instanceof Error ? err.message : "DB 백업에 실패했습니다.";
-      showInfo("알림", msg);
-    } finally {
-      setIsBackingUp(false);
-    }
-  }, [showInfo]);
-
   return (
     <section className="settings-section">
       <div className="menu-perm__header">
         <h2 className="menu-perm__title">메뉴 권한</h2>
-        <button
-          className="menu-perm__action-btn menu-perm__action-btn--backup"
-          disabled={isBackingUp}
-          onClick={handleBackup}
-        >
-          {isBackingUp ? "백업 중..." : "DB 백업 다운로드"}
-        </button>
       </div>
 
       <div className="menu-perm__panels">

@@ -15,7 +15,8 @@ export type LogItem = {
 export type LogFilterState = {
   message: string;
   errorType: ErrorCategory | "";
-  date: string | null;
+  startDate: string;
+  endDate: string;
   startTime: string;
   endTime: string;
 };

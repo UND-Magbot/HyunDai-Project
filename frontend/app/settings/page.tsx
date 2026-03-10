@@ -5,6 +5,7 @@ import { TopBar } from "../components/shell/TopBar";
 import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { MenuPermissionTab } from "../components/ui/settings/MenuPermissionTab";
 import { PasswordChangeTab } from "../components/ui/settings/PasswordChangeTab";
+import { DbBackupTab } from "../components/ui/settings/DbBackupTab";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
 import "./settings.css";
 
@@ -27,7 +28,7 @@ function useUserRole() {
   );
 }
 
-type Tab = "menu-permission" | "password-change";
+type Tab = "menu-permission" | "password-change" | "db-backup";
 
 export default function SettingsPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
@@ -82,6 +83,14 @@ export default function SettingsPage() {
                       메뉴 권한
                     </button>
                   )}
+                  {isAdmin && (
+                    <button
+                      className={`settings-page__tab${activeTab === "db-backup" ? " settings-page__tab--active" : ""}`}
+                      onClick={() => setActiveTab("db-backup")}
+                    >
+                      DB 백업
+                    </button>
+                  )}
                   <button
                     className={`settings-page__tab${activeTab === "password-change" ? " settings-page__tab--active" : ""}`}
                     onClick={() => setActiveTab("password-change")}
@@ -96,6 +105,8 @@ export default function SettingsPage() {
               )}
 
               {activeTab === "password-change" && <PasswordChangeTab />}
+
+              {activeTab === "db-backup" && isAdmin && <DbBackupTab />}
             </div>
           </main>
         </div>
