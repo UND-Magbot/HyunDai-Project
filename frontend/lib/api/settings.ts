@@ -1,6 +1,5 @@
 import { apiFetch } from "@/lib/api";
 import type { BusinessGroup, MenuPermissionItem } from "@/lib/types/settings";
-import { defaultMenuPermissions } from "@/lib/mock/menuPermissions";
 
 // ─── 사용자 목록 ─────────────────────────────────────
 
@@ -57,41 +56,134 @@ export async function fetchUsers(): Promise<BusinessGroup[]> {
 
 // ─── 비밀번호 ────────────────────────────────────────
 
-// TODO: POST /api/auth/verify-password
 export async function verifyPassword(
   password: string
 ): Promise<{ valid: boolean }> {
-  await new Promise((r) => setTimeout(r, 300));
-  return { valid: password !== "wrongpassword" };
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  return apiFetch<{ valid: boolean }>("/api/auth/verify-password", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ password }),
+  });
 }
 
-// TODO: PUT /api/users/{user_id}
 export async function changePassword(
-  _userId: number,
-  _newPassword: string
+  currentPassword: string,
+  newPassword: string
 ): Promise<void> {
-  await new Promise((r) => setTimeout(r, 300));
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  await apiFetch("/api/auth/change-password", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
 }
 
 // ─── 메뉴 권한 ───────────────────────────────────────
 
-// TODO: GET /api/menu-permissions/{user_id}
+interface MenuTreeApiItem {
+  id: number;
+  menu_key: string;
+  menu_name: string;
+  parent_id: number | null;
+  sort_order: number;
+  is_active: boolean;
+  children: MenuTreeApiItem[];
+}
+
+interface MenuListApiResponse {
+  items: MenuTreeApiItem[];
+}
+
+interface PermissionApiResponse {
+  user_id: number;
+  menu_ids: number[];
+  items: { id: number; menu_id: number; menu_key: string; menu_name: string }[];
+}
+
+/** 메뉴 트리를 평탄화 (자식 포함) */
+function flattenMenus(items: MenuTreeApiItem[]): MenuTreeApiItem[] {
+  const result: MenuTreeApiItem[] = [];
+  for (const item of items) {
+    result.push(item);
+    if (item.children?.length) {
+      result.push(...flattenMenus(item.children));
+    }
+  }
+  return result;
+}
+
+export async function getMyMenuPermissions(): Promise<MenuPermissionItem[]> {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const [menuData, permData] = await Promise.all([
+    apiFetch<MenuListApiResponse>("/api/menus", { headers }),
+    apiFetch<PermissionApiResponse>("/api/permissions/me", { headers }),
+  ]);
+
+  const allMenus = flattenMenus(menuData.items);
+  const allowedIds = new Set(permData.menu_ids);
+
+  return allMenus.map((m) => ({
+    menuKey: m.menu_key,
+    menuLabel: m.menu_name,
+    isAllowed: allowedIds.has(m.id),
+    menuId: m.id,
+  }));
+}
+
 export async function getMenuPermissions(
   userId: number
 ): Promise<MenuPermissionItem[]> {
-  await new Promise((r) => setTimeout(r, 200));
-  const stored = localStorage.getItem(`menu_perm_${userId}`);
-  if (stored) return JSON.parse(stored) as MenuPermissionItem[];
-  return defaultMenuPermissions.map((p) => ({ ...p }));
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  // 전체 메뉴 트리 + 해당 사용자 권한을 병렬 조회
+  const [menuData, permData] = await Promise.all([
+    apiFetch<MenuListApiResponse>("/api/menus", { headers }),
+    apiFetch<PermissionApiResponse>(`/api/permissions/${userId}`, { headers }),
+  ]);
+
+  const allMenus = flattenMenus(menuData.items);
+  const allowedIds = new Set(permData.menu_ids);
+
+  return allMenus.map((m) => ({
+    menuKey: m.menu_key,
+    menuLabel: m.menu_name,
+    isAllowed: allowedIds.has(m.id),
+    menuId: m.id,
+  }));
 }
 
-// TODO: PUT /api/menu-permissions/{user_id}
 export async function saveMenuPermissions(
   userId: number,
   permissions: MenuPermissionItem[]
 ): Promise<void> {
-  await new Promise((r) => setTimeout(r, 200));
-  localStorage.setItem(`menu_perm_${userId}`, JSON.stringify(permissions));
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  // isAllowed === true인 항목의 menuId만 추출하여 전송
+  const allowedIds = permissions
+    .filter((p) => p.isAllowed && p.menuId)
+    .map((p) => p.menuId);
+
+  await apiFetch(`/api/permissions/${userId}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ menu_ids: allowedIds }),
+  });
 }
 
 // ─── DB 백업 ─────────────────────────────────────────

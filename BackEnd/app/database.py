@@ -65,9 +65,42 @@ def init_db():
                     conn.execute(text("DROP TABLE convoy_configs"))
 
         Base.metadata.create_all(bind=engine)
+
+        # 메뉴 초기 데이터 시딩
+        _seed_menus()
     except Exception as e:
         print(f"[DB] 데이터베이스 초기화 실패: {e}")
         raise
+
+
+# 좌측 탭 메뉴 초기 데이터 (프론트엔드 SideNav와 일치)
+_DEFAULT_MENUS = [
+    {"menu_key": "monitoring", "menu_name": "모니터링", "sort_order": 1},
+    {"menu_key": "robots",     "menu_name": "로봇관리",  "sort_order": 2},
+    {"menu_key": "logs",       "menu_name": "로그관리",  "sort_order": 3},
+    {"menu_key": "map",        "menu_name": "맵관리",    "sort_order": 4},
+    {"menu_key": "settings",   "menu_name": "설정",      "sort_order": 5},
+]
+
+
+def _seed_menus():
+    """menus 테이블이 비어 있으면 기본 메뉴를 삽입"""
+    from app.models.menu import Menu
+
+    db = SessionLocal()
+    try:
+        if db.query(Menu).first() is not None:
+            return  # 이미 데이터 있으면 스킵
+
+        for item in _DEFAULT_MENUS:
+            db.add(Menu(**item))
+        db.commit()
+        print("[DB] 기본 메뉴 데이터 시딩 완료")
+    except Exception as e:
+        db.rollback()
+        print(f"[DB] 메뉴 시딩 실패: {e}")
+    finally:
+        db.close()
 
 
 def get_db():

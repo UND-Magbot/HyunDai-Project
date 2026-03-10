@@ -88,3 +88,15 @@ def get_current_user(
         role=role_code,
         role_name=ROLE_MAP.get(role_code, "Unknown"),
     )
+
+
+def require_admin(
+    current_user: AuthUser = Depends(get_current_user),
+) -> AuthUser:
+    """관리자(role=1) 전용 Dependency"""
+    if current_user.role != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+    return current_user

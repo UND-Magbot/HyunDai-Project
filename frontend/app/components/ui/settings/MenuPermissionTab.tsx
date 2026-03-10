@@ -38,6 +38,10 @@ export function MenuPermissionTab() {
 
   const handleSave = useCallback(async () => {
     if (!selectedUser) return;
+    if (!permissions.some((p) => p.isAllowed)) {
+      showInfo("알림", "하나 이상의 메뉴 권한을 선택해주세요.");
+      return;
+    }
     setIsSaving(true);
     try {
       await apiSavePermissions(selectedUser.id, permissions);
