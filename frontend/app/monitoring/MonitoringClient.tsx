@@ -443,6 +443,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
     for (const p of rawApiElements.pois) {
       if (hiddenPoiNames.has(p.name)) continue;
+      // SAFE-* 대피 POI 및 방화벽(FW*) 노드는 모니터링 화면에 미표시
+      if (p.name?.startsWith("SAFE-") || p.type === "firewall") continue;
 
       let px = p.x + halfW;
       let py = p.y + halfH;

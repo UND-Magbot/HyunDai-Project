@@ -19,20 +19,15 @@ function formatCreatedAt(raw: string): string {
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }
 
-function toCategoryLabel(category: string): string {
-  if (category === "system") return "시스템";
-  if (category === "robot") return "로봇";
-  return "사용자";
-}
 
 export function LogTable({ logs }: LogTableProps) {
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [overflowIds, setOverflowIds] = useState<Set<number>>(new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [overflowIds, setOverflowIds] = useState<Set<string>>(new Set());
   const [selectedLog, setSelectedLog] = useState<LogItem | null>(null);
-  const msgRefs = useRef<Map<number, HTMLElement>>(new Map());
+  const msgRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const checkOverflows = useCallback(() => {
-    const next = new Set<number>();
+    const next = new Set<string>();
     msgRefs.current.forEach((el, id) => {
       if (el.scrollHeight > el.clientHeight) next.add(id);
     });
@@ -43,7 +38,7 @@ export function LogTable({ logs }: LogTableProps) {
     checkOverflows();
   }, [logs, checkOverflows]);
 
-  const handleRowClick = (id: number) => {
+  const handleRowClick = (id: string) => {
     if (!overflowIds.has(id)) return;
     setExpandedId((prev) => (prev === id ? null : id));
   };
@@ -77,7 +72,7 @@ export function LogTable({ logs }: LogTableProps) {
               logs.map((log) => {
                 const isOverflow = overflowIds.has(log.id);
                 const isExpanded = expandedId === log.id;
-                const categoryLabel = toCategoryLabel(log.category);
+                const categoryLabel = log.display_category;
 
                 return (
                   <tr

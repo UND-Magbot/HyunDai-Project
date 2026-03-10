@@ -1,8 +1,8 @@
 export type ErrorCategory = "시스템" | "로봇" | "사용자";
 
 export type LogItem = {
-  id: number;
-  category: string;
+  id: string;
+  display_category: string;
   action: string;
   message: string;
   detail: string | null;

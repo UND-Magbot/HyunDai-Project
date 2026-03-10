@@ -42,13 +42,11 @@ class DBLogHandler(logging.Handler):
             db = SessionLocal()
             try:
                 log = SystemLog(
-                    level=record.levelname,
-                    logger_name=record.name,
-                    message=self.format(record) if self.formatter else record.getMessage(),
-                    module=record.module,
-                    func_name=record.funcName,
-                    line_no=record.lineno,
-                    exc_text=self._format_exception(record),
+                    category="system",
+                    action=record.levelname.lower(),
+                    message=(self.format(record) if self.formatter else record.getMessage())[:500],
+                    detail=self._format_exception(record),
+                    source=f"{record.name} ({record.module}:{record.lineno})",
                 )
                 db.add(log)
                 db.commit()

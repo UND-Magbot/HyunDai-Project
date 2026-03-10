@@ -1,6 +1,6 @@
-export type MapTool = "select" | "point" | "line" | "curveLine" | "polygon" | "del" | "chargingPile" | "currentPos";
+export type MapTool = "select" | "point" | "line" | "curveLine" | "polygon" | "del" | "chargingPile" | "currentPos" | "firewall";
 
-export type POIType = "waypoint" | "standby" | "charging";
+export type POIType = "waypoint" | "standby" | "charging" | "firewall";
 
 export type LoadType = "normal" | "heavy";
 
@@ -25,7 +25,7 @@ export type PathLine = {
   fromId: string;
   toId: string;
   direction: LineDirection;
-  lineType: "straight" | "curve";
+  lineType: "straight" | "curve" | "firewall";
   controlPoints?: { x: number; y: number }[];
 };
 
@@ -80,6 +80,7 @@ export type MapToolbarTopProps = {
   isFullscreen: boolean;
   onChargingPile: () => void;
   onCurrentPos: () => void;
+  onFirewall: () => void;
 };
 
 export type MapToolbarLeftProps = {

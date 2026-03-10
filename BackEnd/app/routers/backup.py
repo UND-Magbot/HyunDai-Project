@@ -1,26 +1,26 @@
+import io
 import logging
 import subprocess
-import time
+import zipfile
 from datetime import datetime
 
-from fastapi import APIRouter
+import openpyxl
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from app.database import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
+from app.database import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME, get_db
+from app.models.activity_log import ActivityLog
+from app.models.system_log import SystemLog
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/backup", tags=["DB 백업"])
 
 
-@router.get("/db")
-def api_backup_db():
-    """DB 전체 백업 — mysqldump로 SQL 파일 생성 후 다운로드"""
-    now = datetime.now()
-    date_str = now.strftime("%y%m%d")
-    millis = str(int(now.timestamp() * 1000))[:6]
-    filename = f"db_backup_{date_str}_{millis}.sql"
-
+def _run_mysqldump() -> tuple[bytes | None, str]:
+    """mysqldump 실행. 성공 시 (bytes, "") 반환, 실패 시 (None, 에러메시지) 반환."""
     cmd = [
         "mysqldump",
         f"--host={DB_HOST}",
@@ -30,41 +30,160 @@ def api_backup_db():
         "--default-character-set=utf8mb4",
         DB_NAME,
     ]
-
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=120,
-        )
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
     except FileNotFoundError:
-        logger.error("[backup] mysqldump 명령어를 찾을 수 없습니다")
-        return Response(
-            content='{"detail": "mysqldump 명령어를 찾을 수 없습니다. 서버에 MariaDB 클라이언트가 설치되어 있는지 확인해주세요."}',
-            status_code=500,
-            media_type="application/json",
-        )
+        return None, "mysqldump not found"
     except subprocess.TimeoutExpired:
-        logger.error("[backup] mysqldump 타임아웃 (120초)")
-        return Response(
-            content='{"detail": "백업 시간이 초과되었습니다 (120초)."}',
-            status_code=500,
-            media_type="application/json",
-        )
+        return None, "mysqldump timeout"
 
     if result.returncode != 0:
-        err_msg = result.stderr.decode("utf-8", errors="replace").strip()
-        logger.error(f"[backup] mysqldump 실패: {err_msg}")
-        return Response(
-            content=f'{{"detail": "백업 실패: {err_msg}"}}',
-            status_code=500,
-            media_type="application/json",
-        )
+        return None, result.stderr.decode("utf-8", errors="replace").strip()
 
-    logger.info(f"[backup] DB 백업 완료: {filename} ({len(result.stdout)} bytes)")
+    return result.stdout, ""
 
+
+def _build_sql_python(db: Session) -> bytes:
+    """Python + SQLAlchemy로 SQL 덤프 생성 (mysqldump 없이 동작)."""
+    lines: list[str] = []
+    lines.append(f"-- Python SQL Dump — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"-- Database: {DB_NAME}")
+    lines.append("-- --------------------------------------------------------\n")
+    lines.append("SET NAMES utf8mb4;")
+    lines.append("SET FOREIGN_KEY_CHECKS=0;\n")
+
+    # 테이블 목록 조회
+    rows = db.execute(text("SHOW TABLES")).fetchall()
+    tables = [r[0] for r in rows]
+
+    for table in tables:
+        lines.append(f"-- Table: `{table}`")
+        lines.append("-- --------------------------------------------------------")
+
+        # CREATE TABLE
+        create_row = db.execute(text(f"SHOW CREATE TABLE `{table}`")).fetchone()
+        if create_row:
+            lines.append(f"DROP TABLE IF EXISTS `{table}`;")
+            lines.append(create_row[1] + ";\n")
+
+        # 데이터 INSERT
+        data_rows = db.execute(text(f"SELECT * FROM `{table}`")).fetchall()
+        if data_rows:
+            col_names = db.execute(text(f"SELECT * FROM `{table}` LIMIT 0")).keys()
+            cols = ", ".join(f"`{c}`" for c in col_names)
+            for row in data_rows:
+                vals = []
+                for v in row:
+                    if v is None:
+                        vals.append("NULL")
+                    elif isinstance(v, (int, float)):
+                        vals.append(str(v))
+                    elif isinstance(v, datetime):
+                        vals.append(f"'{v.strftime('%Y-%m-%d %H:%M:%S')}'")
+                    else:
+                        escaped = str(v).replace("\\", "\\\\").replace("'", "\\'")
+                        vals.append(f"'{escaped}'")
+                lines.append(f"INSERT INTO `{table}` ({cols}) VALUES ({', '.join(vals)});")
+            lines.append("")
+
+    lines.append("SET FOREIGN_KEY_CHECKS=1;")
+    return "\n".join(lines).encode("utf-8")
+
+
+def _build_excel(db: Session) -> bytes:
+    """DB의 모든 테이블을 각각 시트(탭)로 담아 Excel bytes 반환."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # 기본 빈 시트 제거
+
+    tables = [r[0] for r in db.execute(text("SHOW TABLES")).fetchall()]
+
+    for table in tables:
+        ws = wb.create_sheet(title=table[:31])  # 시트명 최대 31자
+
+        # 컬럼 헤더
+        result = db.execute(text(f"SELECT * FROM `{table}` LIMIT 0"))
+        col_names = list(result.keys())
+        ws.append(col_names)
+
+        # 데이터 행
+        rows = db.execute(text(f"SELECT * FROM `{table}`")).fetchall()
+        for row in rows:
+            values = []
+            for v in row:
+                if isinstance(v, datetime):
+                    values.append(v.strftime("%Y-%m-%d %H:%M:%S"))
+                elif isinstance(v, bytes):
+                    values.append(v.decode("utf-8", errors="replace"))
+                elif v is None:
+                    values.append("")
+                else:
+                    # TEXT 컬럼 길이 제한 (Excel 셀 최대 32767자)
+                    s = str(v)
+                    values.append(s[:32767] if len(s) > 32767 else s)
+            ws.append(values)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@router.get("/db")
+def api_backup_db(db: Session = Depends(get_db)):
+    """DB SQL 백업 — mysqldump 우선, 없으면 Python 방식으로 생성"""
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d_%H%M%S")
+    filename = f"db_backup_{date_str}.sql"
+
+    sql_bytes, err = _run_mysqldump()
+    if sql_bytes is None:
+        logger.warning(f"[backup] mysqldump 실패 ({err}) — Python 방식으로 대체")
+        sql_bytes = _build_sql_python(db)
+
+    logger.info(f"[backup] SQL 백업 완료: {filename} ({len(sql_bytes)} bytes)")
     return Response(
-        content=result.stdout,
+        content=sql_bytes,
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/full")
+def api_backup_full(db: Session = Depends(get_db)):
+    """DB 전체 백업 — SQL 파일 + 로그 Excel을 ZIP으로 묶어 다운로드"""
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d_%H%M%S")
+    zip_filename = f"backup_{date_str}.zip"
+
+    # ── SQL 덤프 (mysqldump → 없으면 Python 방식) ───────────────────────────
+    sql_bytes, err = _run_mysqldump()
+    if sql_bytes is None:
+        logger.warning(f"[backup/full] mysqldump 실패 ({err}) — Python 방식으로 대체")
+        try:
+            sql_bytes = _build_sql_python(db)
+        except Exception as e:
+            logger.error(f"[backup/full] Python SQL 생성 실패: {e}")
+            sql_bytes = None
+
+    # ── Excel 빌드 ──────────────────────────────────────────────────────────
+    try:
+        excel_bytes = _build_excel(db)
+    except Exception as e:
+        logger.error(f"[backup/full] Excel 생성 실패: {e}")
+        excel_bytes = None
+
+    # ── ZIP 패키징 ──────────────────────────────────────────────────────────
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        if sql_bytes:
+            zf.writestr(f"db_backup_{date_str}.sql", sql_bytes)
+        if excel_bytes:
+            zf.writestr(f"db_backup_{date_str}.xlsx", excel_bytes)
+
+    zip_content = zip_buf.getvalue()
+    logger.info(f"[backup/full] ZIP 백업 완료: {zip_filename} ({len(zip_content)} bytes)")
+
+    return Response(
+        content=zip_content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_filename}"'},
     )
