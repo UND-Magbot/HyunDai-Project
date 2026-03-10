@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
-from app.routers import user, robot, auth, map, task, alarm_log, convoy, activity_log, system_log, backup, log, acs
+from app.routers import user, robot, auth, map, task, alarm_log, convoy, activity_log, system_log, backup, log, acs, menu, permission
 from app.services.wcs_service import start_wcs_reporter, stop_wcs_reporter
 
 # 모델 import (테이블 메타데이터 등록용)
@@ -78,6 +78,8 @@ app.include_router(system_log.router)
 app.include_router(backup.router)
 app.include_router(log.router)
 app.include_router(acs.router)
+app.include_router(menu.router)
+app.include_router(permission.router)
 
 
 # 정적 파일 서빙 (맵 이미지 등)

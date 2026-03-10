@@ -84,9 +84,6 @@ export function PersonTree({
                         onClick={() => onSelectUser(user)}
                       >
                         {user.username}
-                        <span className="person-tree__login-id">
-                          ({user.loginId})
-                        </span>
                       </button>
                     </li>
                   ))}

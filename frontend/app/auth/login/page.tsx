@@ -6,6 +6,8 @@ import type { LoginFormState, LoginFormErrors } from "@/lib/types/auth";
 import { apiFetch } from "@/lib/api";
 import { MENU_ITEMS } from "@/lib/types/settings";
 import type { MenuPermissionItem } from "@/lib/types/settings";
+import { getMyMenuPermissions } from "@/lib/api/settings";
+import { defaultNavItems } from "@/app/components/shell/SideNav";
 import { ForgotPasswordModal } from "./ForgotPasswordModal";
 import "./login.css";
 
@@ -62,27 +64,30 @@ export default function LoginPage() {
       });
       localStorage.setItem("auth_token", res.access_token);
       localStorage.setItem("user_id", String(res.user.id));
-      localStorage.setItem("user_login_id", res.user.login_id);
+      localStorage.setItem("user_login_id", res.user.login_id === "admin" ? "관리자" : res.user.login_id);
       localStorage.setItem("user_role", String(res.user.role));
 
       // 메뉴 권한 로드
       const isAdmin = res.user.role === 1;
       let allowedLabels: string[];
 
-      if (isAdmin) {
-        allowedLabels = MENU_ITEMS.map((m) => m.label);
-      } else {
-        const stored = localStorage.getItem(`menu_perm_${res.user.id}`);
-        if (stored) {
-          const perms = JSON.parse(stored) as MenuPermissionItem[];
-          allowedLabels = perms.filter((p) => p.isAllowed).map((p) => p.menuLabel);
-        } else {
-          allowedLabels = MENU_ITEMS.filter((m) => DEFAULT_USER_MENUS.has(m.label)).map((m) => m.label);
-        }
+      try {
+        const perms = await getMyMenuPermissions();
+        allowedLabels = perms.filter((p) => p.isAllowed).map((p) => p.menuLabel);
+      } catch {
+        allowedLabels = [];
+      }
+
+      // 권한이 없으면: 관리자는 전체 메뉴, 일반 사용자는 기본 메뉴
+      if (allowedLabels.length === 0) {
+        allowedLabels = isAdmin
+          ? MENU_ITEMS.map((m) => m.label)
+          : MENU_ITEMS.filter((m) => DEFAULT_USER_MENUS.has(m.label)).map((m) => m.label);
       }
       localStorage.setItem("allowed_menus", JSON.stringify(allowedLabels));
 
-      router.push("/monitoring");
+      const firstMenu = defaultNavItems.find((nav) => allowedLabels.includes(nav.label));
+      router.push(firstMenu?.href ?? "/monitoring");
     } catch (err: any) {
       const msg = err?.message ?? "";
       if (msg.includes("존재")) {
