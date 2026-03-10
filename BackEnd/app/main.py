@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
-from app.routers import user, robot, auth, map, task, alarm_log, convoy, activity_log, system_log, backup
+from app.routers import user, robot, auth, map, task, alarm_log, convoy, activity_log, system_log, backup, log, acs
+from app.services.wcs_service import start_wcs_reporter, stop_wcs_reporter
 
 # 모델 import (테이블 메타데이터 등록용)
 import app.models  # noqa: F401
@@ -39,7 +40,11 @@ async def lifespan(application: FastAPI):
     for lgr in target_loggers:
         lgr.addHandler(db_handler)
 
+    start_wcs_reporter()
+
     yield
+
+    stop_wcs_reporter()
 
     for lgr in target_loggers:
         lgr.removeHandler(db_handler)
@@ -71,6 +76,8 @@ app.include_router(convoy.router)
 app.include_router(activity_log.router)
 app.include_router(system_log.router)
 app.include_router(backup.router)
+app.include_router(log.router)
+app.include_router(acs.router)
 
 
 # 정적 파일 서빙 (맵 이미지 등)

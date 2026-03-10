@@ -2,25 +2,28 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LogItem } from "@/lib/types/logs";
-import { Modal } from "@/app/components/ui/Modal";
+import { Modal } from "../Modal";
 import "./LogTable.css";
 
 type LogTableProps = {
   logs: LogItem[];
 };
 
-function formatData(raw: string): string {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
-  } catch {
-    return raw;
-  }
+function formatCreatedAt(raw: string): string {
+  const d = new Date(raw);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }
 
+
 export function LogTable({ logs }: LogTableProps) {
-  const [viewData, setViewData] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [overflowIds, setOverflowIds] = useState<Set<string>>(new Set());
+  const [selectedLog, setSelectedLog] = useState<LogItem | null>(null);
   const msgRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const checkOverflows = useCallback(() => {
@@ -47,23 +50,21 @@ export function LogTable({ logs }: LogTableProps) {
           <colgroup>
             <col style={{ width: "15%" }} />
             <col style={{ width: "10%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "50%" }} />
-            <col style={{ width: "8%" }} />
+            <col style={{ width: "65%" }} />
+            <col style={{ width: "10%" }} />
           </colgroup>
           <thead>
             <tr>
               <th>발생 일시</th>
-              <th>오류 타입</th>
-              <th>IP</th>
+              <th>로그 타입</th>
               <th>메세지</th>
-              <th>데이터</th>
+              <th>상세</th>
             </tr>
           </thead>
           <tbody>
             {logs.length === 0 ? (
               <tr>
-                <td colSpan={5} className="log-table__empty">
+                <td colSpan={4} className="log-table__empty">
                   조회된 로그가 없습니다.
                 </td>
               </tr>
@@ -71,6 +72,7 @@ export function LogTable({ logs }: LogTableProps) {
               logs.map((log) => {
                 const isOverflow = overflowIds.has(log.id);
                 const isExpanded = expandedId === log.id;
+                const categoryLabel = log.display_category;
 
                 return (
                   <tr
@@ -78,15 +80,14 @@ export function LogTable({ logs }: LogTableProps) {
                     className={`log-table__row${isOverflow ? " log-table__row--expandable" : ""}`}
                     onClick={() => handleRowClick(log.id)}
                   >
-                    <td>{log.time}</td>
+                    <td>{formatCreatedAt(log.created_at)}</td>
                     <td>
                       <span
-                        className={`log-table__error-type log-table__error-type--${log.errorType}`}
+                        className={`log-table__error-type log-table__error-type--${categoryLabel}`}
                       >
-                        {log.errorType}
+                        {categoryLabel}
                       </span>
                     </td>
-                    <td>{log.ip}</td>
                     <td className="log-table__message-cell">
                       <div
                         className={`log-table__message${isExpanded ? " log-table__message--expanded" : ""}`}
@@ -99,19 +100,16 @@ export function LogTable({ logs }: LogTableProps) {
                       </div>
                     </td>
                     <td>
-                      {log.data ? (
-                        <button
-                          className="log-table__view-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setViewData(log.data);
-                          }}
-                        >
-                          View
-                        </button>
-                      ) : (
-                        "-"
-                      )}
+                      <button
+                        type="button"
+                        className="log-table__view-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedLog(log);
+                        }}
+                      >
+                        상세보기
+                      </button>
                     </td>
                   </tr>
                 );
@@ -122,14 +120,19 @@ export function LogTable({ logs }: LogTableProps) {
       </div>
 
       <Modal
-        open={viewData !== null}
-        onClose={() => setViewData(null)}
+        open={selectedLog !== null}
+        onClose={() => setSelectedLog(null)}
         title="Data"
-        width="520px"
+        width="600px"
+        height="380px"
       >
-        <div className="log-table__json-viewer">
-          <pre>{viewData ? formatData(viewData) : ""}</pre>
-        </div>
+        {selectedLog && (
+          <div className="log-detail">
+            <div className="log-table__json-viewer">
+              <pre>{JSON.stringify(selectedLog, null, 2)}</pre>
+            </div>
+          </div>
+        )}
       </Modal>
     </>
   );

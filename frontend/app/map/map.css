@@ -204,10 +204,21 @@
   stroke: #ffffff;
 }
 
+.map-poi__circle--firewall {
+  fill: #ff8c00;
+  stroke: #ffffff;
+}
+
 .map-poi__circle--selected {
   stroke: var(--color-primary);
   stroke-width: 3;
   filter: drop-shadow(0 0 6px rgba(90, 143, 245, 0.6));
+}
+
+.map-line__path--firewall {
+  stroke: #ff8c00;
+  stroke-width: 2.5;
+  fill: none;
 }
 
 .map-poi__label {

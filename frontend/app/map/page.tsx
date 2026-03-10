@@ -470,6 +470,38 @@ export default function MapPage() {
             },
           });
         }
+      } else if (activeTool === "firewall") {
+        if (!lineStartPOI) {
+          pushHistory();
+          const fwCount = pois.filter((p) => p.type === "firewall").length;
+          const newPOI: POI = {
+            id: generateId("poi"),
+            x, y,
+            name: `FW${fwCount + 1}`,
+            type: "firewall",
+          };
+          setPois((prev) => [...prev, newPOI]);
+          setLineStartPOI(newPOI.id);
+        } else {
+          pushHistory();
+          const fwCount = pois.filter((p) => p.type === "firewall").length;
+          const newPOI: POI = {
+            id: generateId("poi"),
+            x, y,
+            name: `FW${fwCount + 1}`,
+            type: "firewall",
+          };
+          const newLine: PathLine = {
+            id: generateId("line"),
+            fromId: lineStartPOI,
+            toId: newPOI.id,
+            direction: "bidirectional",
+            lineType: "firewall",
+          };
+          setPois((prev) => [...prev, newPOI]);
+          setLines((prev) => [...prev, newLine]);
+          setLineStartPOI(null);
+        }
       } else if (activeTool === "polygon") {
         setPolygonPoints((prev) => [...prev, { x, y }]);
       }
@@ -484,6 +516,26 @@ export default function MapPage() {
         const target = pois.find((p) => p.id === id);
         if (!target) return;
         setDeletePOITarget(target);
+        return;
+      }
+
+      if (activeTool === "firewall") {
+        if (!lineStartPOI) {
+          setLineStartPOI(id);
+        } else if (lineStartPOI !== id) {
+          pushHistory();
+          const newLine: PathLine = {
+            id: generateId("line"),
+            fromId: lineStartPOI,
+            toId: id,
+            direction: "bidirectional",
+            lineType: "firewall",
+          };
+          setLines((prev) => [...prev, newLine]);
+          setLineStartPOI(null);
+        } else {
+          setLineStartPOI(null);
+        }
         return;
       }
 
@@ -923,6 +975,7 @@ export default function MapPage() {
                 isFullscreen={isFullscreen}
                 onChargingPile={() => handleToolChange("chargingPile")}
                 onCurrentPos={() => handleToolChange("currentPos")}
+                onFirewall={() => handleToolChange("firewall")}
               />
 
               {/* Toolbar: Left (vertical) */}

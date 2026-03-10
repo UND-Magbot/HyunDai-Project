@@ -19,4 +19,4 @@ class ActivityLog(Base):
     robot_id = Column(Integer, nullable=True, index=True)
     robot_name = Column(String(100), nullable=True)
     source = Column(String(100), nullable=True)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False, index=True)

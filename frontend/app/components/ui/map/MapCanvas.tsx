@@ -177,7 +177,8 @@ export function MapCanvas({
       activeTool === "point" ||
       activeTool === "line" ||
       activeTool === "curveLine" ||
-      activeTool === "polygon"
+      activeTool === "polygon" ||
+      activeTool === "firewall"
     ) {
       const pos = screenToCanvas(e.clientX, e.clientY);
       onCanvasClick(pos.x, pos.y);
@@ -295,7 +296,9 @@ export function MapCanvas({
                   x2={to.x}
                   y2={to.y}
                   className={
-                    isSelected
+                    line.lineType === "firewall"
+                      ? "map-line__path--firewall"
+                      : isSelected
                       ? "map-line__path map-line__path--selected"
                       : "map-line__path"
                   }
@@ -309,11 +312,11 @@ export function MapCanvas({
                   stroke="transparent"
                   strokeWidth={12}
                 />
-                {/* Direction arrows */}
-                {(line.direction === "forward" ||
+                {/* Direction arrows — 방화벽 라인은 화살표 없음 */}
+                {line.lineType !== "firewall" && (line.direction === "forward" ||
                   line.direction === "bidirectional") &&
                   renderArrow(from.x, from.y, to.x, to.y, line.id, "fwd", isSelected)}
-                {(line.direction === "backward" ||
+                {line.lineType !== "firewall" && (line.direction === "backward" ||
                   line.direction === "bidirectional") &&
                   renderArrow(to.x, to.y, from.x, from.y, line.id, "bwd", isSelected)}
               </g>
@@ -321,7 +324,7 @@ export function MapCanvas({
           })}
 
           {/* Temporary line while drawing */}
-          {lineStartPOI && (activeTool === "line" || activeTool === "curveLine") && mousePos && (() => {
+          {lineStartPOI && (activeTool === "line" || activeTool === "curveLine" || activeTool === "firewall") && mousePos && (() => {
             const startPoi = pois.find((p) => p.id === lineStartPOI);
             if (!startPoi) return null;
             return (
@@ -365,13 +368,25 @@ export function MapCanvas({
                   onPOIClick(poi.id);
                 }}
               >
-                <circle
-                  cx={poi.x}
-                  cy={poi.y}
-                  r={3}
-                  className={circleClass}
-                  strokeWidth={1}
-                />
+                {poi.type === "firewall" ? (
+                  <rect
+                    x={poi.x - 3}
+                    y={poi.y - 3}
+                    width={6}
+                    height={6}
+                    transform={`rotate(45, ${poi.x}, ${poi.y})`}
+                    className={circleClass}
+                    strokeWidth={1}
+                  />
+                ) : (
+                  <circle
+                    cx={poi.x}
+                    cy={poi.y}
+                    r={3}
+                    className={circleClass}
+                    strokeWidth={1}
+                  />
+                )}
                 <text
                   x={poi.x}
                   y={poi.y - 6}

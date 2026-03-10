@@ -31,40 +31,6 @@ function formatCreatedAt(raw: string): string {
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }
 
-type ActivityLogItem = {
-  id: number;
-  category: string;
-  category_name: string;
-  action: string;
-  message: string;
-  detail: string | null;
-  robot_id: number | null;
-  robot_name: string | null;
-  source: string | null;
-  created_at: string;
-};
-
-const CATEGORY_TO_API: Record<string, string> = {
-  "시스템": "system",
-  "로봇": "robot",
-};
-
-function toErrorType(category: string): LogItem["errorType"] {
-  if (category === "system") return "시스템";
-  if (category === "robot") return "로봇";
-  return "사용자";
-}
-
-function toLogItem(item: ActivityLogItem): LogItem {
-  return {
-    id: String(item.id),
-    time: formatCreatedAt(item.created_at),
-    errorType: toErrorType(item.category),
-    ip: item.robot_name ?? item.source ?? "-",
-    message: item.message,
-    data: item.detail ?? null,
-  };
-}
 
 const defaultFilters: LogFilterState = {
   message: "",
@@ -82,8 +48,7 @@ function buildParams(f: LogFilterState, skip: number, limit: number): string {
   p.set("skip", String(skip));
   p.set("limit", String(limit));
   if (f.message) p.set("message", f.message);
-  const cat = f.errorType ? CATEGORY_TO_API[f.errorType] : undefined;
-  if (cat) p.set("category", cat);
+  if (f.errorType) p.set("display_category", f.errorType);
   if (f.date) {
     p.set("date_from", `${f.date}T${f.startTime}:00`);
     p.set("date_to", `${f.date}T${f.endTime}:59`);
@@ -111,11 +76,11 @@ export default function LogsPage() {
     setIsLoading(true);
     try {
       const qs = buildParams(f, (page - 1) * PAGE_SIZE, PAGE_SIZE);
-      const res = await apiFetch<{ total: number; items: ActivityLogItem[] }>(
-        `/api/activity-logs?${qs}`
+      const res = await apiFetch<{ total: number; items: LogItem[] }>(
+        `/api/logs?${qs}`
       );
       setTotal(res.total);
-      setLogs(res.items.map(toLogItem));
+      setLogs(res.items);
     } catch {
       setLogs([]);
       setTotal(0);
@@ -130,7 +95,6 @@ export default function LogsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Clamp page if total shrinks
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [totalPages, currentPage]);
@@ -153,16 +117,20 @@ export default function LogsPage() {
     setCurrentPage(1);
   };
 
+  const handleDbBackup = () => {
+    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/api/backup/full`;
+  };
+
   const handleExport = async () => {
     try {
       const qs = buildParams(appliedFilters, 0, 500);
-      const res = await apiFetch<{ total: number; items: ActivityLogItem[] }>(
-        `/api/activity-logs?${qs}`
+      const res = await apiFetch<{ total: number; items: LogItem[] }>(
+        `/api/logs?${qs}`
       );
       const rows = res.items.map((item) => ({
         "발생 일시": formatCreatedAt(item.created_at),
-        "오류 타입": toErrorType(item.category),
-        IP: item.robot_name ?? item.source ?? "-",
+        "타입": item.display_category,
+        "IP / 출처": item.robot_name ?? item.source ?? "-",
         "메세지": item.message,
         "데이터": item.detail ?? "",
       }));
@@ -201,6 +169,13 @@ export default function LogsPage() {
                 onClick={handleExport}
               >
                 Excel 내보내기
+              </button>
+              <button
+                type="button"
+                className="logs-page__export-btn"
+                onClick={handleDbBackup}
+              >
+                DB 백업
               </button>
             </header>
 

@@ -186,17 +186,17 @@ def api_convoy_start(db: Session = Depends(get_db)):
     if not robots_config:
         raise HTTPException(status_code=400, detail="출발 가능한 로봇이 없습니다 (충전소/대기지점 미지정)")
 
-    # ── 출발 순서 정렬: C(충전소) → W(대기지점), 번호 오름차순 ──
+    # ── 출발 순서 정렬: W1 → C1 → C2 → C3 → W2 ──
+    _DEPARTURE_ORDER = {"W1": 0, "C1": 1, "C2": 2, "C3": 3, "W2": 4}
+
     def _departure_order(rc):
         name = rc["_start_poi_name"]
-        # C → 0, W → 1, 기타 → 2 (충전소 우선)
-        prefix_order = 0 if name.startswith("C") else (1 if name.startswith("W") else 2)
-        return (prefix_order, name)
+        return (_DEPARTURE_ORDER.get(name, 99), name)
 
     robots_config.sort(key=_departure_order)
 
     # ── active(최대 4대) / standby(나머지) 분리 ──
-    # C 로봇 + W 로봇 중 첫 번째까지 active, 나머지 W 로봇은 standby 풀
+    # W1→C1→C2→C3 순으로 active, W2 등 나머지는 standby 풀
     active_robots = robots_config[:4]
     standby_robots = robots_config[4:]  # 5번째 이후 (W2 등)
 
