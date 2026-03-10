@@ -49,6 +49,8 @@ import {
 import type { PoiMarkerData, RobotMarkerData, RouteSegment, WaypointMarkerData } from "@/lib/types/map-markers";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
 import { BusinessSelectBox } from "../components/ui/monitoring/BusinessSelectBox";
+import { FireAlertOverlay } from "../components/ui/monitoring/FireAlertOverlay";
+import { EmergencyStopOverlay } from "../components/ui/monitoring/EmergencyStopOverlay";
 import { apiFetch, apiPost, ApiError } from "@/lib/api";
 import type { Business } from "@/lib/types/robots";
 import type { MapMeta } from "@/lib/types/map";
@@ -182,6 +184,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [loopRunning, setLoopRunning] = useState(false);
   const [loopStopping, setLoopStopping] = useState(false);
   const [emergencyStopped, setEmergencyStopped] = useState(false);
+  const [fireAlert, setFireAlert] = useState(false);
+  const [fireTestMode, setFireTestMode] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   // simulatedRobots는 아래 useMemo로 계산 (useEffect+setState 연쇄 리렌더 방지)
@@ -894,6 +898,9 @@ export function MonitoringClient({ initialDateTime }: Props) {
     const checkStatus = async () => {
       try {
         const res = await apiFetch<{ phase: string }>("/api/convoy/status");
+        if (!fireTestMode) {
+          setFireAlert(res.phase === "evacuating");
+        }
         if (res.phase === "entering" || res.phase === "running") {
           setLoopRunning(true);
           setLoopStopping(false);
@@ -1027,6 +1034,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
   return (
     <>
+      {fireAlert && <FireAlertOverlay />}
+      {emergencyStopped && !fireAlert && <EmergencyStopOverlay onReturnAll={() => setEmergencyStopped(false)} />}
       {isLoading && <LoadingScreen pageName="모니터링" />}
       <div className="app-shell">
       <TopBar
@@ -1154,6 +1163,18 @@ export function MonitoringClient({ initialDateTime }: Props) {
                   전체 복귀
                 </button>
               )}
+              {/* 화재 경보 테스트 버튼 */}
+              <button
+                type="button"
+                className="fire-test-btn"
+                onClick={() => {
+                  setFireTestMode((v) => !v);
+                  setFireAlert((v) => !v);
+                }}
+                title="화재 경보 오버레이 테스트"
+              >
+                🔥 화재 테스트
+              </button>
               {!selectedArea && !isLoading ? (
                 <div className="monitoring-map__empty">
                   <p>현재 사업장에 등록된 영역이 없습니다.</p>

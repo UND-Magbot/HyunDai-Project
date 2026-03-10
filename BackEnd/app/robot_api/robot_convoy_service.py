@@ -1533,6 +1533,18 @@ def fire_evacuate() -> tuple[bool, str]:
         t.start()
         threads.append(t)
 
+    # 모든 대피 완료 후 phase 자동 전환
+    def _wait_evacuation_done():
+        global _convoy_phase
+        for t in threads:
+            t.join()
+        with _convoy_lock:
+            if _convoy_phase == "evacuating":
+                _convoy_phase = "evacuated"
+                logger.info("[Fire] 모든 로봇 대피 완료 — phase → evacuated")
+
+    threading.Thread(target=_wait_evacuation_done, daemon=True).start()
+
     return True, f"{len(robots)}대 로봇 대피 시작"
 
 

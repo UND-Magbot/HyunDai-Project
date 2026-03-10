@@ -7,6 +7,7 @@ import { MenuPermissionTab } from "../components/ui/settings/MenuPermissionTab";
 import { PasswordChangeTab } from "../components/ui/settings/PasswordChangeTab";
 import { DbBackupTab } from "../components/ui/settings/DbBackupTab";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
+import { getMyMenuPermissions } from "@/lib/api/settings";
 import "./settings.css";
 
 function formatDateTime() {
@@ -34,14 +35,28 @@ export default function SettingsPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [currentDateTime, setCurrentDateTime] = useState(formatDateTime);
   const [isLoading, setIsLoading] = useState(true);
+  const [allowedMenuKeys, setAllowedMenuKeys] = useState<Set<string> | null>(null);
 
   const userRole = useUserRole();
   const isAdmin = userRole === "1";
 
+  const canDbBackup = isAdmin || (allowedMenuKeys?.has("settings.db_backup") ?? false);
+  const canPasswordChange = isAdmin || (allowedMenuKeys?.has("settings.password_change") ?? false);
+
   const [activeTab, setActiveTab] = useState<Tab>("password-change");
 
   useEffect(() => {
-    if (isAdmin) setActiveTab("menu-permission");
+    if (isAdmin) {
+      setActiveTab("menu-permission");
+      return;
+    }
+    getMyMenuPermissions()
+      .then((perms) => {
+        const keys = new Set(perms.filter((p) => p.isAllowed).map((p) => p.menuKey));
+        setAllowedMenuKeys(keys);
+        if (keys.has("settings.db_backup")) setActiveTab("db-backup");
+      })
+      .catch(() => {});
   }, [isAdmin]);
 
   useEffect(() => {
@@ -83,7 +98,7 @@ export default function SettingsPage() {
                       메뉴 권한
                     </button>
                   )}
-                  {isAdmin && (
+                  {canDbBackup && (
                     <button
                       className={`settings-page__tab${activeTab === "db-backup" ? " settings-page__tab--active" : ""}`}
                       onClick={() => setActiveTab("db-backup")}
@@ -91,12 +106,14 @@ export default function SettingsPage() {
                       DB 백업
                     </button>
                   )}
-                  <button
-                    className={`settings-page__tab${activeTab === "password-change" ? " settings-page__tab--active" : ""}`}
-                    onClick={() => setActiveTab("password-change")}
-                  >
-                    비밀번호 변경
-                  </button>
+                  {canPasswordChange && (
+                    <button
+                      className={`settings-page__tab${activeTab === "password-change" ? " settings-page__tab--active" : ""}`}
+                      onClick={() => setActiveTab("password-change")}
+                    >
+                      비밀번호 변경
+                    </button>
+                  )}
                 </div>
               </header>
 
@@ -104,9 +121,9 @@ export default function SettingsPage() {
                 <MenuPermissionTab />
               )}
 
-              {activeTab === "password-change" && <PasswordChangeTab />}
+              {activeTab === "password-change" && canPasswordChange && <PasswordChangeTab />}
 
-              {activeTab === "db-backup" && isAdmin && <DbBackupTab />}
+              {activeTab === "db-backup" && canDbBackup && <DbBackupTab />}
             </div>
           </main>
         </div>

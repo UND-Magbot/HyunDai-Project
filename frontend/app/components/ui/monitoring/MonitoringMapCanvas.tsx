@@ -401,34 +401,17 @@ function drawFirewallSegment(
   seg: RouteSegment,
   bounds: MapBounds
 ) {
+  const scale = bounds.drawWidth / bounds.natW;
   const from = mapToCanvas(seg.from.x, seg.from.y, bounds);
   const to = mapToCanvas(seg.to.x, seg.to.y, bounds);
-  const dx = to.cx - from.cx;
-  const dy = to.cy - from.cy;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len === 0) return;
-  const ux = dx / len; const uy = dy / len;
-  const px = -uy;    const py = ux;
-  const STEP = 10; const H = 7;
-
-  ctx.strokeStyle = "rgba(255, 60, 60, 0.9)";
-  ctx.lineWidth = 1.5;
-  ctx.lineCap = "round";
-  ctx.setLineDash([4, 3]);
   ctx.beginPath();
   ctx.moveTo(from.cx, from.cy);
   ctx.lineTo(to.cx, to.cy);
+  ctx.strokeStyle = "rgb(255, 140, 0)";
+  ctx.lineWidth = 2.5 * scale;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.stroke();
-  ctx.setLineDash([]);
-
-  for (let t = 0; t <= len; t += STEP) {
-    const cx = from.cx + ux * t;
-    const cy = from.cy + uy * t;
-    ctx.beginPath();
-    ctx.moveTo(cx - px * H, cy - py * H);
-    ctx.lineTo(cx + px * H, cy + py * H);
-    ctx.stroke();
-  }
 }
 
 function drawRoutes(
@@ -578,8 +561,9 @@ function drawDirectionArrows(
   const segments = data.routeSegments ?? [];
 
   if (segments.length > 0) {
-    // RouteSegment 기반: per-segment direction 지원
+    // RouteSegment 기반: per-segment direction 지원 (방화벽 제외)
     for (const seg of segments) {
+      if (seg.lineType === "firewall") continue;
       drawSegmentDirectionArrow(ctx, seg, "rgba(25, 188, 126, 0.9)", bounds);
     }
   } else {

@@ -406,7 +406,9 @@
 }
 
 .robot-info__dropdown-option {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-base);
@@ -415,6 +417,16 @@
   border: none;
   text-align: left;
   cursor: pointer;
+}
+
+.robot-info__poi-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-surface-3);
+  color: var(--text-muted);
+  margin-left: var(--space-2);
+  flex-shrink: 0;
 }
 
 .robot-info__dropdown-option:hover {

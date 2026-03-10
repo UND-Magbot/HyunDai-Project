@@ -27,7 +27,7 @@ _STATUS_CODE_MAP = {
 }
 
 
-def _build_device_info(robot: Robot, status: RobotStatus | None) -> dict:
+def _build_device_info(robot: Robot, status: RobotStatus | None, seq: int) -> dict:
     st = status.status if status else 4
     comm_code = 0 if st == 4 else 1
     status_code, status_desc = _STATUS_CODE_MAP.get(st, (st, "알수없음"))
@@ -36,9 +36,12 @@ def _build_device_info(robot: Robot, status: RobotStatus | None) -> dict:
     loc_y = status.position_y if status else 0.0
     loc_z = status.position_yaw if status else 0.0
 
+    no = robot.wcs_no if robot.wcs_no else seq  # wcs_no 우선, 미설정 시 순서 fallback
+    device_code = f"AMR{no:02d}"
+
     return {
-        "eqCode": "AMR",
-        "deviceCode": robot.ip_address or "",
+        "eqCode": "ACS",
+        "deviceCode": device_code,
         "commCode": comm_code,
         "statusCode": status_code,
         "statusDesc": status_desc,
@@ -59,9 +62,10 @@ def report_status_once() -> bool:
             db.query(Robot, RobotStatus)
             .outerjoin(RobotStatus, Robot.id == RobotStatus.robot_id)
             .filter(Robot.is_active == True)
+            .order_by(Robot.id)
             .all()
         )
-        device_info = [_build_device_info(r, s) for r, s in robots]
+        device_info = [_build_device_info(r, s, i + 1) for i, (r, s) in enumerate(robots)]
     finally:
         db.close()
 

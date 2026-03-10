@@ -82,18 +82,34 @@ _DEFAULT_MENUS = [
     {"menu_key": "settings",   "menu_name": "설정",      "sort_order": 5},
 ]
 
+# 설정 하위 메뉴
+_SETTINGS_CHILDREN = [
+    {"menu_key": "settings.db_backup",       "menu_name": "DB 백업",      "sort_order": 1},
+    {"menu_key": "settings.password_change", "menu_name": "비밀번호 변경", "sort_order": 2},
+]
+
 
 def _seed_menus():
-    """menus 테이블이 비어 있으면 기본 메뉴를 삽입"""
+    """menus 테이블 기본 데이터 시딩 (없는 항목만 추가)"""
     from app.models.menu import Menu
 
     db = SessionLocal()
     try:
-        if db.query(Menu).first() is not None:
-            return  # 이미 데이터 있으면 스킵
+        existing_keys = {m.menu_key for m in db.query(Menu.menu_key).all()}
 
+        # 최상위 메뉴
         for item in _DEFAULT_MENUS:
-            db.add(Menu(**item))
+            if item["menu_key"] not in existing_keys:
+                db.add(Menu(**item))
+        db.flush()
+
+        # 설정 하위 메뉴
+        settings = db.query(Menu).filter(Menu.menu_key == "settings").first()
+        if settings:
+            for item in _SETTINGS_CHILDREN:
+                if item["menu_key"] not in existing_keys:
+                    db.add(Menu(parent_id=settings.id, **item))
+
         db.commit()
         print("[DB] 기본 메뉴 데이터 시딩 완료")
     except Exception as e:
@@ -105,9 +121,12 @@ def _seed_menus():
 
 def get_db():
     """FastAPI Dependency — 요청마다 세션 생성/반환"""
+    from fastapi import HTTPException
     db = SessionLocal()
     try:
         yield db
+    except HTTPException:
+        raise  # HTTP 예외는 DB 문제 아님 — 그냥 재전달
     except Exception as e:
         db.rollback()
         print(f"[DB] 세션 처리 중 오류 발생, 롤백 수행: {e}")

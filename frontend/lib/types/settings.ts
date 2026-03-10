@@ -17,6 +17,7 @@ export interface MenuPermissionItem {
   menuLabel: string;
   isAllowed: boolean;
   menuId?: number;
+  parentId?: number | null;
 }
 
 export const MENU_ITEMS = [

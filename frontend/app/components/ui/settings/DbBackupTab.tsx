@@ -2,115 +2,40 @@
 
 import { useState, useCallback } from "react";
 import { useAlert } from "@/lib/context/AlertContext";
+import { apiFetch } from "@/lib/api";
+import { DirPickerModal } from "./DirPickerModal";
 import "./DbBackupTab.css";
+import "./DirPickerModal.css";
 
 export function DbBackupTab() {
   const { showInfo } = useAlert();
-  const [dirHandle, setDirHandle] =
-    useState<FileSystemDirectoryHandle | null>(null);
-  const [displayPath, setDisplayPath] = useState("");
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [savePath, setSavePath] = useState("/home/und/app/backups/");
+  const [isSaving, setIsSaving] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
-  const getSuggestedName = () => {
-    const now = new Date().toISOString().slice(0, 10);
-    return `db_backup_${now}.sql`;
-  };
-
-  const handleSelectPath = useCallback(async () => {
-    if (!("showDirectoryPicker" in window)) {
-      showInfo("알림", "이 브라우저에서는 경로 지정을 지원하지 않습니다.");
+  const handleSave = useCallback(async () => {
+    if (!savePath.trim()) {
+      showInfo("알림", "저장 경로를 입력해주세요.");
       return;
     }
-
+    setIsSaving(true);
     try {
-      const handle = await (
-        window as unknown as {
-          showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
+      const res = await apiFetch<{ sql_path: string; xlsx_path: string }>(
+        "/api/backup/save",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ save_path: savePath.trim() }),
         }
-      ).showDirectoryPicker();
-      setDirHandle(handle);
-      setDisplayPath(`${handle.name}/${getSuggestedName()}`);
+      );
+      showInfo("알림", `백업 완료\nSQL: ${res.sql_path}\nExcel: ${res.xlsx_path}`);
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") return;
-    }
-  }, [showInfo]);
-
-  const handleDownload = useCallback(async () => {
-    let dir = dirHandle;
-
-    if (!dir) {
-      if (!("showDirectoryPicker" in window)) {
-        showInfo("알림", "이 브라우저에서는 경로 지정을 지원하지 않습니다.");
-        return;
-      }
-
-      try {
-        dir = await (
-          window as unknown as {
-            showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
-          }
-        ).showDirectoryPicker();
-        setDirHandle(dir);
-        setDisplayPath(`${dir.name}/${getSuggestedName()}`);
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") return;
-        return;
-      }
-    }
-
-    setIsDownloading(true);
-    try {
-      const token = localStorage.getItem("auth_token");
-      const fileName = getSuggestedName();
-      let blob: Blob;
-
-      try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/backup/db`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(
-            (body as { detail?: string }).detail ?? "DB 백업에 실패했습니다."
-          );
-        }
-
-        blob = await res.blob();
-      } catch {
-        const mockSql = [
-          "-- Hyundai Glovis RCS Database Backup (Mock)",
-          `-- Generated: ${new Date().toISOString()}`,
-          "",
-          "CREATE TABLE users (",
-          "  id SERIAL PRIMARY KEY,",
-          "  login_id VARCHAR(50) NOT NULL UNIQUE,",
-          "  username VARCHAR(100) NOT NULL,",
-          "  role INTEGER NOT NULL DEFAULT 2,",
-          "  is_active BOOLEAN NOT NULL DEFAULT TRUE,",
-          "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-          ");",
-          "",
-        ].join("\n");
-        blob = new Blob([mockSql], { type: "application/sql" });
-      }
-
-      const fileHandle = await dir.getFileHandle(fileName, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-
-      showInfo("알림", "DB 백업이 완료되었습니다.");
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      const msg =
-        err instanceof Error ? err.message : "DB 백업에 실패했습니다.";
+      const msg = err instanceof Error ? err.message : "DB 백업에 실패했습니다.";
       showInfo("알림", msg);
     } finally {
-      setIsDownloading(false);
+      setIsSaving(false);
     }
-  }, [dirHandle, showInfo]);
+  }, [savePath, showInfo]);
 
   return (
     <section className="settings-section">
@@ -121,26 +46,38 @@ export function DbBackupTab() {
           <input
             className="db-backup__path-input"
             type="text"
-            readOnly
-            value={displayPath}
-            placeholder="경로를 지정해주세요"
+            value={savePath}
+            onChange={(e) => setSavePath(e.target.value)}
+            placeholder="서버 저장 경로"
+            disabled={isSaving}
           />
           <button
             className="db-backup__btn db-backup__btn--select"
-            onClick={handleSelectPath}
-            disabled={isDownloading}
+            onClick={() => setShowPicker(true)}
+            disabled={isSaving}
           >
-            경로 지정
+            탐색
           </button>
           <button
             className="db-backup__btn db-backup__btn--download"
-            onClick={handleDownload}
-            disabled={isDownloading}
+            onClick={handleSave}
+            disabled={isSaving}
           >
-            {isDownloading ? "백업 중..." : "다운로드"}
+            {isSaving ? "백업 중..." : "백업"}
           </button>
         </div>
       </div>
+
+      {showPicker && (
+        <DirPickerModal
+          initialPath={savePath || "/home/und/app/"}
+          onConfirm={(path) => {
+            setSavePath(path);
+            setShowPicker(false);
+          }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
     </section>
   );
 }
