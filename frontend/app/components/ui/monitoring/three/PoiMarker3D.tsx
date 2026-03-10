@@ -20,8 +20,10 @@ function PoiMarker3DInner({ poi, imgW, imgH }: Props) {
   return (
     <group position={[x, 0, z]}>
       {renderKind === "circle" ? (
-        <group rotation={[0, poi.angle != null ? -(poi.angle * Math.PI) / 180 : 0, 0]}>
-          <ChargingStation3D />
+        <group rotation={[0, poi.angle ?? 0, 0]}>
+          <group position={[3, 0, 0]}>
+            <ChargingStation3D />
+          </group>
         </group>
       ) : (
         /* Blue cone for non-charging */

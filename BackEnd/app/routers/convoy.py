@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.robot import Robot
 from app.models.map import MapPOI, ConvoyConfig
-from app.robot_api.robot_convoy_service import start_convoy, stop_convoy, force_stop_convoy, get_convoy_status
+from app.robot_api.robot_convoy_service import start_convoy, stop_convoy, force_stop_convoy, get_convoy_status, fire_evacuate, reset_fire, return_all_convoy
 from app.robot_api.robot_task_service import confirm_loop
 from app.robot_api.route_utils import find_work_loop_order
 from app.crud.activity_log import log_activity
@@ -255,3 +255,28 @@ def api_convoy_confirm(robot_id: int):
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
     return {"message": msg, "robot_id": robot_id}
+
+
+@router.post("/fire-test")
+def api_fire_test():
+    """[테스트] 화재 경보 발령 → convoy 로봇 SAFE 대피"""
+    ok, msg = fire_evacuate()
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"message": msg}
+
+
+@router.post("/fire-reset")
+def api_fire_reset():
+    """[테스트] 화재 해제 → convoy 상태 초기화"""
+    reset_fire()
+    return {"message": "화재 해제 완료"}
+
+
+@router.post("/return-all")
+def api_convoy_return_all():
+    """비상정지 후 전체 복귀 — 로봇을 1대씩 7초 간격으로 충전소/대기지점으로 복귀"""
+    ok, msg = return_all_convoy(interval=7.0)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"message": msg}

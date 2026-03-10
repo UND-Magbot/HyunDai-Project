@@ -1,12 +1,14 @@
 import io
 import logging
+import os
 import subprocess
 import zipfile
 from datetime import datetime
 
 import openpyxl
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -139,12 +141,80 @@ def api_backup_db(db: Session = Depends(get_db)):
         logger.warning(f"[backup] mysqldump 실패 ({err}) — Python 방식으로 대체")
         sql_bytes = _build_sql_python(db)
 
-    logger.info(f"[backup] SQL 백업 완료: {filename} ({len(sql_bytes)} bytes)")
+    logger.warning(f"[backup] SQL 백업 완료: {filename} ({len(sql_bytes):,} bytes)")
     return Response(
         content=sql_bytes,
         media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/browse")
+def api_browse(path: str = "/"):
+    """서버 디렉터리 목록 조회 (폴더만 반환). 존재하지 않으면 가장 가까운 상위 경로로 대체."""
+    abs_path = os.path.abspath(path)
+    # 존재하지 않는 경로면 상위로 올라가며 존재하는 경로 탐색
+    while abs_path != "/" and not os.path.isdir(abs_path):
+        abs_path = os.path.dirname(abs_path)
+    try:
+        entries = sorted(
+            e for e in os.listdir(abs_path)
+            if os.path.isdir(os.path.join(abs_path, e)) and not e.startswith(".")
+        )
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
+    parent = str(os.path.dirname(abs_path)) if abs_path != "/" else None
+    return {"current": abs_path, "parent": parent, "dirs": entries}
+
+
+class SaveRequest(BaseModel):
+    save_path: str  # 서버 측 저장 경로 (디렉터리 또는 파일 전체 경로)
+
+
+@router.post("/save")
+def api_backup_save(body: SaveRequest, db: Session = Depends(get_db)):
+    """DB 백업 파일(SQL + Excel)을 서버 로컬 경로에 저장"""
+    save_path = body.save_path.strip()
+    if not save_path:
+        raise HTTPException(status_code=400, detail="저장 경로를 입력해주세요.")
+
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d_%H%M%S")
+
+    # 항상 디렉터리로 처리 (파일명은 자동 생성)
+    dir_path = save_path if save_path.endswith(("/", "\\")) else save_path
+    if not os.path.isdir(dir_path):
+        os.makedirs(dir_path, exist_ok=True)
+
+    sql_path = os.path.join(dir_path, f"db_backup_{date_str}.sql")
+    xlsx_path = os.path.join(dir_path, f"db_backup_{date_str}.xlsx")
+
+    # SQL 저장
+    sql_bytes, err = _run_mysqldump()
+    if sql_bytes is None:
+        logger.warning(f"[backup/save] mysqldump 실패 ({err}) — Python 방식으로 대체")
+        sql_bytes = _build_sql_python(db)
+    try:
+        with open(sql_path, "wb") as f:
+            f.write(sql_bytes)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"SQL 파일 저장 실패: {e}")
+
+    # Excel 저장
+    try:
+        excel_bytes = _build_excel(db)
+        with open(xlsx_path, "wb") as f:
+            f.write(excel_bytes)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Excel 파일 저장 실패: {e}")
+
+    logger.warning(f"[backup/save] 저장 완료: {sql_path}, {xlsx_path}")
+    return {
+        "sql_path": sql_path,
+        "xlsx_path": xlsx_path,
+        "sql_size": len(sql_bytes),
+        "xlsx_size": len(excel_bytes),
+    }
 
 
 @router.get("/full")

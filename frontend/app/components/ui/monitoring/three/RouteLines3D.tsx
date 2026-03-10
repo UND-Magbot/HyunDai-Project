@@ -78,7 +78,7 @@ function RouteLines3DInner({
 }: Props) {
   const lines = useMemo(() => {
     if (segments.length > 0) {
-      return segments.map((seg) => {
+      return segments.filter((seg) => seg.lineType !== "firewall").map((seg) => {
         let points: [number, number, number][];
         if (
           seg.lineType === "curve" &&

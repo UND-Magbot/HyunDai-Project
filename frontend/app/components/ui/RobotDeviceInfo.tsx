@@ -31,6 +31,7 @@ export function RobotDeviceInfo({
   onEnableToggle,
   togglingDeviceId,
   showChargingStation = true,
+  readOnly = false,
 }: RobotDeviceInfoProps) {
   const [initialMinBattery, setInitialMinBattery] = useState<number | null>(null);
   const [minBattery, setMinBattery] = useState(20);
@@ -41,14 +42,10 @@ export function RobotDeviceInfo({
   const [initialStandbyId, setInitialStandbyId] = useState<number | null>(null);
   const [standbyId, setStandbyId] = useState<number | null>(null);
   const [isApplying, setIsApplying] = useState(false);
-  const [chargingDropdownOpen, setChargingDropdownOpen] = useState(false);
-  const [standbyDropdownOpen, setStandbyDropdownOpen] = useState(false);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [standbyDropdownPos, setStandbyDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const chargingDropdownRef = useRef<HTMLDivElement>(null);
-  const standbyDropdownRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const standbyTriggerRef = useRef<HTMLButtonElement>(null);
+  const [poiDropdownOpen, setPoiDropdownOpen] = useState(false);
+  const [poiDropdownPos, setPoiDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const poiDropdownRef = useRef<HTMLDivElement>(null);
+  const poiTriggerRef = useRef<HTMLButtonElement>(null);
   const { showAlert } = useAlert();
 
   useEffect(() => {
@@ -132,11 +129,8 @@ export function RobotDeviceInfo({
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (chargingDropdownRef.current && !chargingDropdownRef.current.contains(e.target as Node)) {
-        setChargingDropdownOpen(false);
-      }
-      if (standbyDropdownRef.current && !standbyDropdownRef.current.contains(e.target as Node)) {
-        setStandbyDropdownOpen(false);
+      if (poiDropdownRef.current && !poiDropdownRef.current.contains(e.target as Node)) {
+        setPoiDropdownOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -294,7 +288,8 @@ export function RobotDeviceInfo({
               min={0}
               max={100}
               value={minBattery}
-              onChange={(e) => setMinBattery(Number(e.target.value))}
+              onChange={(e) => !readOnly && setMinBattery(Number(e.target.value))}
+              disabled={readOnly}
               style={{
                 background: `linear-gradient(to right, var(--color-primary) ${minBattery}%, var(--bg-surface-2) ${minBattery}%)`,
               }}
@@ -302,124 +297,108 @@ export function RobotDeviceInfo({
             <span className="robot-info__range-value">{minBattery}%</span>
           </div>
 
-          {showChargingStation && (
-            <div className="robot-info__charging-row">
-              <span className="robot-info__label">충전소</span>
-              <div className="robot-info__dropdown" ref={chargingDropdownRef}>
-                <button
-                  type="button"
-                  className="robot-info__dropdown-trigger"
-                  ref={triggerRef}
-                  onClick={() => {
-                    if (!chargingDropdownOpen && triggerRef.current) {
-                      const rect = triggerRef.current.getBoundingClientRect();
-                      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-                    }
-                    setChargingDropdownOpen((v) => !v);
-                  }}
-                >
-                  <span className={chargingId == null ? "robot-info__dropdown-placeholder" : ""}>
-                    {chargingId != null
-                      ? chargingPois.find((p) => p.id === chargingId)?.name ?? "충전소를 선택해주세요."
-                      : "충전소를 선택해주세요."}
-                  </span>
-                  <svg
-                    className={`robot-info__dropdown-arrow${chargingDropdownOpen ? " robot-info__dropdown-arrow--open" : ""}`}
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
+          {showChargingStation && (() => {
+            const allPois = [
+              ...chargingPois.map((p) => ({ ...p, type: "charging" as const })),
+              ...standbyPois.map((p) => ({ ...p, type: "standby" as const })),
+            ];
+            const selectedPoi =
+              chargingId != null
+                ? allPois.find((p) => p.type === "charging" && p.id === chargingId)
+                : standbyId != null
+                ? allPois.find((p) => p.type === "standby" && p.id === standbyId)
+                : null;
+
+            return (
+              <div className="robot-info__charging-row">
+                <span className="robot-info__label">귀환장소</span>
+                <div className="robot-info__dropdown" ref={poiDropdownRef}>
+                  <button
+                    type="button"
+                    className="robot-info__dropdown-trigger"
+                    ref={poiTriggerRef}
+                    disabled={readOnly}
+                    onClick={() => {
+                      if (readOnly) return;
+                      if (!poiDropdownOpen && poiTriggerRef.current) {
+                        const rect = poiTriggerRef.current.getBoundingClientRect();
+                        setPoiDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+                      }
+                      setPoiDropdownOpen((v) => !v);
+                    }}
                   >
-                    <path fill="currentColor" d="M6 8L1 3h10z" />
-                  </svg>
-                </button>
-                {chargingDropdownOpen && dropdownPos && (
-                  <ul
-                    className="robot-info__dropdown-menu"
-                    style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
-                  >
-                    {chargingPois.map((poi) => (
-                      <li key={poi.id}>
-                        <button
-                          type="button"
-                          className={`robot-info__dropdown-option${chargingId === poi.id ? " robot-info__dropdown-option--selected" : ""}`}
-                          onClick={() => { setChargingId(poi.id); setChargingDropdownOpen(false); }}
-                        >
-                          {poi.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                    <span className={selectedPoi == null ? "robot-info__dropdown-placeholder" : ""}>
+                      {selectedPoi
+                        ? `${selectedPoi.name} [${selectedPoi.type === "charging" ? "충전" : "대기"}]`
+                        : "귀환장소를 선택해주세요."}
+                    </span>
+                    <svg
+                      className={`robot-info__dropdown-arrow${poiDropdownOpen ? " robot-info__dropdown-arrow--open" : ""}`}
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 12 12"
+                    >
+                      <path fill="currentColor" d="M6 8L1 3h10z" />
+                    </svg>
+                  </button>
+                  {poiDropdownOpen && poiDropdownPos && (
+                    <ul
+                      className="robot-info__dropdown-menu"
+                      style={{ top: poiDropdownPos.top, left: poiDropdownPos.left, width: poiDropdownPos.width }}
+                    >
+                      {allPois.map((poi) => {
+                        const isSelected =
+                          poi.type === "charging" ? chargingId === poi.id : standbyId === poi.id;
+                        return (
+                          <li key={`${poi.type}-${poi.id}`}>
+                            <button
+                              type="button"
+                              className={`robot-info__dropdown-option${isSelected ? " robot-info__dropdown-option--selected" : ""}`}
+                              onClick={() => {
+                                if (poi.type === "charging") {
+                                  setChargingId(poi.id);
+                                  setStandbyId(null);
+                                } else {
+                                  setStandbyId(poi.id);
+                                  setChargingId(null);
+                                }
+                                setPoiDropdownOpen(false);
+                              }}
+                            >
+                              {poi.name}
+                              <span className="robot-info__poi-badge">
+                                {poi.type === "charging" ? "충전" : "대기"}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
-          <div className="robot-info__charging-row">
-              <span className="robot-info__label">대기장소</span>
-              <div className="robot-info__dropdown" ref={standbyDropdownRef}>
-                <button
-                  type="button"
-                  className="robot-info__dropdown-trigger"
-                  ref={standbyTriggerRef}
-                  onClick={() => {
-                    if (!standbyDropdownOpen && standbyTriggerRef.current) {
-                      const rect = standbyTriggerRef.current.getBoundingClientRect();
-                      setStandbyDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-                    }
-                    setStandbyDropdownOpen((v) => !v);
-                  }}
-                >
-                  <span className={standbyId == null ? "robot-info__dropdown-placeholder" : ""}>
-                    {standbyId != null
-                      ? standbyPois.find((p) => p.id === standbyId)?.name ?? "대기장소를 선택해주세요."
-                      : "대기장소를 선택해주세요."}
-                  </span>
-                  <svg
-                    className={`robot-info__dropdown-arrow${standbyDropdownOpen ? " robot-info__dropdown-arrow--open" : ""}`}
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                  >
-                    <path fill="currentColor" d="M6 8L1 3h10z" />
-                  </svg>
-                </button>
-                {standbyDropdownOpen && standbyDropdownPos && (
-                  <ul
-                    className="robot-info__dropdown-menu"
-                    style={{ top: standbyDropdownPos.top, left: standbyDropdownPos.left, width: standbyDropdownPos.width }}
-                  >
-                    {standbyPois.map((poi) => (
-                      <li key={poi.id}>
-                        <button
-                          type="button"
-                          className={`robot-info__dropdown-option${standbyId === poi.id ? " robot-info__dropdown-option--selected" : ""}`}
-                          onClick={() => { setStandbyId(poi.id); setStandbyDropdownOpen(false); }}
-                        >
-                          {poi.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                className="robot-info__apply-btn"
+                style={{ display: "block", margin: "12px auto 0" }}
+                disabled={!isChanged || isApplying}
+                onClick={handleApply}
+              >
+                {isApplying ? "적용 중..." : "적용"}
+              </button>
 
-          <button
-            type="button"
-            className="robot-info__apply-btn"
-            style={{ display: "block", margin: "12px auto 0" }}
-            disabled={!isChanged || isApplying}
-            onClick={handleApply}
-          >
-            {isApplying ? "적용 중..." : "적용"}
-          </button>
-
-          {isChanged && (
-            <p className="robot-info__warning">
-              변경된 설정은 적용 버튼을 눌러야 반영됩니다.
-            </p>
+              {isChanged && (
+                <p className="robot-info__warning">
+                  변경된 설정은 적용 버튼을 눌러야 반영됩니다.
+                </p>
+              )}
+            </>
           )}
         </section>
 

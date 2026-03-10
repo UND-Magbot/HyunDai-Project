@@ -66,7 +66,7 @@ function RobotMarker3DInner({ robot, imgW, imgH }: Props) {
   const { yaw, robotName, status, collisionState } = robot;
 
   const ledColor = getLedColor(status, collisionState);
-  const rotationY = -yaw + Math.PI / 2;
+  const rotationY = yaw + Math.PI / 2;
   const pillarCY = PILLAR_BOT + PILLAR_H / 2;
 
   return (
