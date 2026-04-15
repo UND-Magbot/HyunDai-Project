@@ -91,3 +91,31 @@ app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 @app.get("/ping")
 def ping():
     return {"message": "pong"}
+
+
+@app.get("/health")
+def health_check():
+    """이중화 헬스체크 — DB 연결 + convoy 상태 확인"""
+    from app.database import engine
+    from sqlalchemy import text as sa_text
+    import time
+
+    result = {"status": "ok", "timestamp": time.time(), "checks": {}}
+
+    # DB 연결 체크
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa_text("SELECT 1"))
+        result["checks"]["database"] = "ok"
+    except Exception as e:
+        result["checks"]["database"] = f"error: {e}"
+        result["status"] = "degraded"
+
+    # convoy 상태 체크
+    try:
+        from app.robot_api.robot_convoy_service import _convoy_phase
+        result["checks"]["convoy"] = _convoy_phase
+    except Exception:
+        result["checks"]["convoy"] = "unknown"
+
+    return result

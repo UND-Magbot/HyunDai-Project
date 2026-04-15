@@ -4,7 +4,7 @@ import logging
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
-from app.models.map import Business, Area, RobotMap, MapPOI, MapLine
+from app.models.map import Business, Area, RobotMap, MapPOI, MapLine, MapPolygon
 from app.models.robot import Robot
 
 logger = logging.getLogger(__name__)
@@ -320,6 +320,17 @@ def save_map_elements(db: Session, map_id: int, payload: dict) -> dict:
             )
             db.add(line)
 
+        # 폴리곤 삽입 (가상벽 등)
+        db.query(MapPolygon).filter(MapPolygon.map_id == map_id).delete()
+        for pg in payload.get("polygons", []):
+            poly = MapPolygon(
+                map_id=map_id,
+                name=pg.get("name", ""),
+                shape_type=pg.get("shapeType", "polygon"),
+                points_json=json.dumps(pg.get("points", [])),
+            )
+            db.add(poly)
+
         # ── POI 매핑 복원: 같은 이름의 새 POI로 charging_id/standby_id 재설정 ──
         restored_charging = 0
         restored_standby = 0
@@ -408,7 +419,18 @@ def get_map_elements(db: Session, map_id: int) -> dict:
             "areaName": ln.area_name,
         })
 
-    return {"pois": poi_list, "lines": line_list}
+    # 폴리곤
+    polys = db.query(MapPolygon).filter(MapPolygon.map_id == map_id, MapPolygon.is_active == True).all()
+    polygon_list = []
+    for pg in polys:
+        polygon_list.append({
+            "id": f"polygon-{pg.id}",
+            "name": pg.name,
+            "shapeType": pg.shape_type,
+            "points": _safe_json_loads(pg.points_json) or [],
+        })
+
+    return {"pois": poi_list, "lines": line_list, "polygons": polygon_list}
 
 
 def get_charging_pois(db: Session, map_id: int):
@@ -421,6 +443,23 @@ def get_charging_pois(db: Session, map_id: int):
             MapPOI.is_active == True,
             MapPOI.world_x.isnot(None),
             MapPOI.world_y.isnot(None),
+        )
+        .all()
+    )
+
+
+def get_firewall_lines(db: Session, map_id: int):
+    """가상벽(firewall) 타입 라인 중 월드 좌표가 유효한 것만 반환."""
+    return (
+        db.query(MapLine)
+        .filter(
+            MapLine.map_id == map_id,
+            MapLine.line_type == "firewall",
+            MapLine.is_active == True,
+            MapLine.from_world_x.isnot(None),
+            MapLine.from_world_y.isnot(None),
+            MapLine.to_world_x.isnot(None),
+            MapLine.to_world_y.isnot(None),
         )
         .all()
     )

@@ -6,16 +6,18 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - TZ=Asia/Seoul
       - DB_HOST=host.docker.internal
       - DB_PORT=${DB_PORT:-3306}
-      - DB_USER=${DB_USER:-root}
-      - DB_PASSWORD=${DB_PASSWORD:-unde5466}
+      - DB_USER=${DB_USER:-administrator}
+      - DB_PASSWORD=${DB_PASSWORD:-qwer!@34}
       - DB_NAME=${DB_NAME:-rcs_db}
+      - WCS_URL=${WCS_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./BackEnd/static:/app/static
-      - /home/und/app/backups:/home/und/app/backups
+      - /home/administrator:/home/administrator
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]

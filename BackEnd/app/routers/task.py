@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -85,8 +85,10 @@ def api_loop_status(robot_id: int, db: Session = Depends(get_db)):
     """무한반복 작업 상태 조회 (idle일 때 실제 충전 상태 반영)"""
     status = get_loop_status(robot_id)
 
+    robot = db.query(Robot).filter(Robot.id == robot_id, Robot.is_active == True).first()
+    amr_label = f"AMR{str(robot.wcs_no).zfill(2)}" if robot and robot.wcs_no else f"AMR{str(robot_id).zfill(2)}"
+
     if status.get("status") in ("idle", "stopped"):
-        robot = db.query(Robot).filter(Robot.id == robot_id, Robot.is_active == True).first()
         if robot and robot.ip_address:
             try:
                 ws_data, _ = _collect_ws_topics(robot.ip_address, ["/planning_state", "/detailed_battery_state", "/battery_state"], timeout_sec=3)
@@ -98,7 +100,32 @@ def api_loop_status(robot_id: int, db: Session = Depends(get_db)):
             except Exception:
                 pass
 
-    return {"robot_id": robot_id, **status}
+    # 배터리 조회 (항상 실시간 WS 조회)
+    battery_pct = None
+    if robot and robot.ip_address:
+        try:
+            ws_data, _ = _collect_ws_topics(robot.ip_address, ["/battery_state"], timeout_sec=2)
+            bs = ws_data.get("/battery_state", {})
+            if bs and "percentage" in bs:
+                raw = bs["percentage"]
+                battery_pct = round(raw * 100) if raw <= 1.0 else round(raw)
+        except Exception:
+            pass
+
+    # 일시정지 상태 확인 (control_mode == manual)
+    paused = False
+    if robot and robot.ip_address:
+        try:
+            import requests as _req
+            _r = _req.get(f"http://{robot.ip_address}:8090/chassis/status",
+                          headers={"Authorization": "Secret 19a11878aaab420fba94577ce3620dce"},
+                          timeout=2)
+            if _r.status_code == 200:
+                paused = _r.json().get("control_mode") == "manual"
+        except Exception:
+            pass
+
+    return {"robot_id": robot_id, "amr_label": amr_label, "battery": battery_pct, "paused": paused, **status}
 
 
 class ChargeRequest(BaseModel):
@@ -207,6 +234,50 @@ def api_return(robot_id: int, db: Session = Depends(get_db)):
     if not dest_poi:
         raise HTTPException(status_code=400, detail="대기장소/충전소가 설정되지 않았습니다.")
 
+    # ── 다른 로봇이 같은 위치를 점유 중이면 빈 위치 재배정 ──
+    other_robots = db.query(Robot).filter(
+        Robot.is_active == True, Robot.id != robot_id
+    ).all()
+    occupied_poi_ids = set()
+    for r in other_robots:
+        if r.charging_id:
+            occupied_poi_ids.add(r.charging_id)
+        if r.standby_id:
+            occupied_poi_ids.add(r.standby_id)
+
+    if dest_poi.id in occupied_poi_ids:
+        # 현재 배정된 위치가 중복 → 빈 위치 탐색
+        _POS_ORDER = ["C1", "C2", "C3", "W1", "W2"]
+        occupied_names = set()
+        for pid in occupied_poi_ids:
+            op = db.query(MapPOI).filter(MapPOI.id == pid).first()
+            if op:
+                occupied_names.add(op.name)
+
+        new_dest = None
+        for pos_name in _POS_ORDER:
+            if pos_name in occupied_names:
+                continue
+            candidate = db.query(MapPOI).filter(
+                MapPOI.name == pos_name, MapPOI.is_active == True,
+                MapPOI.map_id == dest_poi.map_id,
+            ).first()
+            if candidate:
+                new_dest = candidate
+                break
+
+        if new_dest:
+            dest_poi = new_dest
+            dest_type = "standby" if new_dest.name.startswith("W") else "charging"
+            # DB 업데이트
+            if dest_type == "standby":
+                robot.standby_id = new_dest.id
+                robot.charging_id = None
+            else:
+                robot.charging_id = new_dest.id
+                robot.standby_id = None
+            db.commit()
+
     # 경유 경로 자동 탐색
     route_names = _find_return_route(db, dest_poi)
 
@@ -273,12 +344,45 @@ def api_stop_robot(robot_id: int, db: Session = Depends(get_db)):
     return {"message": "이동이 취소되었습니다", "robot_id": robot_id}
 
 
+@router.post("/robot/{robot_id}/shutdown")
+def api_shutdown_robot(robot_id: int, db: Session = Depends(get_db)):
+    """로봇 전체 전원 종료"""
+    robot = db.query(Robot).filter(Robot.id == robot_id, Robot.is_active == True).first()
+    if not robot or not robot.ip_address:
+        raise HTTPException(status_code=404, detail="로봇을 찾을 수 없습니다")
+    ip = robot.ip_address
+    secret = "19a11878aaab420fba94577ce3620dce"
+    try:
+        import requests as http_req
+        r = http_req.post(
+            f"http://{ip}:8090/services/baseboard/shutdown",
+            headers={"Authorization": f"Secret {secret}", "Content-Type": "application/json"},
+            json={"target": "main_power_supply", "reboot": False},
+            timeout=10,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"로봇 종료 실패: {e}")
+    _rname = robot.name if robot else f"로봇 {robot_id}"
+    log_activity("robot", "robot_shutdown",
+                 f"로봇 '{_rname}' 전원 종료",
+                 robot_id=robot_id, robot_name=_rname, source="api_shutdown_robot")
+    return {"message": "로봇 종료 명령 전송 완료", "robot_id": robot_id}
+
+
 # ─── 로봇 태블릿용 확인 페이지 ──────────────────────────────────────────────────
 
+@router.get("/tablet/demo", response_class=HTMLResponse)
+def tablet_demo_page_route():
+    """태블릿 화면 전체 상태 미리보기 (데모) — /tablet/{robot_id} 보다 먼저 등록"""
+    return tablet_demo_page()
+
 @router.get("/tablet/{robot_id}", response_class=HTMLResponse)
-def tablet_page(robot_id: int):
+def tablet_page(robot_id: int, db: Session = Depends(get_db)):
     """로봇 태블릿 브라우저에서 열 확인 페이지"""
-    return f"""<!DOCTYPE html>
+    robot = db.query(Robot).filter(Robot.id == robot_id).first()
+    amr_label = f"AMR{str(robot.wcs_no).zfill(2)}" if robot and robot.wcs_no else f"AMR{str(robot_id).zfill(2)}"
+    html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -291,8 +395,18 @@ body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
         height:100vh; overflow:hidden; }}
 .status-box {{ text-align:center; width:90%; max-width:900px;
                display:flex; flex-direction:column; align-items:center; gap:1.5vh; }}
-.poi-name {{ font-size:clamp(3rem,10vw,7rem); font-weight:800; line-height:1.2;
-             color:#e94560; word-break:keep-all; }}
+.battery-label {{ position:fixed; left:16px; top:50%; transform:translateY(-50%);
+                  display:flex; flex-direction:column; align-items:center; gap:8px;
+                  font-size:clamp(1.2rem,3vw,1.6rem); font-weight:700; color:#aaa; z-index:1001; }}
+.battery-icon {{ display:block; width:clamp(44px,8vw,64px); height:clamp(22px,4vw,32px);
+                 border:3px solid #aaa; border-radius:4px; position:relative; }}
+.battery-icon::after {{ content:''; position:absolute; right:-7px; top:20%; width:4px; height:60%;
+                        background:#aaa; border-radius:0 3px 3px 0; }}
+.battery-fill {{ height:100%; border-radius:1px; transition:width 0.5s; }}
+.amr-label {{ font-size:2.5rem; font-size:clamp(2rem,6vw,4rem); font-weight:800; color:#42a5f5;
+              letter-spacing:0.05em; }}
+.poi-name {{ font-size:clamp(3rem,10vw,7rem); font-weight:800; line-height:1.3;
+             color:#e94560; word-break:keep-all; white-space:pre-line; }}
 .status-text {{ font-size:clamp(1.6rem,5vw,3rem); line-height:1.4; color:#aaa;
                 word-break:keep-all; }}
 .loop-info {{ font-size:clamp(1.2rem,3.5vw,2rem); line-height:1.3; color:#666; }}
@@ -339,13 +453,67 @@ body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
   0%,100% {{ opacity:1; }}
   50% {{ opacity:0.6; }}
 }}
+.corner-btn {{
+  position:fixed; top:12px;
+  width:clamp(44px,7vw,60px); height:clamp(44px,7vw,60px);
+  font-size:clamp(1.2rem,3vw,1.8rem);
+  background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+  border-radius:50%; color:rgba(255,255,255,0.4);
+  cursor:pointer; z-index:1002;
+  display:flex; align-items:center; justify-content:center;
+}}
+.corner-btn:active {{ background:rgba(255,255,255,0.2); color:#fff; }}
+#btn-home {{ left:12px; }}
+#btn-settings {{ right:12px; }}
+#btn-shutdown {{
+  position:fixed; bottom:16px; right:16px;
+  width:clamp(48px,8vw,64px); height:clamp(48px,8vw,64px);
+  font-size:clamp(0.7rem,2vw,1rem); font-weight:800;
+  background:rgba(233,69,96,0.15); border:2px solid rgba(233,69,96,0.4);
+  border-radius:50%; color:rgba(233,69,96,0.6);
+  cursor:pointer; z-index:1002;
+  display:flex; align-items:center; justify-content:center;
+}}
+#btn-shutdown:active {{ background:rgba(233,69,96,0.4); color:#fff; }}
+.shutdown-confirm {{
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85);
+  z-index:2000; flex-direction:column; align-items:center; justify-content:center; gap:2vh;
+}}
+.shutdown-confirm.show {{ display:flex; }}
+.shutdown-confirm .msg {{ font-size:clamp(1.8rem,5vw,3rem); font-weight:700; color:#e94560; }}
+.shutdown-confirm .sub {{ font-size:clamp(1rem,3vw,1.6rem); color:#aaa; }}
+.shutdown-confirm .btns {{ display:flex; gap:20px; margin-top:2vh; }}
+.shutdown-confirm .btns button {{
+  width:clamp(140px,30vw,200px); height:clamp(60px,12vh,100px);
+  font-size:clamp(1.2rem,3.5vw,2rem); font-weight:700; border:none; border-radius:16px;
+  cursor:pointer;
+}}
+.shutdown-confirm .btn-yes {{ background:#e94560; color:#fff; }}
+.shutdown-confirm .btn-no {{ background:#333; color:#aaa; border:1px solid #555; }}
 </style>
 </head>
 <body>
 
 <div class="stuck-banner" id="stuckBanner">장애물 감지 — 작업중입니다. 비켜주세요!</div>
+<button id="btn-shutdown" onclick="showShutdown()">OFF</button>
+<div class="shutdown-confirm" id="shutdownConfirm">
+  <div class="msg">로봇 전원을 종료하시겠습니까?</div>
+  <div class="sub">종료 후 수동으로만 다시 켤 수 있습니다</div>
+  <div class="btns">
+    <button class="btn-yes" onclick="doShutdown()">종료</button>
+    <button class="btn-no" onclick="hideShutdown()">취소</button>
+  </div>
+</div>
+<button class="corner-btn" id="btn-home"     onclick="if(window.Android) Android.goHome()">⌂</button>
+<button class="corner-btn" id="btn-settings" onclick="if(window.Android) Android.openSettings()">⚙</button>
+
+<div class="battery-label">
+  <div class="battery-icon"><div class="battery-fill" id="batteryFill" style="width:0%;background:#aaa;"></div></div>
+  <span id="batteryText">--%</span>
+</div>
 
 <div class="status-box">
+  <div class="amr-label">{amr_label}</div>
   <div class="poi-name" id="poiName">-</div>
   <div class="status-text" id="statusText">연결 중...</div>
   <div class="loop-info" id="loopInfo"></div>
@@ -361,7 +529,26 @@ let stuckAudio = null;
 let wasStuck = false;
 let audioPlaying = false;
 let autoConfirmTimer = null;
-const AUTO_CONFIRM_SEC = 2;
+const AUTO_CONFIRM_SEC = 5;
+
+// 종료 기능
+function showShutdown() {{ document.getElementById('shutdownConfirm').classList.add('show'); }}
+function hideShutdown() {{ document.getElementById('shutdownConfirm').classList.remove('show'); }}
+async function doShutdown() {{
+  try {{
+    const r = await fetch(API + '/robot/' + ROBOT_ID + '/shutdown', {{ method: 'POST' }});
+    if (r.ok) {{
+      document.querySelector('.shutdown-confirm .msg').textContent = '종료 명령 전송 완료';
+      document.querySelector('.shutdown-confirm .sub').textContent = '잠시 후 로봇이 종료됩니다';
+      document.querySelector('.shutdown-confirm .btns').style.display = 'none';
+    }} else {{
+      const d = await r.json();
+      document.querySelector('.shutdown-confirm .sub').textContent = d.detail || '종료 실패';
+    }}
+  }} catch(e) {{
+    document.querySelector('.shutdown-confirm .sub').textContent = '서버 연결 실패';
+  }}
+}}
 
 // 음성 재생 (장애물 감지 시)
 function playStuckAudio() {{
@@ -380,9 +567,6 @@ function handleStuck(isStuck) {{
   const banner = document.getElementById('stuckBanner');
   if (isStuck) {{
     banner.classList.add('show');
-    if (!wasStuck) {{
-      playStuckAudio();
-    }}
   }} else {{
     banner.classList.remove('show');
   }}
@@ -391,8 +575,8 @@ function handleStuck(isStuck) {{
 
 // POI 이름 → 표시명 매핑
 const poiDisplayName = {{
-  'WORK2': '투입',
-  'WORK4': '배출',
+  'WORK2': '피킹',
+  'WORK4': '투입',
 }};
 
 async function fetchStatus() {{
@@ -408,6 +592,25 @@ async function fetchStatus() {{
 
 function render(d) {{
   handleStuck(!!d.stuck);
+  // 배터리 표시
+  if (d.battery != null) {{
+    const pct = Math.round(d.battery);
+    document.getElementById('batteryText').textContent = pct + '%';
+    const fill = document.getElementById('batteryFill');
+    fill.style.width = pct + '%';
+    fill.style.background = pct <= 20 ? '#e94560' : pct <= 50 ? '#ffc048' : '#0be881';
+    document.querySelector('.battery-icon').style.borderColor = pct <= 20 ? '#e94560' : '#aaa';
+    document.querySelector('.battery-label span').style.color = pct <= 20 ? '#e94560' : '#aaa';
+  }}
+  // 일시정지 표시
+  if (d.paused) {{
+    document.getElementById('poiName').textContent = '일시정지';
+    document.getElementById('poiName').style.color = '#ff6b6b';
+    document.getElementById('statusText').style.display = '';
+    document.getElementById('statusText').innerHTML = '<span style="color:#ff9999">다시 출발 대기 중</span>';
+    document.getElementById('btn-confirm').classList.remove('show');
+    return;
+  }}
   const poi = d.current_poi || '';
   const btn = document.getElementById('btn-confirm');
   const poiEl = document.getElementById('poiName');
@@ -420,33 +623,61 @@ function render(d) {{
   btn.classList.remove('show');
 
   if (d.status === 'moving_to_start' || d.status === 'starting') {{
-    poiEl.textContent = '작업 진입중';
+    poiEl.textContent = '피킹 장소로\\n이동 중';
+    poiEl.style.color = '#a29bfe';
+    statusEl.style.display = '';
+    statusEl.innerHTML = '<span class="moving"><span class="spinner"></span></span>';
+    if (d.show_confirm && !confirmCooldown) {{ btn.classList.add('show'); }}
+  }} else if (d.status === 'resuming') {{
+    poiEl.textContent = '작업 위치로\\n이동 중';
     poiEl.style.color = '#a29bfe';
     statusEl.style.display = '';
     statusEl.innerHTML = '<span class="moving"><span class="spinner"></span></span>';
   }} else if (d.status === 'running') {{
-    poiEl.textContent = stopName ? (stopName + ' 위치 이동중') : '이동 중';
+    const msg = d.message || '';
+    if (msg.includes('피킹')) {{
+      poiEl.textContent = '피킹 장소로\\n이동 중';
+    }} else if (msg.includes('투입')) {{
+      poiEl.textContent = '투입 장소로\\n이동 중';
+    }} else {{
+      poiEl.textContent = '이동 중';
+    }}
     poiEl.style.color = '#0be881';
     statusEl.style.display = '';
     statusEl.innerHTML = '<span class="running"><span class="spinner"></span></span>';
+    if (d.show_confirm && !confirmCooldown) {{ btn.classList.add('show'); }}
   }} else if (d.status === 'waiting_confirmation') {{
-    poiEl.textContent = stopName || poi;
+    const msg = d.message || '';
+    if (msg.includes('피킹')) {{
+      poiEl.textContent = '피킹 장소\\n대기';
+    }} else if (msg.includes('투입')) {{
+      poiEl.textContent = '투입 장소\\n대기';
+    }} else {{
+      poiEl.textContent = stopName || poi;
+    }}
     poiEl.style.color = '#ffc048';
-    btn.classList.add('show');
-    startAutoConfirm();
-  }} else if (d.status === 'returning') {{
-    poiEl.textContent = '복귀중';
+    if (!confirmCooldown) {{ btn.classList.add('show'); }}
+  }} else if (d.status === 'evacuating') {{
+    poiEl.textContent = '대피 장소로\\n이동 중';
+    poiEl.style.color = '#e94560';
+    statusEl.style.display = '';
+    statusEl.innerHTML = '<span class="error"><span class="spinner"></span></span>';
+  }} else if (d.status === 'returning' || d.status === 'finishing') {{
+    poiEl.textContent = '복귀 장소로\\n이동 중';
     poiEl.style.color = '#a29bfe';
     statusEl.style.display = '';
     statusEl.innerHTML = '<span class="moving"><span class="spinner"></span></span>';
   }} else if (d.status === 'charging_route' || d.status === 'low_battery_charging') {{
-    poiEl.textContent = '충전소 이동중';
+    poiEl.textContent = '복귀 장소로\\n이동 중';
     poiEl.style.color = '#00d2d3';
     statusEl.style.display = '';
     statusEl.innerHTML = '<span class="charging"><span class="spinner"></span></span>';
   }} else if (d.status === 'charging') {{
-    poiEl.textContent = '충전중';
+    poiEl.textContent = '충전 중';
     poiEl.style.color = '#00d2d3';
+  }} else if (d.status === 'standby') {{
+    poiEl.textContent = '대기 중';
+    poiEl.style.color = '#666';
   }} else if (d.status === 'error') {{
     poiEl.textContent = '오류 발생';
     poiEl.style.color = '#e94560';
@@ -455,7 +686,7 @@ function render(d) {{
       statusEl.innerHTML = '<span class="error">' + d.message + '</span>';
     }}
   }} else {{
-    poiEl.textContent = '대기중';
+    poiEl.textContent = '대기 중';
     poiEl.style.color = '#666';
   }}
 
@@ -477,36 +708,234 @@ function cancelAutoConfirm() {{
   }}
 }}
 
+let confirmCooldown = false;
 async function doConfirm() {{
+  if (confirmCooldown) return;
   cancelAutoConfirm();
   const btn = document.getElementById('btn-confirm');
   btn.disabled = true;
-  btn.textContent = '전송 중...';
+  confirmCooldown = true;
   try {{
     const r = await fetch(API + '/loop/confirm/' + ROBOT_ID, {{ method: 'POST' }});
     const d = await r.json();
     if (r.ok) {{
-      btn.textContent = '✔ 확인 완료';
-      btn.style.background = 'linear-gradient(135deg,#0be881,#05c46b)';
-      setTimeout(() => {{
-        cancelAutoConfirm(); btn.classList.remove('show');
-        btn.disabled = false;
-        btn.textContent = '✔ 작업 확인';
-        btn.style.background = '';
-      }}, 1500);
+      btn.classList.remove('show');
+      btn.textContent = '✔ 작업 확인';
+      btn.style.background = '';
+      // 3초 쿨다운 — 다음 버튼 표시 방지
+      setTimeout(() => {{ confirmCooldown = false; btn.disabled = false; }}, 3000);
     }} else {{
       btn.textContent = d.detail || '오류';
-      setTimeout(() => {{ btn.disabled = false; btn.textContent = '✔ 작업 확인'; }}, 2000);
+      setTimeout(() => {{ confirmCooldown = false; btn.disabled = false; btn.textContent = '✔ 작업 확인'; }}, 1000);
     }}
   }} catch(e) {{
     btn.textContent = '전송 실패';
-    setTimeout(() => {{ btn.disabled = false; btn.textContent = '✔ 작업 확인'; }}, 2000);
+    setTimeout(() => {{ confirmCooldown = false; btn.disabled = false; btn.textContent = '✔ 작업 확인'; }}, 1000);
   }}
 }}
 
-// 1초 간격 폴링
+// 폴링
 fetchStatus();
-polling = setInterval(fetchStatus, 1000);
+polling = setInterval(fetchStatus, 500);
 </script>
 </body>
 </html>"""
+    return Response(html, media_type="text/html", headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    })
+
+
+def tablet_demo_page():
+    """태블릿 화면 전체 상태 미리보기 (데모) — 구현부"""
+    statuses = [
+        {"status": "idle", "label": "대기 중"},
+        {"status": "moving_to_start", "label": "피킹 장소로 이동 중"},
+        {"status": "waiting_confirmation", "label": "피킹 대기", "message": "피킹 장소 대기", "current_poi": "WORK2"},
+        {"status": "waiting_confirmation", "label": "투입 대기", "message": "투입 장소 대기", "current_poi": "WORK4"},
+        {"status": "evacuating", "label": "대피 이동 중"},
+        {"status": "returning", "label": "복귀 장소로 이동 중"},
+        {"status": "charging_route", "label": "충전소로 이동 중"},
+        {"status": "charging", "label": "충전 중"},
+        {"status": "standby", "label": "대기 중"},
+        {"status": "error", "label": "오류 발생", "message": "네비게이션 실패"},
+        {"status": "running", "label": "장애물 감지 (이동 중)", "message": "피킹 장소로 이동 중", "stuck": True},
+    ]
+    import json as _j
+    cards_html = ""
+    for i, s in enumerate(statuses):
+        cards_html += f"""
+        <div class="demo-card" onclick="showPreview({i})">
+          <div class="demo-label">{s['label']}</div>
+        </div>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>태블릿 데모</title>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family:'Noto Sans KR',sans-serif; background:#0f0f23; color:#fff; padding:20px; }}
+h1 {{ text-align:center; margin-bottom:20px; font-size:1.5rem; color:#42a5f5; }}
+.demo-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }}
+.demo-card {{
+  background:#1a1a2e; border:1px solid #333; border-radius:12px;
+  padding:16px; cursor:pointer; transition:border-color 0.2s;
+}}
+.demo-card:hover {{ border-color:#42a5f5; }}
+.demo-label {{ font-size:1.1rem; font-weight:700; margin-bottom:4px; }}
+.demo-status {{ font-size:0.85rem; color:#666; font-family:monospace; }}
+.preview-overlay {{
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9);
+  z-index:3000; flex-direction:column; align-items:center; justify-content:center;
+}}
+.preview-overlay.show {{ display:flex; }}
+.preview-frame {{
+  width:min(90vw, 960px); aspect-ratio:16/10;
+  background:#1a1a2e; border-radius:16px; overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  position:relative; gap:1.5vh; padding:20px;
+}}
+.preview-close {{
+  position:absolute; top:12px; right:16px; font-size:2rem;
+  color:#aaa; cursor:pointer; background:none; border:none; z-index:1;
+}}
+.preview-close:hover {{ color:#fff; }}
+.preview-title {{ color:#42a5f5; font-size:1rem; margin-top:10px; }}
+
+/* 태블릿 스타일 복제 */
+.p-frame {{
+  width:min(90vw, 960px); aspect-ratio:16/10;
+  background:#1a1a2e; border-radius:16px; overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  position:relative; gap:1.5vh; padding:20px;
+}}
+.p-battery {{ position:absolute; left:16px; top:50%; transform:translateY(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  font-size:1.1rem; font-weight:700; color:#aaa; }}
+.p-battery-icon {{ display:block; width:48px; height:24px; border:3px solid #aaa; border-radius:4px; position:relative; }}
+.p-battery-icon::after {{ content:''; position:absolute; right:-6px; top:20%; width:4px; height:60%; background:#aaa; border-radius:0 3px 3px 0; }}
+.p-battery-fill {{ height:100%; border-radius:1px; width:72%; background:#0be881; }}
+.p-amr {{ font-size:2.5rem; font-weight:800; color:#42a5f5; }}
+.p-poi {{ font-size:4rem; font-weight:800; line-height:1.3; white-space:pre-line; text-align:center; }}
+.p-status {{ font-size:1.5rem; color:#aaa; }}
+.p-btn {{
+  display:none; width:60%; max-width:400px; height:70px;
+  font-size:1.8rem; font-weight:800; border:none; border-radius:16px;
+  background:linear-gradient(135deg,#e94560,#c23152); color:#fff;
+  cursor:default; justify-content:center; align-items:center;
+  box-shadow:0 8px 30px rgba(233,69,96,0.4);
+}}
+.p-btn.show {{ display:flex; }}
+.p-shutdown {{ position:absolute; bottom:12px; right:12px; width:44px; height:44px;
+  font-size:0.7rem; font-weight:800; background:rgba(233,69,96,0.15); border:2px solid rgba(233,69,96,0.4);
+  border-radius:50%; color:rgba(233,69,96,0.6); display:flex; align-items:center;
+  justify-content:center; cursor:default; }}
+.p-stuck {{ display:none; position:absolute; top:0; left:0; right:0;
+  background:linear-gradient(135deg,#e94560,#c23152); color:#fff;
+  text-align:center; font-size:1.2rem; font-weight:800; padding:8px;
+  border-radius:16px 16px 0 0; }}
+.p-stuck.show {{ display:block; }}
+.spinner {{
+  display:inline-block; width:24px; height:24px;
+  border:3px solid rgba(255,255,255,0.2); border-top-color:#fff;
+  border-radius:50%; animation:spin 0.8s linear infinite;
+  margin-right:8px; vertical-align:middle;
+}}
+@keyframes spin {{ to {{ transform:rotate(360deg); }} }}
+</style>
+</head>
+<body>
+<h1>태블릿 화면 미리보기 (총 {len(statuses)}개 상태)</h1>
+<div class="demo-grid">{cards_html}</div>
+
+<div class="preview-overlay" id="previewOverlay" onclick="closePreview(event)">
+  <div class="p-frame" onclick="event.stopPropagation()">
+    <button class="preview-close" onclick="closePreview()">&times;</button>
+    <div class="p-stuck" id="pStuck">장애물 감지 — 작업중입니다. 비켜주세요!</div>
+    <div class="p-battery">
+      <div class="p-battery-icon"><div class="p-battery-fill"></div></div>
+      <span>72%</span>
+    </div>
+    <div class="p-amr">AMR01</div>
+    <div class="p-poi" id="pPoi">-</div>
+    <div class="p-status" id="pStatus"></div>
+    <div class="p-btn" id="pBtn">✔ 작업 확인</div>
+    <div class="p-shutdown">OFF</div>
+    <div class="preview-title" id="pTitle"></div>
+  </div>
+</div>
+
+<script>
+const STATUSES = {_j.dumps(statuses, ensure_ascii=False)};
+const poiDisplayName = {{ 'WORK2': '투입', 'WORK4': '배출' }};
+
+function showPreview(i) {{
+  const s = STATUSES[i];
+  const poi = s.current_poi || '';
+  const msg = s.message || '';
+  const stopName = poiDisplayName[poi];
+  const poiEl = document.getElementById('pPoi');
+  const statusEl = document.getElementById('pStatus');
+  const btnEl = document.getElementById('pBtn');
+  const titleEl = document.getElementById('pTitle');
+
+  statusEl.style.display = 'none';
+  statusEl.innerHTML = '';
+  btnEl.classList.remove('show');
+  titleEl.textContent = s.label;
+  const stuckEl = document.getElementById('pStuck');
+  if (s.stuck) {{ stuckEl.classList.add('show'); }} else {{ stuckEl.classList.remove('show'); }}
+
+  if (s.status === 'moving_to_start' || s.status === 'starting') {{
+    poiEl.textContent = '피킹 장소로\\n이동 중'; poiEl.style.color = '#a29bfe';
+    statusEl.style.display = ''; statusEl.innerHTML = '<span class="spinner"></span>';
+  }} else if (s.status === 'resuming') {{
+    poiEl.textContent = '작업 위치로\\n이동 중'; poiEl.style.color = '#a29bfe';
+    statusEl.style.display = ''; statusEl.innerHTML = '<span class="spinner"></span>';
+  }} else if (s.status === 'running') {{
+    if (msg.includes('피킹')) poiEl.textContent = '피킹 장소로\\n이동 중';
+    else if (msg.includes('투입')) poiEl.textContent = '투입 장소로\\n이동 중';
+    else poiEl.textContent = '이동 중';
+    poiEl.style.color = '#0be881';
+    statusEl.style.display = ''; statusEl.innerHTML = '<span class="spinner"></span>';
+  }} else if (s.status === 'waiting_confirmation') {{
+    if (msg.includes('피킹')) poiEl.textContent = '피킹 장소\\n대기';
+    else if (msg.includes('투입')) poiEl.textContent = '투입 장소\\n대기';
+    else poiEl.textContent = stopName || poi;
+    poiEl.style.color = '#ffc048';
+    btnEl.classList.add('show');
+  }} else if (s.status === 'evacuating') {{
+    poiEl.textContent = '대피 장소로\\n이동 중'; poiEl.style.color = '#e94560';
+    statusEl.style.display = ''; statusEl.innerHTML = '<span class="spinner"></span>';
+  }} else if (s.status === 'returning' || s.status === 'finishing') {{
+    poiEl.textContent = '복귀 장소로\\n이동 중'; poiEl.style.color = '#a29bfe';
+    statusEl.style.display = ''; statusEl.innerHTML = '<span class="spinner"></span>';
+  }} else if (s.status === 'charging_route' || s.status === 'low_battery_charging') {{
+    poiEl.textContent = '복귀 장소로\\n이동 중'; poiEl.style.color = '#00d2d3';
+    statusEl.style.display = ''; statusEl.innerHTML = '<span class="spinner"></span>';
+  }} else if (s.status === 'charging') {{
+    poiEl.textContent = '충전 중'; poiEl.style.color = '#00d2d3';
+  }} else if (s.status === 'standby') {{
+    poiEl.textContent = '대기 중'; poiEl.style.color = '#666';
+  }} else if (s.status === 'error') {{
+    poiEl.textContent = '오류 발생'; poiEl.style.color = '#e94560';
+    if (msg) {{ statusEl.style.display = ''; statusEl.innerHTML = '<span style="color:#e94560">' + msg + '</span>'; }}
+  }} else {{
+    poiEl.textContent = '대기 중'; poiEl.style.color = '#666';
+  }}
+
+  document.getElementById('previewOverlay').classList.add('show');
+}}
+
+function closePreview(e) {{
+  if (e && e.target !== document.getElementById('previewOverlay')) return;
+  document.getElementById('previewOverlay').classList.remove('show');
+}}
+</script>
+</body>
+</html>"""
+    return Response(html, media_type="text/html")

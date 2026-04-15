@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements_linux.txt .
-RUN pip install --no-cache-dir -r requirements_linux.txt
+RUN pip install --no-cache-dir --timeout=300 -r requirements_linux.txt
 
 COPY . .
 

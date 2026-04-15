@@ -72,6 +72,7 @@ class RobotMap(Base):
     area = relationship("Area")
     pois = relationship("MapPOI", back_populates="robot_map", cascade="all, delete-orphan")
     lines = relationship("MapLine", back_populates="robot_map", cascade="all, delete-orphan")
+    polygons = relationship("MapPolygon", back_populates="robot_map", cascade="all, delete-orphan")
 
 
 class MapPOI(Base):
@@ -127,6 +128,61 @@ class MapLine(Base):
     to_poi = relationship("MapPOI", foreign_keys=[to_poi_id])
 
 
+class MapPolygon(Base):
+    """맵 폴리곤 (가상벽 영역 등)"""
+    __tablename__ = "map_polygons"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    map_id = Column(Integer, ForeignKey("robot_maps.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    shape_type = Column(String(20), nullable=False, default="polygon")  # polygon / firewall
+    points_json = Column(Text, nullable=False)          # JSON: [{x, y, worldX, worldY}, ...]
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    robot_map = relationship("RobotMap", back_populates="polygons")
+
+
+class ConvoySavedState(Base):
+    """Convoy 중간 정지 시 로봇별 위치 저장 테이블
+    - 점심/저녁 등 일시 정지 후 재시작 시 저장된 위치에서 작업 재개
+    - 24시간 경과 시 무효화 → 처음부터 시작
+    """
+    __tablename__ = "convoy_saved_states"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    robot_id = Column(Integer, nullable=False, index=True)
+    node_index = Column(Integer, nullable=False)              # WORK 노드 인덱스 (0~N-1)
+    work_poi_name = Column(String(50), nullable=False)        # 예: "WORK3"
+    actual_x = Column(Float, nullable=True)                   # 로봇 실제 좌표 X
+    actual_y = Column(Float, nullable=True)                   # 로봇 실제 좌표 Y
+    actual_ori = Column(Float, nullable=True)                 # 로봇 실제 방향 (rad)
+    convoy_config_id = Column(Integer, ForeignKey("convoy_configs.id", ondelete="SET NULL"), nullable=True)
+    saved_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+
+class ConvoyRuntime(Base):
+    """Convoy 런타임 상태 — 이중화 시 Standby 서버가 인계받을 수 있도록 주기적으로 플러시"""
+    __tablename__ = "convoy_runtime"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    config_id = Column(Integer, ForeignKey("convoy_configs.id", ondelete="SET NULL"), nullable=True)
+    phase = Column(String(20), nullable=False, default="idle")     # idle/entering/running/returning/stopped/error
+    is_resume = Column(Boolean, default=False, nullable=False)
+    map_id = Column(Integer, nullable=True)
+    robots_json = Column(Text, nullable=False, default="[]")       # _convoy_robots
+    standby_pool_json = Column(Text, nullable=False, default="[]") # _convoy_standby_pool
+    node_positions_json = Column(Text, nullable=False, default="{}") # _convoy_node_positions
+    robot_status_json = Column(Text, nullable=False, default="{}") # _convoy_robot_status
+    run_info_json = Column(Text, nullable=False, default="{}")     # _run_info (convoy)
+    work_poi_names_json = Column(Text, nullable=False, default="[]")
+    stop_names_json = Column(Text, nullable=False, default="[]")
+    battery_cache_json = Column(Text, nullable=False, default="{}") # _convoy_battery_cache
+    return_requested_json = Column(Text, nullable=False, default="[]") # robot_id list
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 class ConvoyConfig(Base):
     """Convoy 대열 작업 설정 테이블
     - work_poi_names: 작업 루프 POI 순서 (JSON array)
@@ -141,6 +197,8 @@ class ConvoyConfig(Base):
     work_poi_names = Column(Text, nullable=False)              # JSON: ["WORK1","WORK1-1",...]
     stop_names = Column(Text, nullable=False, default="[]")    # JSON: ["WORK2","WORK4"]
     robots_config = Column(Text, nullable=False, default="[]") # JSON: [{robot_id, charging_poi, entry_poi_names, return_poi_names}]
+    reset_time = Column(String(5), nullable=False, default="08:00")  # HH:MM 형식, 하루 리셋 시각
+    battery_check_interval = Column(Integer, nullable=False, default=5)  # 배터리 체크 주기 (분)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -5,10 +5,10 @@ import { createPortal } from "react-dom";
 import "./EmergencyStopOverlay.css";
 
 type Props = {
-  onReturnAll: () => void;
+  onResume: () => void;
 };
 
-export function EmergencyStopOverlay({ onReturnAll }: Props) {
+export function EmergencyStopOverlay({ onResume }: Props) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -52,14 +52,14 @@ export function EmergencyStopOverlay({ onReturnAll }: Props) {
 
         <button
           type="button"
-          className="estop-overlay__return-btn"
-          onClick={onReturnAll}
+          className="estop-overlay__restart-btn"
+          onClick={onResume}
         >
-          전체 복귀
+          다시 출발
         </button>
 
         <div className="estop-overlay__hint">
-          전체 복귀 버튼을 눌러 로봇을 이동시키세요
+          다시 출발 버튼을 눌러 작업을 재개하세요
         </div>
       </div>
     </div>,

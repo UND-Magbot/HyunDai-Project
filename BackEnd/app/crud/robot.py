@@ -43,6 +43,7 @@ def _to_response(robot: Robot) -> RobotResponse:
         is_active=robot.is_active,
         business_id=robot.business_id,
         area_id=robot.area_id,
+        wcs_no=robot.wcs_no,
         status=_status_to_response(robot.status) if robot.status else None,
         created_at=robot.created_at,
         updated_at=robot.updated_at,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAlert } from "@/lib/context/AlertContext";
 import { apiFetch } from "@/lib/api";
 import { DirPickerModal } from "./DirPickerModal";
@@ -9,7 +9,17 @@ import "./DirPickerModal.css";
 
 export function DbBackupTab() {
   const { showInfo } = useAlert();
-  const [savePath, setSavePath] = useState("/home/und/app/backups/");
+  const STORAGE_KEY = "db_backup_path";
+  const [savePath, setSavePath] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(STORAGE_KEY) || "/home/administrator/";
+    }
+    return "/home/administrator/";
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, savePath);
+  }, [savePath]);
   const [isSaving, setIsSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
 

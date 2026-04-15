@@ -10,6 +10,7 @@ export type DeviceRowProps = {
   power: DevicePower;
   battery: string;
   status: DeviceStatus;
+  taskMessage?: string;
   isExpanded?: boolean;
   onToggleExpand?: (deviceId: string) => void;
   onInfo?: (deviceId: string) => void;

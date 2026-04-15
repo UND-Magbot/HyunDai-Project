@@ -6,9 +6,11 @@ import "./FireAlertOverlay.css";
 
 type Props = {
   safePoiName?: string;
+  evacuationDone?: boolean;
+  onReturnAll?: () => void;
 };
 
-export function FireAlertOverlay({ safePoiName }: Props) {
+export function FireAlertOverlay({ safePoiName, evacuationDone, onReturnAll }: Props) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -19,11 +21,9 @@ export function FireAlertOverlay({ safePoiName }: Props) {
 
   return createPortal(
     <div className="fire-overlay">
-      {/* 배경 깜빡임 */}
       <div className="fire-overlay__bg" />
 
       <div className="fire-overlay__content">
-        {/* 불꽃 SVG */}
         <div className="fire-overlay__icon">
           <svg viewBox="0 0 64 80" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
@@ -41,12 +41,10 @@ export function FireAlertOverlay({ safePoiName }: Props) {
               fill="#FFD700"
               className="fire-overlay__flame fire-overlay__flame--inner"
             />
-            {/* 연기 */}
             <ellipse cx="32" cy="52" rx="14" ry="5" fill="rgba(80,80,80,0.5)" className="fire-overlay__smoke" />
           </svg>
         </div>
 
-        {/* 경고 텍스트 */}
         <div className="fire-overlay__title">
           <span className="fire-overlay__icon-text">🚨</span>
           화&nbsp;&nbsp;재&nbsp;&nbsp;발&nbsp;&nbsp;생
@@ -54,7 +52,9 @@ export function FireAlertOverlay({ safePoiName }: Props) {
         </div>
 
         <div className="fire-overlay__subtitle">
-          모든 로봇이 안전 지점으로 이동 중입니다
+          {evacuationDone
+            ? "모든 로봇이 안전 지점에 도착했습니다"
+            : "모든 로봇이 안전 지점으로 이동 중입니다"}
         </div>
 
         {safePoiName && (
@@ -66,6 +66,16 @@ export function FireAlertOverlay({ safePoiName }: Props) {
         <div className="fire-overlay__warning">
           ⚠ 작업자는 즉시 대피하십시오
         </div>
+
+        {evacuationDone && onReturnAll && (
+          <button
+            type="button"
+            className="fire-overlay__return-btn"
+            onClick={onReturnAll}
+          >
+            전체 복귀
+          </button>
+        )}
       </div>
     </div>,
     document.body

@@ -36,6 +36,7 @@ fsspec==2025.7.0
 greenlet==3.3.0
 gTTS==2.5.4
 h11==0.16.0
+httpx==0.28.1
 httptools==0.7.1
 hyperlink==21.0.0
 idna==3.10

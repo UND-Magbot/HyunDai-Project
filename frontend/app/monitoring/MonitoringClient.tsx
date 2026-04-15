@@ -51,6 +51,7 @@ import { LoadingScreen } from "../components/ui/LoadingScreen";
 import { BusinessSelectBox } from "../components/ui/monitoring/BusinessSelectBox";
 import { FireAlertOverlay } from "../components/ui/monitoring/FireAlertOverlay";
 import { EmergencyStopOverlay } from "../components/ui/monitoring/EmergencyStopOverlay";
+import { ReturningOverlay } from "../components/ui/monitoring/ReturningOverlay";
 import { apiFetch, apiPost, ApiError } from "@/lib/api";
 import type { Business } from "@/lib/types/robots";
 import type { MapMeta } from "@/lib/types/map";
@@ -94,6 +95,7 @@ type ApiRobot = {
   serial_number: string;
   name: string;
   ip_address: string;
+  wcs_no?: number | null;
 };
 
 type ApiRobotStatus = {
@@ -120,6 +122,7 @@ type ApiRobotFull = {
   is_active: boolean;
   business_id: string | null;
   area_id: string | null;
+  wcs_no: number | null;
   status: ApiRobotStatus | null;
   created_at: string;
   updated_at: string;
@@ -183,9 +186,12 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [isRunning, setIsRunning] = useState(false);
   const [loopRunning, setLoopRunning] = useState(false);
   const [loopStopping, setLoopStopping] = useState(false);
+  const [loopEntering, setLoopEntering] = useState(false);
+  const [convoyCountdown, setConvoyCountdown] = useState<number | null>(null);
+  const [convoyRobotMessages, setConvoyRobotMessages] = useState<Record<string, string>>({});
   const [emergencyStopped, setEmergencyStopped] = useState(false);
   const [fireAlert, setFireAlert] = useState(false);
-  const [fireTestMode, setFireTestMode] = useState(false);
+  const [fireEvacuationDone, setFireEvacuationDone] = useState(false);
   const [deviceSearch, setDeviceSearch] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   // simulatedRobots는 아래 useMemo로 계산 (useEffect+setState 연쇄 리렌더 방지)
@@ -233,6 +239,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const [apiRobots, setApiRobots] = useState<ApiRobot[]>([]);
   const [robotPoses, setRobotPoses] = useState<Map<string, { pos: [number, number]; ori: number }>>(new Map());
   const poseWsRefs = useRef<Map<string, WebSocket>>(new Map());
+  const poseBufferRef = useRef<Map<string, { pos: [number, number]; ori: number }>>(new Map());
+  const poseFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 로봇 목록 + 실시간 데이터 API 응답 완료 시 로딩 종료 (데이터 없어도 종료)
   useEffect(() => {
@@ -546,7 +554,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
     () => apiBusinesses.flatMap((b) =>
       (b.areas ?? []).map((a) => ({
         id: `${b.business_id}:${a.area_id}`,
-        name: a.name,
+        name: (b.areas ?? []).length > 1 ? `${b.name} - ${a.name}` : b.name,
         value: String(a.area_id),
       }))
     ),
@@ -579,6 +587,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
               serial_number: r.serial_number,
               name: r.name,
               ip_address: r.ip_address!,
+              wcs_no: r.wcs_no,
             }))
         );
         setRobotsLoaded(true);
@@ -613,25 +622,24 @@ export function MonitoringClient({ initialDateTime }: Props) {
         try {
           const msg = JSON.parse(e.data);
           if (msg.topic === "/tracked_pose" && msg.pos) {
-            setRobotPoses((prev) => {
-              const existing = prev.get(robot.serial_number);
-              const newOri = msg.ori ?? 0;
-              // 값이 동일하면 이전 Map 참조를 그대로 반환 (불필요한 리렌더 방지)
-              if (
-                existing &&
-                existing.pos[0] === msg.pos[0] &&
-                existing.pos[1] === msg.pos[1] &&
-                existing.ori === newOri
-              ) {
-                return prev;
-              }
-              const next = new Map(prev);
-              next.set(robot.serial_number, {
-                pos: msg.pos,
-                ori: newOri,
-              });
-              return next;
+            // 버퍼에 최신값 저장 (100ms마다 한번에 flush)
+            poseBufferRef.current.set(robot.serial_number, {
+              pos: msg.pos,
+              ori: msg.ori ?? 0,
             });
+            if (!poseFlushTimerRef.current) {
+              poseFlushTimerRef.current = setTimeout(() => {
+                poseFlushTimerRef.current = null;
+                const buf = poseBufferRef.current;
+                if (buf.size === 0) return;
+                setRobotPoses((prev) => {
+                  const next = new Map(prev);
+                  buf.forEach((v, sn) => next.set(sn, v));
+                  buf.clear();
+                  return next;
+                });
+              }, 100);
+            }
           }
         } catch {
           // ignore
@@ -726,7 +734,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
       markers.push({
         robotId: sn,
-        robotName: robot?.name ?? sn,
+        robotName: robot?.wcs_no ? `AMR${String(robot.wcs_no).padStart(2, "0")}` : (robot?.name ?? sn),
         position: { x: ipx, y: ipy },
         yaw: pose.ori,
         status: live ? mapLiveRunStateToDeviceStatus(live.RUNSTATE) : "running",
@@ -754,7 +762,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
       markers.push({
         robotId: fullRobot.serial_number,
-        robotName: fullRobot.name,
+        robotName: fullRobot.wcs_no ? `AMR${String(fullRobot.wcs_no).padStart(2, "0")}` : fullRobot.name,
         position: { x: ipx, y: ipy },
         yaw: position_yaw,
         status: live ? mapLiveRunStateToDeviceStatus(live.RUNSTATE) : "running",
@@ -855,8 +863,11 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
   const handleEmergencyStop = async () => {
     try {
-      await apiPost("/api/convoy/force-stop", {});
+      await apiPost("/api/convoy/pause", {});
       setEmergencyStopped(true);
+      setLoopStopping(false);
+      setLoopEntering(false);
+      setFireAlert(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "비상정지 실패";
       showAlert({ title: "비상정지", message: msg, errorCode: "ESTOP-001", errorType: "task", source: "모니터링 > 비상정지" });
@@ -897,21 +908,48 @@ export function MonitoringClient({ initialDateTime }: Props) {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const res = await apiFetch<{ phase: string }>("/api/convoy/status");
-        if (!fireTestMode) {
-          setFireAlert(res.phase === "evacuating");
+        const res = await apiFetch<{ phase: string; countdown?: number | null; is_resume?: boolean; robots?: Array<{ robot_id: number; message?: string }> }>("/api/convoy/status");
+        setFireAlert(res.phase === "evacuating" || res.phase === "evacuated");
+        setFireEvacuationDone(res.phase === "evacuated");
+        setConvoyCountdown(res.countdown ?? null);
+        // 로봇별 작업 메시지 매핑
+        const msgs: Record<string, string> = {};
+        if (res.robots) {
+          for (const r of res.robots) {
+            if (r.message) msgs[String(r.robot_id)] = r.message;
+          }
         }
-        if (res.phase === "entering" || res.phase === "running") {
+        setConvoyRobotMessages(msgs);
+        if (res.phase === "entering") {
           setLoopRunning(true);
           setLoopStopping(false);
+          setLoopEntering(res.is_resume === true);
+          setIsRunning(true);
+        } else if (res.phase === "running") {
+          setLoopRunning(true);
+          setLoopStopping(false);
+          setLoopEntering(false);
           setIsRunning(true);
         } else if (res.phase === "returning") {
-          setLoopRunning(true);
-          setLoopStopping(true);
-          setIsRunning(true);
+          // 모든 로봇이 충전/대기 완료면 복귀 배너 숨김
+          const allDone = res.robots?.every((r: Record<string, unknown>) =>
+            ["charging", "standby", "idle"].includes(String(r.status ?? ""))
+          );
+          if (allDone) {
+            setLoopRunning(false);
+            setLoopStopping(false);
+            setLoopEntering(false);
+            setIsRunning(false);
+          } else {
+            setLoopRunning(true);
+            setLoopStopping(true);
+            setLoopEntering(false);
+            setIsRunning(true);
+          }
         } else {
           setLoopRunning(false);
           setLoopStopping(false);
+          setLoopEntering(false);
           setIsRunning(false);
         }
       } catch (err) {
@@ -949,7 +987,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
       return {
         id: String(robot.id),
-        name: robot.name,
+        name: robot.wcs_no ? `AMR${String(robot.wcs_no).padStart(2, "0")}` : robot.name,
         power,
         battery,
         status,
@@ -989,7 +1027,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
     return {
       id: String(robot.id),
       sn: robot.serial_number,
-      robotName: robot.name,
+      robotName: robot.wcs_no ? `AMR${String(robot.wcs_no).padStart(2, "0")}` : robot.name,
       model: robot.model ?? "-",
       runState,
       online: live ? live.ONLINE === "Online" : (robot.status?.status !== 4),
@@ -1034,8 +1072,27 @@ export function MonitoringClient({ initialDateTime }: Props) {
 
   return (
     <>
-      {fireAlert && <FireAlertOverlay />}
-      {emergencyStopped && !fireAlert && <EmergencyStopOverlay onReturnAll={() => setEmergencyStopped(false)} />}
+      {fireAlert && (
+        <FireAlertOverlay
+          evacuationDone={fireEvacuationDone}
+          onReturnAll={async () => {
+            try {
+              await apiPost("/api/convoy/fire-reset", {});
+              await apiPost("/api/convoy/return-all", {});
+            } catch { /* ignore */ }
+            setFireAlert(false);
+            setFireEvacuationDone(false);
+          }}
+        />
+      )}
+      {emergencyStopped && <EmergencyStopOverlay onResume={async () => {
+        try {
+          await apiPost("/api/convoy/resume", {});
+        } catch { /* ignore */ }
+        setEmergencyStopped(false);
+      }} />}
+      {loopStopping && !fireAlert && !emergencyStopped && <ReturningOverlay mode="returning" />}
+      {loopEntering && !loopStopping && !fireAlert && !emergencyStopped && <ReturningOverlay mode="entering" countdown={convoyCountdown} onCountdownEnd={() => setLoopEntering(false)} />}
       {isLoading && <LoadingScreen pageName="모니터링" />}
       <div className="app-shell">
       <TopBar
@@ -1103,6 +1160,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
                     power={device.power}
                     battery={device.battery}
                     status={device.status}
+                    taskMessage={convoyRobotMessages[device.id]}
                     isExpanded={expandedDeviceId === device.id}
                     onToggleExpand={handleDeviceToggle}
                     onInfo={setOpenDeviceId}
@@ -1163,18 +1221,7 @@ export function MonitoringClient({ initialDateTime }: Props) {
                   전체 복귀
                 </button>
               )}
-              {/* 화재 경보 테스트 버튼 */}
-              <button
-                type="button"
-                className="fire-test-btn"
-                onClick={() => {
-                  setFireTestMode((v) => !v);
-                  setFireAlert((v) => !v);
-                }}
-                title="화재 경보 오버레이 테스트"
-              >
-                🔥 화재 테스트
-              </button>
+              {/* 화재 경보 버튼 — 비활성화 */}
               {!selectedArea && !isLoading ? (
                 <div className="monitoring-map__empty">
                   <p>현재 사업장에 등록된 영역이 없습니다.</p>

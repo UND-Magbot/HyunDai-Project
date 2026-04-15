@@ -20,10 +20,10 @@ from app.crud.activity_log import log_activity
 logger = logging.getLogger(__name__)
 
 PORT = 8090
-MOVE_TIMEOUT = 300       # 단일 이동 최대 대기 시간 (초)
+MOVE_TIMEOUT = 1800      # 단일 이동 최대 대기 시간 (30분)
 WS_RECV_TIMEOUT = 3.0    # WebSocket recv 대기 시간 (초)
 WS_SILENCE_LIMIT = 15.0  # WebSocket 무응답 허용 시간 (초) — 초과 시 연결 끊김 판단
-RECOVERY_DELAY = 3.0     # cancel 후 새 이동 전 물리적 복구 대기 (초)
+RECOVERY_DELAY = 1.5     # cancel 후 새 이동 전 물리적 복구 대기 (초)
 
 # 스레드 안전한 공유 상태 관리
 _lock = threading.Lock()                        # 아래 딕셔너리 접근 보호
@@ -1751,11 +1751,11 @@ def confirm_loop(robot_id: int) -> tuple[bool, str, str | None]:
     with _lock:
         event = _confirm_events.get(robot_id)
         if not event:
-            info = _run_info.get(robot_id, {})
-            if info.get("status") != "waiting_confirmation":
-                return False, "확인 대기 중인 작업이 없습니다.", "TASK-010"
-            return False, "확인 이벤트를 찾지 못했습니다.", "TASK-010"
+            # 아직 워커가 confirm_event를 등록 안 함 → 미리 생성해서 등록
+            event = __import__('threading').Event()
+            _confirm_events[robot_id] = event
     event.set()
+
     logger.info(f"[Robot {robot_id}] 태블릿 확인 신호 수신")
     _rname = _get_robot_name(robot_id)
     log_activity("task", "tablet_confirm",

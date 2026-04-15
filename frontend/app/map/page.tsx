@@ -151,6 +151,8 @@ export default function MapPage() {
   // Robot pose (real-time)
   const [robotPose, setRobotPose] = useState<RobotPose>(null);
   const poseWsRef = useRef<WebSocket | null>(null);
+  const vwPointsRef = useRef<{ x: number; y: number }[]>([]);
+  const [vwTempPoints, setVwTempPoints] = useState<{ x: number; y: number }[]>([]);
   const [mapImageSize, setMapImageSize] = useState<{ w: number; h: number } | null>(null);
 
   const { showAlert, showInfo } = useAlert();
@@ -272,7 +274,7 @@ export default function MapPage() {
             grid_resolution: map.grid_resolution,
           });
           // 저장된 POI·라인 로드
-          apiFetch<{ pois: any[]; lines: any[] }>(
+          apiFetch<{ pois: any[]; lines: any[]; polygons?: any[] }>(
             `/api/map/maps/${map.id}/elements`
           )
             .then((elems) => {
@@ -297,11 +299,19 @@ export default function MapPage() {
                 lineType: l.lineType,
                 controlPoints: l.controlPoints ?? undefined,
               }));
+              const loadedPolygons = (elems.polygons || []).map((pg: any) => ({
+                id: pg.id,
+                name: pg.name,
+                shapeType: pg.shapeType ?? "polygon",
+                points: pg.points ?? [],
+              }));
               setPois(loadedPois);
               setLines(loadedLines);
+              setPolygons(loadedPolygons);
               syncNextId([
                 ...loadedPois.map((p: any) => p.id),
                 ...loadedLines.map((l: any) => l.id),
+                ...loadedPolygons.map((pg: any) => pg.id),
               ]);
             })
             .catch((err) => {
@@ -471,6 +481,7 @@ export default function MapPage() {
           });
         }
       } else if (activeTool === "firewall") {
+        // 방화벽: 기존 두 점 클릭 → 라인 방식
         if (!lineStartPOI) {
           pushHistory();
           const fwCount = pois.filter((p) => p.type === "firewall").length;
@@ -501,6 +512,24 @@ export default function MapPage() {
           setPois((prev) => [...prev, newPOI]);
           setLines((prev) => [...prev, newLine]);
           setLineStartPOI(null);
+        }
+      } else if (activeTool === "virtualwall") {
+        // 가상벽: 4점 클릭으로 사각형 생성
+        vwPointsRef.current.push({ x, y });
+        if (vwPointsRef.current.length >= 4) {
+          pushHistory();
+          const vwCount = polygons.filter((p) => p.shapeType === "firewall").length;
+          const newPolygon: PolygonShape = {
+            id: generateId("polygon"),
+            points: [...vwPointsRef.current],
+            name: `VW${vwCount + 1}`,
+            shapeType: "firewall",
+          };
+          setPolygons((prev) => [...prev, newPolygon]);
+          vwPointsRef.current = [];
+          setVwTempPoints([]);
+        } else {
+          setVwTempPoints([...vwPointsRef.current]);
         }
       } else if (activeTool === "polygon") {
         setPolygonPoints((prev) => [...prev, { x, y }]);
@@ -675,6 +704,12 @@ export default function MapPage() {
     setLineStartPOI(null);
     setLineDirectionPopup(null);
 
+    // 가상벽 도구에서 벗어나면 임시 점 초기화
+    if (tool !== "virtualwall") {
+      vwPointsRef.current = [];
+      setVwTempPoints([]);
+    }
+
     // If switching away from polygon, finalize current polygon
     if (tool !== "polygon") {
       setPolygonPoints((prev) => {
@@ -825,11 +860,21 @@ export default function MapPage() {
     apiFetch(`/api/map/maps/${selectedMapId}/elements`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pois: poisWithWorld, lines: linesWithWorld }),
+      body: JSON.stringify({
+        pois: poisWithWorld,
+        lines: linesWithWorld,
+        polygons: polygons.map((pg) => {
+          const pointsWithWorld = pg.points.map((pt) => {
+            const w = svgToWorld(pt.x, pt.y);
+            return { x: pt.x, y: pt.y, worldX: w?.worldX ?? null, worldY: w?.worldY ?? null };
+          });
+          return { ...pg, points: pointsWithWorld };
+        }),
+      }),
     })
       .then(() => showAlert({ title: "저장 완료", message: "저장되었습니다." }))
       .catch((err) => showAlert({ title: "알림", message: "맵 데이터 저장에 실패했습니다.", errorCode: "MAP-006", errorType: "map", source: "맵 관리 > 맵 저장", description: "MapPage — 맵 저장 실패" }));
-  }, [selectedMapId, pois, lines, svgToWorld]);
+  }, [selectedMapId, pois, lines, polygons, svgToWorld]);
   const handleSync = () => {
     if (!selectedMappingId) {
       showInfo("안내", "동기화할 맵을 먼저 선택해 주세요.");
@@ -950,6 +995,7 @@ export default function MapPage() {
                 pois={pois}
                 lines={lines}
                 polygons={polygons}
+                vwTempPoints={vwTempPoints}
                 activeTool={activeTool}
                 selectedPOI={selectedPOI}
                 lineStartPOI={lineStartPOI}

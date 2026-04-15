@@ -1,22 +1,22 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 import pymysql
+from urllib.parse import quote_plus
 
 # MariaDB 접속 정보 (환경변수 우선, 없으면 기본값)
 import os
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "1234")
-# DB_HOST = os.getenv("DB_HOST", "192.168.10.5")
-DB_HOST = os.getenv("DB_HOST", "192.168.0.12")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "unde5466")
+DB_HOST = os.getenv("DB_HOST", "192.168.10.5")
 
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_NAME = os.getenv("DB_NAME", "rcs_db")
 
-DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
+DATABASE_URL = f"mysql+pymysql://{quote_plus(DB_USER)}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
 
 engine = create_engine(
     DATABASE_URL, echo=False, pool_pre_ping=True,
-    pool_size=10, max_overflow=20, pool_recycle=3600,
+    pool_size=20, max_overflow=40, pool_recycle=1800, pool_timeout=60,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -55,14 +55,39 @@ def init_db():
     try:
         create_database_if_not_exists()
 
-        # convoy_configs 테이블 스키마 마이그레이션: robot_ids → robots_config
         from sqlalchemy import inspect as sa_inspect
         insp = sa_inspect(engine)
+
+        # convoy_configs 테이블 스키마 마이그레이션: robot_ids → robots_config
         if insp.has_table("convoy_configs"):
             columns = {c["name"] for c in insp.get_columns("convoy_configs")}
             if "robots_config" not in columns:
                 with engine.begin() as conn:
                     conn.execute(text("DROP TABLE convoy_configs"))
+
+        # convoy_saved_states 스키마 마이그레이션: actual_x/y/ori 컬럼 추가
+        if insp.has_table("convoy_saved_states"):
+            columns = {c["name"] for c in insp.get_columns("convoy_saved_states")}
+            if "actual_x" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("DROP TABLE convoy_saved_states"))
+
+        # robots 테이블 스키마 마이그레이션: wcs_no 컬럼 추가
+        if insp.has_table("robots"):
+            columns = {c["name"] for c in insp.get_columns("robots")}
+            if "wcs_no" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE robots ADD COLUMN wcs_no INT NULL"))
+
+        # convoy_configs 스키마 마이그레이션: reset_time 컬럼 추가
+        if insp.has_table("convoy_configs"):
+            columns = {c["name"] for c in insp.get_columns("convoy_configs")}
+            if "reset_time" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE convoy_configs ADD COLUMN reset_time VARCHAR(5) NOT NULL DEFAULT '08:00'"))
+            if "battery_check_interval" not in columns:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE convoy_configs ADD COLUMN battery_check_interval INT NOT NULL DEFAULT 5"))
 
         Base.metadata.create_all(bind=engine)
 

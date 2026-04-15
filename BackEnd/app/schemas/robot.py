@@ -78,6 +78,7 @@ class RobotResponse(BaseModel):
     is_active: bool
     business_id: Optional[str] = None
     area_id: Optional[str] = None
+    wcs_no: Optional[int] = None
     status: Optional[RobotStatusResponse]
     created_at: datetime
     updated_at: datetime

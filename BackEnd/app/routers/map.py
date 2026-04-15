@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import math
 import uuid
@@ -18,7 +19,7 @@ STATIC_MAPS_DIR.mkdir(parents=True, exist_ok=True)
 from app.database import get_db
 from app.crud.activity_log import log_activity
 from app.models.robot import Robot
-from app.models.map import RobotMap, Business, Area
+from app.models.map import RobotMap, Business, Area, MapPolygon
 from app.routers.robot import ROBOTS
 from app.crud.map import (
     get_businesses,
@@ -279,6 +280,41 @@ def _build_charging_overlay_features(charging_pois: list) -> list[dict]:
             },
         })
 
+    return features
+
+
+def _build_firewall_overlay_features(firewall_polygons: list) -> list[dict]:
+    """가상벽(firewall) 폴리곤을 로봇 오버레이용 GeoJSON Feature 리스트로 변환.
+
+    AutoXing 로봇 가상벽: overlay type="1", LineString 좌표 (폴리곤 둘레를 닫힌 LineString으로)
+    """
+    features = []
+    for poly in firewall_polygons:
+        wall_id = uuid.uuid4().hex[:24]
+        points = json.loads(poly.points_json) if isinstance(poly.points_json, str) else poly.points_json
+        coords = []
+        for pt in points:
+            wx = pt.get("worldX")
+            wy = pt.get("worldY")
+            if wx is not None and wy is not None:
+                coords.append([wx, wy])
+        if len(coords) < 3:
+            continue
+        # 닫힌 폴리곤 (첫 점 반복)
+        coords.append(coords[0])
+        features.append({
+            "id": wall_id,
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": coords,
+            },
+            "properties": {
+                "mapOverlay": True,
+                "name": poly.name or f"VW_{wall_id[:6]}",
+                "type": "1",
+            },
+        })
     return features
 
 
@@ -773,22 +809,81 @@ def api_sync_map_to_robot(map_id: int, body: dict, db: Session = Depends(get_db)
             detail="서버에 저장된 매핑 데이터가 없습니다. 맵을 다시 저장해주세요.",
         )
 
-    # ── 2) 충전소 오버레이 구성 (DB 기반) ──
+    # ── 2) 오버레이 구성 (병합 방식: 로봇 기존 오버레이 보존) ──
+    # 우리가 관리하는 오버레이 타입
+    CHARGING_TYPES = {"9", "36"}       # 충전소, 도킹포인트
+    FIREWALL_TYPES = {"1"}             # 가상벽
+
     overlay_data = {"type": "FeatureCollection", "features": []}
     overlay_synced = False
     overlay_error = None
     try:
+        # 1) 로봇 기존 오버레이 읽기
+        existing_other = []       # 관리 외 feature
+        existing_charging = []    # 기존 충전소 feature (DB에 없으면 보존용)
+        existing_firewall = []    # 기존 가상벽 feature (DB에 없으면 보존용)
+        try:
+            r_cur = http_requests.get(
+                f"http://{robot_ip}:8090/chassis/current-map",
+                headers={"Authorization": f"Secret {target_secret}"},
+                timeout=5,
+            )
+            if r_cur.status_code == 200:
+                cur_map_id = r_cur.json().get("id")
+                if cur_map_id:
+                    r_map = http_requests.get(
+                        f"http://{robot_ip}:8090/maps/{cur_map_id}",
+                        headers={"Authorization": f"Secret {target_secret}"},
+                        timeout=5,
+                    )
+                    if r_map.status_code == 200:
+                        import json as _json_overlay
+                        old_overlays = _json_overlay.loads(r_map.json().get("overlays", "{}"))
+                        for feat in old_overlays.get("features", []):
+                            feat_type = str(feat.get("properties", {}).get("type", ""))
+                            if feat_type in CHARGING_TYPES:
+                                existing_charging.append(feat)
+                            elif feat_type in FIREWALL_TYPES:
+                                existing_firewall.append(feat)
+                            else:
+                                existing_other.append(feat)
+                        logger.info(f"[sync] 기존 오버레이: 충전소={len(existing_charging)} "
+                                    f"가상벽={len(existing_firewall)} 기타={len(existing_other)}")
+        except Exception as e:
+            logger.warning(f"[sync] 기존 오버레이 읽기 실패 (새로 구성): {e}")
+
+        # 2) DB에서 새 feature 조회 (있으면 교체, 없으면 기존 보존)
+        new_charging = []
         charging_pois = get_charging_pois(db, map_id)
         if charging_pois:
-            new_features = _build_charging_overlay_features(charging_pois)
-            logger.info(f"[sync] 충전소 POI {len(charging_pois)}개 → Feature {len(new_features)}개 생성")
-            overlay_data["features"] = new_features
-            overlay_synced = True
+            new_charging = _build_charging_overlay_features(charging_pois)
+            logger.info(f"[sync] 충전소 POI {len(charging_pois)}개 → Feature {len(new_charging)}개 (DB)")
         else:
-            logger.info("[sync] 충전소 POI 없음")
+            new_charging = existing_charging
+            logger.info(f"[sync] 충전소 POI DB에 없음 → 기존 {len(existing_charging)}개 보존")
+
+        new_firewall = []
+        fw_polys = db.query(MapPolygon).filter(
+            MapPolygon.map_id == map_id,
+            MapPolygon.shape_type == "firewall",
+            MapPolygon.is_active == True,
+        ).all()
+        if fw_polys:
+            new_firewall = _build_firewall_overlay_features(fw_polys)
+            logger.info(f"[sync] 가상벽 {len(fw_polys)}개 → Feature {len(new_firewall)}개 (DB)")
+        else:
+            new_firewall = existing_firewall
+            logger.info(f"[sync] 가상벽 DB에 없음 → 기존 {len(existing_firewall)}개 보존")
+
+        # 3) 병합: 기타 + 충전소 + 가상벽
+        merged = existing_other + new_charging + new_firewall
+        overlay_data["features"] = merged
+        overlay_synced = True
+        logger.info(f"[sync] 오버레이 병합 완료: 기타={len(existing_other)} + 충전소={len(new_charging)} "
+                     f"+ 가상벽={len(new_firewall)} = {len(merged)}")
     except Exception as e:
         overlay_error = str(e)
-        logger.error(f"[sync] 충전소 오버레이 처리 실패: {e}")
+        logger.error(f"[sync] 오버레이 처리 실패: {e}")
 
     logger.info(f"[sync] 타겟: {robot_ip} ({sync_method}), "
                 f"carto_map: {len(mapping_data.get('carto_map', ''))}자, "

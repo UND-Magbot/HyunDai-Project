@@ -23,6 +23,7 @@ export function DeviceRow({
   power,
   battery,
   status,
+  taskMessage,
   isExpanded = false,
   onToggleExpand,
   onInfo,

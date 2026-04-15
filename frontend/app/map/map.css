@@ -265,6 +265,22 @@
   stroke-dasharray: 6 3;
 }
 
+.map-polygon__firewall {
+  fill: rgba(255, 60, 60, 0.25);
+  stroke: #ff3c3c;
+  stroke-width: 2.5;
+  stroke-dasharray: 8 4;
+  cursor: pointer;
+}
+
+.map-polygon__firewall--preview {
+  fill: rgba(255, 60, 60, 0.15);
+  stroke: #ff3c3c;
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  pointer-events: none;
+}
+
 /* ── Fullscreen Button (top-left corner) ── */
 .map-toolbar-top__fullscreen {
   position: absolute;

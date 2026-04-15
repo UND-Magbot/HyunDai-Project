@@ -147,3 +147,29 @@
   letter-spacing: 0.08em;
   animation: fire-text-pulse 0.5s ease-in-out infinite alternate;
 }
+
+/* 전체 복귀 버튼 */
+.fire-overlay__return-btn {
+  margin-top: 12px;
+  padding: 14px 48px;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(21, 101, 192, 0.85);
+  border: 2px solid rgba(100, 180, 255, 0.6);
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(21, 101, 192, 0.5);
+  transition: background 0.15s, box-shadow 0.15s;
+  animation: pulse-return-fire 1.5s ease-in-out infinite;
+}
+
+.fire-overlay__return-btn:hover {
+  background: rgba(25, 118, 210, 0.95);
+  box-shadow: 0 0 32px rgba(21, 101, 192, 0.8);
+}
+
+@keyframes pulse-return-fire {
+  0%, 100% { box-shadow: 0 0 20px rgba(21, 101, 192, 0.5); }
+  50% { box-shadow: 0 0 36px rgba(100, 180, 255, 0.8); }
+}

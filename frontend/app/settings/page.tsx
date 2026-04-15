@@ -6,6 +6,7 @@ import { SideNav, defaultNavItems } from "../components/shell/SideNav";
 import { MenuPermissionTab } from "../components/ui/settings/MenuPermissionTab";
 import { PasswordChangeTab } from "../components/ui/settings/PasswordChangeTab";
 import { DbBackupTab } from "../components/ui/settings/DbBackupTab";
+import { ConvoySettingsTab } from "../components/ui/settings/ConvoySettingsTab";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
 import { getMyMenuPermissions } from "@/lib/api/settings";
 import "./settings.css";
@@ -29,7 +30,7 @@ function useUserRole() {
   );
 }
 
-type Tab = "menu-permission" | "password-change" | "db-backup";
+type Tab = "menu-permission" | "password-change" | "db-backup" | "convoy-settings";
 
 export default function SettingsPage() {
   const [navCollapsed, setNavCollapsed] = useState(true);
@@ -114,6 +115,14 @@ export default function SettingsPage() {
                       비밀번호 변경
                     </button>
                   )}
+                  {isAdmin && (
+                    <button
+                      className={`settings-page__tab${activeTab === "convoy-settings" ? " settings-page__tab--active" : ""}`}
+                      onClick={() => setActiveTab("convoy-settings")}
+                    >
+                      작업 설정
+                    </button>
+                  )}
                 </div>
               </header>
 
@@ -124,6 +133,8 @@ export default function SettingsPage() {
               {activeTab === "password-change" && canPasswordChange && <PasswordChangeTab />}
 
               {activeTab === "db-backup" && canDbBackup && <DbBackupTab />}
+
+              {activeTab === "convoy-settings" && isAdmin && <ConvoySettingsTab />}
             </div>
           </main>
         </div>

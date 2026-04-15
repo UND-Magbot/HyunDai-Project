@@ -130,10 +130,6 @@ export default function LogsPage() {
     setCurrentPage(1);
   };
 
-  const handleDbBackup = () => {
-    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/api/backup/full`;
-  };
-
   const handleExport = async () => {
     try {
       const qs = buildParams(appliedFilters, 0, 500);
@@ -182,13 +178,6 @@ export default function LogsPage() {
                 onClick={handleExport}
               >
                 Excel 내보내기
-              </button>
-              <button
-                type="button"
-                className="logs-page__export-btn"
-                onClick={handleDbBackup}
-              >
-                DB 백업
               </button>
             </header>
 
