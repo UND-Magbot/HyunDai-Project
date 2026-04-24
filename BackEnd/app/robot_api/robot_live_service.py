@@ -8,12 +8,16 @@ from websocket import WebSocketException, create_connection
 
 
 PORT = 8090
-HTTP_TIMEOUT = 3
-WS_TIMEOUT = 4
+HTTP_TIMEOUT = 2
+WS_TIMEOUT = 2
+
+# 오프라인 로봇 캐시 — 한번 실패하면 60초간 재시도 안 함
+_offline_cache: dict[str, float] = {}  # {ip: 실패 시각}
+_OFFLINE_CACHE_TTL = 60.0
 
 REST_ENDPOINTS = {
     "device_info": "/device/info",
-    "wifi_info": "/device/wifi_info",
+    # "wifi_info": "/device/wifi_info",  # 성능 최적화: 필수 아닌 조회 스킵
 }
 WS_TOPICS = ["/planning_state", "/detailed_battery_state", "/battery_state"]
 
@@ -73,18 +77,25 @@ def _to_runstate(planning: dict, battery: dict, online: bool) -> str:
     if move_state == "moving":
         return "EXECUTING"
 
-    # 충전 판정: power_supply_status(BMS)를 우선 확인
-    # discharging/not_charging → 충전 아님 (이전 charge 액션이 남아있어도 무시)
-    if power_supply_status in {"discharging", "not_charging"}:
-        if move_state in {"idle", "failed", "cancelled", "succeeded"} or waiting_for_dest:
-            return "IDLE"
-        return "IDLE"
+    # 충전 판정: power_supply_status(BMS) + action_type 조합
+    # - charging: 명확히 충전 중
+    # - discharging/not_charging: 명확히 비충전 (이전 charge 액션 무시)
+    # - full: 완충 상태이지만 충전기 연결 여부 불명확 → action_type 보조 판정
+    #         (사람이 충전기 분리해도 BMS가 full을 유지하는 케이스 대응)
+    is_charge_action = action_type == "charge"
 
-    if power_supply_status in {"charging", "full"}:
+    if power_supply_status == "charging":
         return "CHARGING"
 
+    if power_supply_status in {"discharging", "not_charging"}:
+        return "IDLE"
+
+    if power_supply_status == "full":
+        # action_type=charge면 여전히 충전기에 도킹 중, 아니면 분리됨
+        return "CHARGING" if is_charge_action else "IDLE"
+
     # power_supply_status 정보 없을 때만 action_type 폴백
-    if action_type == "charge" and move_state in {"idle", "none", "succeeded"}:
+    if is_charge_action and move_state in {"idle", "none", "succeeded"}:
         return "CHARGING"
 
     if move_state in {"idle", "failed", "cancelled", "succeeded"} or waiting_for_dest:
@@ -119,6 +130,16 @@ def fetch_robot_live(ip: str, secret: str) -> dict:
     errors: dict = {}
     online = False
 
+    # 오프라인 캐시: 최근 60초 내 실패한 로봇은 즉시 오프라인 반환
+    cached_fail = _offline_cache.get(ip)
+    if cached_fail and (time.time() - cached_fail) < _OFFLINE_CACHE_TTL:
+        return {
+            "IP": ip, "SN": "N/A", "ROBOTNAME": "N/A", "MODEL": "N/A",
+            "NICKNAME": None, "AXBOT_VERSION": None, "PLATFORM": None,
+            "RUNSTATE": "OFFLINE", "ONLINE": "Offline", "SIGNAL": "N/A",
+            "POWER(%)": "-", "errors": {"cached": "오프라인 캐시"},
+        }
+
     for key, path in REST_ENDPOINTS.items():
         try:
             rest_data[key] = _get(ip, secret, path)
@@ -126,6 +147,19 @@ def fetch_robot_live(ip: str, secret: str) -> dict:
                 online = True
         except requests.RequestException as exc:
             errors[key] = str(exc)
+
+    # HTTP 실패 → 오프라인 캐시 등록, WS 스킵
+    if not online:
+        _offline_cache[ip] = time.time()
+        return {
+            "IP": ip, "SN": "N/A", "ROBOTNAME": "N/A", "MODEL": "N/A",
+            "NICKNAME": None, "AXBOT_VERSION": None, "PLATFORM": None,
+            "RUNSTATE": "OFFLINE", "ONLINE": "Offline", "SIGNAL": "N/A",
+            "POWER(%)": "-", "errors": errors,
+        }
+
+    # 온라인이면 캐시 제거
+    _offline_cache.pop(ip, None)
 
     ws_data, ws_error = _collect_ws_topics(ip, WS_TOPICS)
     if ws_error:

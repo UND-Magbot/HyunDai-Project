@@ -212,13 +212,13 @@ def get_map_by_id(db: Session, map_id: int) -> dict:
 
 
 def delete_map(db: Session, map_id: int) -> dict:
-    """맵 비활성화."""
+    """맵 삭제 (POI, 라인, 폴리곤도 CASCADE 삭제)."""
     rm = db.query(RobotMap).filter(RobotMap.id == map_id).first()
     if not rm:
         raise HTTPException(status_code=404, detail="맵을 찾지 못했습니다.")
-    rm.is_active = False
+    db.delete(rm)
     db.commit()
-    return {"message": "맵이 비활성화되었습니다.", "id": map_id}
+    return {"message": "맵이 삭제되었습니다.", "id": map_id}
 
 
 # ── Map Elements (POI + Line) CRUD ───────────────────────────

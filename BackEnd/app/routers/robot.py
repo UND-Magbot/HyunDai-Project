@@ -43,12 +43,14 @@ ROBOTS = [
     {"ip": "192.168.10.46", "secret": "19a11878aaab420fba94577ce3620dce"},
     {"ip": "192.168.10.48", "secret": "19a11878aaab420fba94577ce3620dce"},
     {"ip": "192.168.10.50", "secret": "19a11878aaab420fba94577ce3620dce"},
-    {"ip": "192.168.10.52", "secret": "19a11878aaab420fba94577ce3620dce"},
+    {"ip": "192.168.10.62", "secret": "19a11878aaab420fba94577ce3620dce"},
     # {"ip": "192.168.0.27", "secret": "19a11878aaab420fba94577ce3620dce"},
     # {"ip": "192.168.0.30", "secret": "19a11878aaab420fba94577ce3620dce"},
     # {"ip": "192.168.0.31", "secret": "19a11878aaab420fba94577ce3620dce"},
     # {"ip": "192.168.0.33", "secret": "19a11878aaab420fba94577ce3620dce"},
     # {"ip": "192.168.0.34", "secret": "19a11878aaab420fba94577ce3620dce"},
+    # {"ip": "192.168.0.48", "secret": "19a11878aaab420fba94577ce3620dce"},
+    # {"ip": "192.168.0.46", "secret": "19a11878aaab420fba94577ce3620dce"},
 ]
 
 @router.get("/live")

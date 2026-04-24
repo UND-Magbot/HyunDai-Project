@@ -19,6 +19,11 @@ services:
       - ./BackEnd/static:/app/static
       - /home/administrator:/home/administrator
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
       interval: 30s
@@ -37,3 +42,8 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"

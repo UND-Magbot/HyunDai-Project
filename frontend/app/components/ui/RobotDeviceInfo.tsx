@@ -35,6 +35,8 @@ export function RobotDeviceInfo({
 }: RobotDeviceInfoProps) {
   const [initialMinBattery, setInitialMinBattery] = useState<number | null>(null);
   const [minBattery, setMinBattery] = useState(20);
+  const [initialMaxBattery, setInitialMaxBattery] = useState<number | null>(null);
+  const [maxBattery, setMaxBattery] = useState(95);
   const [chargingPois, setChargingPois] = useState<{ id: number; name: string }[]>([]);
   const [initialChargingId, setInitialChargingId] = useState<number | null>(null);
   const [chargingId, setChargingId] = useState<number | null>(null);
@@ -57,9 +59,11 @@ export function RobotDeviceInfo({
       { signal: controller.signal }
     )
       .then((res) => res.json())
-      .then((data: { min_battery: number; charging_id: number | null; standby_id: number | null }) => {
+      .then((data: { min_battery: number; max_battery?: number; charging_id: number | null; standby_id: number | null }) => {
         setInitialMinBattery(data.min_battery);
         setMinBattery(data.min_battery);
+        setInitialMaxBattery(data.max_battery ?? 95);
+        setMaxBattery(data.max_battery ?? 95);
         setInitialChargingId(data.charging_id ?? null);
         setChargingId(data.charging_id ?? null);
         setInitialStandbyId(data.standby_id ?? null);
@@ -71,6 +75,8 @@ export function RobotDeviceInfo({
         }
         setInitialMinBattery(20);
         setMinBattery(20);
+        setInitialMaxBattery(95);
+        setMaxBattery(95);
         setInitialChargingId(null);
         setChargingId(null);
         setInitialStandbyId(null);
@@ -146,12 +152,13 @@ export function RobotDeviceInfo({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ min_battery: minBattery, charging_id: chargingId, standby_id: standbyId }),
+          body: JSON.stringify({ min_battery: minBattery, max_battery: maxBattery, charging_id: chargingId, standby_id: standbyId }),
         }
       );
       if (res.ok) {
-        const data: { min_battery: number; charging_id: number | null; standby_id: number | null } = await res.json();
+        const data: { min_battery: number; max_battery?: number; charging_id: number | null; standby_id: number | null } = await res.json();
         setInitialMinBattery(data.min_battery);
+        setInitialMaxBattery(data.max_battery ?? maxBattery);
         setInitialChargingId(data.charging_id ?? null);
         setInitialStandbyId(data.standby_id ?? null);
       } else {
@@ -164,13 +171,14 @@ export function RobotDeviceInfo({
     } finally {
       setIsApplying(false);
     }
-  }, [device, minBattery, chargingId, standbyId, isApplying]);
+  }, [device, minBattery, maxBattery, chargingId, standbyId, isApplying]);
 
   if (!device) return null;
 
   const isToggleDisabled = togglingDeviceId === device.id;
   const isChanged =
     (initialMinBattery !== null && minBattery !== initialMinBattery) ||
+    (initialMaxBattery !== null && maxBattery !== initialMaxBattery) ||
     (showChargingStation && chargingId !== initialChargingId) ||
     standbyId !== initialStandbyId;
 
@@ -297,6 +305,23 @@ export function RobotDeviceInfo({
             <span className="robot-info__range-value">{minBattery}%</span>
           </div>
 
+          <div className="robot-info__battery-row">
+            <span className="robot-info__label">최대 배터리</span>
+            <input
+              type="range"
+              className="robot-info__range"
+              min={0}
+              max={100}
+              value={maxBattery}
+              onChange={(e) => !readOnly && setMaxBattery(Number(e.target.value))}
+              disabled={readOnly}
+              style={{
+                background: `linear-gradient(to right, var(--color-primary) ${maxBattery}%, var(--bg-surface-2) ${maxBattery}%)`,
+              }}
+            />
+            <span className="robot-info__range-value">{maxBattery}%</span>
+          </div>
+
           {showChargingStation && (() => {
             const allPois = [
               ...chargingPois.map((p) => ({ ...p, type: "charging" as const })),
@@ -347,6 +372,20 @@ export function RobotDeviceInfo({
                       className="robot-info__dropdown-menu"
                       style={{ top: poiDropdownPos.top, left: poiDropdownPos.left, width: poiDropdownPos.width }}
                     >
+                      <li key="unset">
+                        <button
+                          type="button"
+                          className={`robot-info__dropdown-option${chargingId == null && standbyId == null ? " robot-info__dropdown-option--selected" : ""}`}
+                          onClick={() => {
+                            setChargingId(null);
+                            setStandbyId(null);
+                            setPoiDropdownOpen(false);
+                          }}
+                          style={{ color: "var(--color-text-muted, #999)" }}
+                        >
+                          해제 (선택 안 함)
+                        </button>
+                      </li>
                       {allPois.map((poi) => {
                         const isSelected =
                           poi.type === "charging" ? chargingId === poi.id : standbyId === poi.id;

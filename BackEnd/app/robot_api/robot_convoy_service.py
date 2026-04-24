@@ -230,6 +230,9 @@ _convoy_stop_names: list[str] = []           # standby 투입 시 재사용
 _convoy_return_requested: set[int] = set()   # 시간 기반 복귀 요청된 robot_id
 _convoy_hourly_timer: Optional[threading.Timer] = None  # 1시간 배터리 체크 타이머
 _convoy_hotswap_threads: list[threading.Thread] = []    # hot swap으로 투입된 워커 스레드 목록
+_battery_rotation_timer: Optional[threading.Timer] = None  # 대기 배터리 로테이션 타이머
+_battery_rotation_stop = threading.Event()  # 로테이션 중지 플래그
+_charging_start_time: dict[int, float] = {}  # {robot_id: 충전 시작 시각} — 오래된 순 정렬용
 _convoy_map_id: int | None = None                        # 현재 convoy 작업 맵 ID
 _fire_event = threading.Event()                           # 화재 경보 이벤트
 _convoy_battery_cache: dict[int, float] = {}               # robot_id → 배터리 % 캐시
@@ -485,7 +488,156 @@ def start_convoy(
     log_activity("convoy", "convoy_start",
                  f"Convoy 대열 작업 시작 (로봇: {', '.join(robot_names)})",
                  source="start_convoy")
+
+    # 대기 풀에서 W에 있는 로봇들을 빈 충전소로 이동 (1회, 60초 지연)
+    threading.Thread(
+        target=_move_standby_pool_to_charging,
+        args=(60.0,),
+        daemon=True,
+        name="standby-to-charging",
+    ).start()
     return True, "Convoy 대열 작업이 시작되었습니다"
+
+
+def _move_standby_pool_to_charging(delay_sec: float = 60.0):
+    """Convoy 시작 직후, 대기 풀에서 W(대기장소)에 있는 로봇들을 빈 충전소로 이동.
+    - 첫 시도: delay_sec(60초) 후
+    - 실패(빈 충전소 없음 등) 로봇이 남아있으면 5분 후 재시도
+    - pool에 W 로봇 없거나 convoy 중단되면 종료
+    """
+    stop_event = _convoy_stop_event
+    if stop_event is None:
+        return
+
+    RETRY_INTERVAL = 300.0  # 재시도 간격: 5분
+    wait_sec = delay_sec
+
+    while True:
+        # 지연 대기 — convoy가 중단되면 종료
+        if stop_event.wait(timeout=wait_sec):
+            return
+
+        with _convoy_lock:
+            pool_snapshot = list(_convoy_standby_pool)
+            cur_map_id = _convoy_map_id
+
+        # 더 이상 pool에 W 로봇 없으면 종료
+        w_remaining = [
+            r for r in pool_snapshot
+            if ((r.get("_start_poi_name") or r.get("standby_poi_name") or "").startswith("W"))
+        ]
+        if not w_remaining:
+            logger.info("[Standby→C] W에 남은 대기 로봇 없음 — 종료")
+            return
+        if not cur_map_id:
+            logger.info("[Standby→C] 맵 미확정 — 재시도 대기")
+            wait_sec = RETRY_INTERVAL
+            continue
+
+        logger.info(f"[Standby→C] 체크 시작 — W 대기 로봇 {len(w_remaining)}대")
+
+        for rc in w_remaining:
+            if stop_event.is_set():
+                return
+
+            robot_id = rc["robot_id"]
+            robot_ip = rc["ip"]
+            start_poi = rc.get("_start_poi_name") or rc.get("standby_poi_name")
+
+            db = SessionLocal()
+            ws = None
+            try:
+                # convoy 중인 로봇은 물리적으로 출발지에 없으므로 점유 제외
+                with _convoy_lock:
+                    convoy_rids = {r["robot_id"] for r in _convoy_robots}
+
+                occupied_ids = set()
+                for r in db.query(Robot).filter(
+                    Robot.is_active == True, Robot.id != robot_id
+                ).all():
+                    if r.id in convoy_rids:
+                        continue  # convoy 중 — 원래 C에서 나감
+                    if r.charging_id:
+                        occupied_ids.add(r.charging_id)
+
+                free_c = None
+                for cname in ["C1", "C2", "C3"]:
+                    cpoi = db.query(MapPOI).filter(
+                        MapPOI.name == cname, MapPOI.is_active == True,
+                        MapPOI.map_id == cur_map_id,
+                    ).first()
+                    if cpoi and cpoi.id not in occupied_ids:
+                        free_c = cpoi
+                        break
+
+                if not free_c:
+                    logger.info(f"[Standby→C] 로봇 {robot_id} ({start_poi}): 빈 충전소 없음 — 대기 유지")
+                    continue
+
+                c_name = free_c.name
+                tx = free_c.world_x if free_c.world_x is not None else free_c.x
+                ty = free_c.world_y if free_c.world_y is not None else free_c.y
+                t_angle = free_c.angle if free_c.angle is not None else 0.0
+
+                logger.info(f"[Standby→C] 로봇 {robot_id} ({start_poi}) → {c_name} 이동 시작")
+
+                move_lock = _get_move_lock(robot_id)
+                try:
+                    ws = _create_planning_ws(robot_ip)
+                except Exception:
+                    ws = None
+
+                ws, result, _ = _execute_move(
+                    robot_id, robot_ip, float(tx), float(ty), float(t_angle), "",
+                    ws, move_lock, stop_event, max_retries=2,
+                )
+
+                if result != "succeeded":
+                    logger.warning(f"[Standby→C] 로봇 {robot_id} → {c_name} 이동 실패 ({result}) — 대기 유지")
+                    continue
+
+                # 도킹
+                time.sleep(1.0)
+                send_charge(robot_ip, charger_name=c_name)
+                _update_robot_status(robot_id, "charging", message="충전 중")
+
+                # DB 업데이트: standby_id → None, charging_id → 빈 충전소
+                robot_row = db.query(Robot).filter(Robot.id == robot_id).first()
+                if robot_row:
+                    robot_row.standby_id = None
+                    robot_row.charging_id = free_c.id
+                    db.commit()
+
+                # pool 엔트리 업데이트 (hot-swap 시 올바른 경로 사용)
+                with _convoy_lock:
+                    for pool_rc in _convoy_standby_pool:
+                        if pool_rc["robot_id"] == robot_id:
+                            pool_rc["entry_poi_names"] = [f"{c_name}-1", "ENTER-LAST"]
+                            pool_rc["return_poi_names"] = ["ENTER-LAST", f"{c_name}-1"]
+                            pool_rc["charging_poi_name"] = c_name
+                            pool_rc["standby_poi_name"] = None
+                            pool_rc["start_poi_type"] = "charging"
+                            pool_rc["_start_poi_name"] = c_name
+                            break
+
+                logger.info(f"[Standby→C] 로봇 {robot_id} → {c_name} 도킹 완료 (충전 시작)")
+                _rname = rc.get("robot_name") or f"로봇 {robot_id}"
+                log_activity("robot", "standby_charge",
+                             f"대기 로봇 {_rname} → {c_name} 충전 이동",
+                             robot_id=robot_id, robot_name=_rname,
+                             source="_move_standby_pool_to_charging")
+            except Exception as e:
+                logger.exception(f"[Standby→C] 로봇 {robot_id} 이동 예외: {e}")
+            finally:
+                if ws:
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+                db.close()
+
+        # 한 iteration 끝 — 다음 재시도 대기
+        wait_sec = RETRY_INTERVAL
 
 
 def start_convoy_resume(
@@ -544,6 +696,14 @@ def start_convoy_resume(
     log_activity("convoy", "convoy_resume",
                  f"Convoy 재개 시작 (저장 위치에서 작업 재개)",
                  source="start_convoy_resume")
+
+    # 대기 풀에서 W에 있는 로봇들을 빈 충전소로 이동 (1회, 60초 지연)
+    threading.Thread(
+        target=_move_standby_pool_to_charging,
+        args=(60.0,),
+        daemon=True,
+        name="standby-to-charging",
+    ).start()
     return True, "Convoy 재개 — 저장된 위치에서 작업을 재개합니다"
 
 
@@ -695,7 +855,17 @@ def stop_convoy() -> tuple[bool, str]:
         all_robot_ids = {rc["robot_id"] for rc in robots}
         all_robot_ids.update(_convoy_node_positions.keys())
         positions_snapshot = [(rid, _convoy_node_positions.get(rid) or 0) for rid in all_robot_ids]
+        cur_map_id = _convoy_map_id
 
+    # 배터리 기준 복귀 위치 재배치 — 배터리 낮은 로봇부터 C1→C2→C3 우선
+    # (재배치가 DB를 업데이트하므로 graceful_event 세팅 전에 수행)
+    try:
+        with _convoy_hot_swap_lock:
+            _reassign_convoy_positions(map_id=cur_map_id)
+    except Exception as e:
+        logger.warning(f"[Convoy] 정지 전 배터리 재배치 실패: {e}")
+
+    with _convoy_lock:
         if _convoy_graceful_event:
             _convoy_graceful_event.set()
         _convoy_phase = "returning"
@@ -817,18 +987,47 @@ def force_stop_convoy() -> tuple[bool, str]:
 # ─── Hot Swap: 대기 로봇 투입 ──────────────────────────────────────────────────
 
 def _trigger_standby_robot() -> bool:
-    """대기 풀에서 로봇 꺼내 convoy에 즉시 투입 (배터리 부족 hot swap)
+    """대기 풀에서 로봇 꺼내 convoy에 즉시 투입 (배터리 부족 hot swap).
+    배터리가 가장 높은 로봇을 우선 선택 — 조회 실패 로봇은 맨 뒤로.
     반환: True=투입 성공, False=대기 로봇 없음
     """
+    # 락 밖에서 후보 배터리 조회 (WS/HTTP 호출 블로킹 방지)
     with _convoy_lock:
-        if not _convoy_standby_pool:
-            logger.warning("[Convoy] 대기 로봇 없음 — hot swap 불가")
-            return False
-        rc = _convoy_standby_pool.pop(0)
+        candidates = list(_convoy_standby_pool)
+    if not candidates:
+        logger.warning("[Convoy] 대기 로봇 없음 — hot swap 불가")
+        return False
+
+    scored: list[tuple[int, float, dict]] = []  # (robot_id, pct, rc)
+    for c_rc in candidates:
+        pct = _get_battery_percentage(c_rc["ip"])
+        scored.append((c_rc["robot_id"], pct if pct is not None else -1.0, c_rc))
+    # 배터리 내림차순, 조회 실패(-1)는 맨 뒤
+    scored.sort(key=lambda x: x[1], reverse=True)
+    best_rid, best_pct, best_rc = scored[0]
+
+    with _convoy_lock:
+        # race: pool에서 해당 로봇이 빠졌을 수 있으니 재확인
+        try:
+            _convoy_standby_pool.remove(best_rc)
+        except ValueError:
+            # 이미 빠졌으면 현재 pool의 첫 번째로 폴백
+            if not _convoy_standby_pool:
+                logger.warning("[Convoy] 대기 로봇 없음 — hot swap 불가")
+                return False
+            best_rc = _convoy_standby_pool.pop(0)
+            best_rid = best_rc["robot_id"]
+            best_pct = -1.0
+        rc = best_rc
         _convoy_robots.append(rc)
         _convoy_robot_status[rc["robot_id"]] = {"status": "waiting"}
         stop_event = _convoy_stop_event
         graceful_event = _convoy_graceful_event
+
+    logger.info(
+        f"[Convoy Hot Swap] 대기 로봇 {best_rid} 선택 (배터리 {best_pct:.1f}%) — "
+        f"후보 {len(scored)}대 중 최고 배터리"
+    )
 
     logger.info(f"[Convoy Hot Swap] 대기 로봇 {rc['robot_id']} 투입 시작 "
                 f"— 진입경로: {rc.get('entry_poi_names')}, "
@@ -1181,7 +1380,37 @@ def _convoy_hourly_battery_check(stop_event: threading.Event):
     # 최저 배터리 로봇 선택
     battery_levels.sort(key=lambda x: x[1])
     min_robot_id, min_pct = battery_levels[0]
-    logger.info(f"[Convoy 시간 체크] 최저 배터리 로봇 {min_robot_id} ({min_pct:.1f}%) → 복귀 요청")
+    logger.info(f"[Convoy 시간 체크] 최저 배터리 로봇 {min_robot_id} ({min_pct:.1f}%)")
+
+    # 대기 풀 로봇 배터리 최고값 조회 — 교체 가치 판단
+    with _convoy_lock:
+        pool_snapshot = list(_convoy_standby_pool)
+
+    pool_best_pct = -1.0
+    pool_best_rid = None
+    for rc in pool_snapshot:
+        pct = _get_battery_percentage(rc["ip"])
+        if pct is None:
+            continue
+        if pct > pool_best_pct:
+            pool_best_pct = pct
+            pool_best_rid = rc["robot_id"]
+
+    # 대기 풀 최고 배터리 <= convoy 최저 배터리 → 교체 스킵
+    # (최소 5% 마진 — 근소한 차이로는 이동 비용 대비 이득 없음)
+    BATTERY_SWAP_MARGIN = 5.0
+    if pool_best_pct <= min_pct + BATTERY_SWAP_MARGIN:
+        logger.info(
+            f"[Convoy 시간 체크] 스킵 — 대기 풀 최고({pool_best_rid}:{pool_best_pct:.1f}%) "
+            f"<= convoy 최저({min_robot_id}:{min_pct:.1f}%) + 마진 {BATTERY_SWAP_MARGIN}%"
+        )
+        _schedule_hourly_check(stop_event)
+        return
+
+    logger.info(
+        f"[Convoy 시간 체크] 교체 진행 — 대기 풀 최고({pool_best_rid}:{pool_best_pct:.1f}%) "
+        f"> convoy 최저({min_robot_id}:{min_pct:.1f}%) + 마진"
+    )
 
     # 복귀 요청 등록
     with _convoy_lock:
@@ -1253,6 +1482,266 @@ def _schedule_hourly_check(stop_event: threading.Event):
     _convoy_hourly_timer = t
     t.start()
     logger.info(f"[Convoy] 다음 배터리 체크: {CONVOY_BATTERY_CHECK_INTERVAL // 60}분 후")
+
+
+# ─── 배터리 로테이션 (대기 상태 시) ──────────────────────────────────────────
+
+BATTERY_ROTATION_INTERVAL = 180  # 3분 간격
+
+
+def _battery_rotation_check():
+    """작업 대기 상태일 때 충전 로봇 ↔ 대기 로봇 자동 로테이션
+
+    - C1/C2/C3 로봇 중 배터리가 max_battery 이상이고
+    - W1/W2에 대기 로봇이 있으면
+    - 오래 충전된 순서로 W1/W2 로봇과 위치 교체
+    """
+    try:
+        if _battery_rotation_stop.is_set():
+            return
+
+        # convoy 실행 중이면 스킵
+        with _convoy_lock:
+            if _convoy_phase not in ("idle", "stopped"):
+                _schedule_battery_rotation()
+                return
+
+        db = SessionLocal()
+        try:
+            # 활성 로봇 전체 조회
+            active_robots = db.query(Robot).filter(
+                Robot.is_active == True,
+                Robot.ip_address.isnot(None),
+            ).all()
+
+            # POI 위치별 로봇 매핑
+            charging_robots = []   # [(robot_id, ip, max_battery, poi_name, charging_id)]
+            standby_robots = []    # [(robot_id, ip, poi_name, standby_id)]
+
+            for r in active_robots:
+                if not r.ip_address:
+                    continue
+
+                # 충전소에 있는 로봇
+                if r.charging_id:
+                    cpoi = db.query(MapPOI).filter(MapPOI.id == r.charging_id).first()
+                    if cpoi and cpoi.name in ("C1", "C2", "C3"):
+                        charging_robots.append({
+                            "id": r.id, "ip": r.ip_address,
+                            "max_battery": r.max_battery or 95,
+                            "poi_name": cpoi.name, "charging_id": r.charging_id,
+                        })
+                # 대기장소에 있는 로봇
+                if r.standby_id:
+                    spoi = db.query(MapPOI).filter(MapPOI.id == r.standby_id).first()
+                    if spoi and spoi.name in ("W1", "W2"):
+                        standby_robots.append({
+                            "id": r.id, "ip": r.ip_address,
+                            "poi_name": spoi.name, "standby_id": r.standby_id,
+                        })
+
+            if not charging_robots or not standby_robots:
+                _schedule_battery_rotation()
+                return
+
+            # 완충된 충전 로봇 선별 + 배터리 조회
+            fully_charged = []
+            for cr in charging_robots:
+                pct = _get_battery_percentage(cr["ip"])
+                if pct is None:
+                    continue
+                if pct >= cr["max_battery"]:
+                    fully_charged.append({
+                        **cr, "battery": pct,
+                        "charge_start": _charging_start_time.get(cr["id"], time.time()),
+                    })
+                    # 완충 로봇의 충전 시작 시각이 없으면 현재로 기록
+                    if cr["id"] not in _charging_start_time:
+                        _charging_start_time[cr["id"]] = time.time()
+
+            if not fully_charged:
+                _schedule_battery_rotation()
+                return
+
+            # 오래 충전된 순으로 정렬 (오래된 순 우선 교체)
+            fully_charged.sort(key=lambda x: x["charge_start"])
+
+            # W 로봇 배터리 조회
+            for wr in standby_robots:
+                w_pct = _get_battery_percentage(wr["ip"])
+                wr["battery"] = w_pct if w_pct is not None else 100.0
+
+            # 배터리 낮은 W 로봇 순으로 정렬 (충전 필요한 순)
+            standby_robots.sort(key=lambda x: x["battery"])
+
+            # 교체 가능 수 = min(완충된 C 수, W 위치 수)
+            swap_count = min(len(fully_charged), len(standby_robots))
+            logger.info(f"[Battery Rotation] 완충 {len(fully_charged)}대, 대기 {len(standby_robots)}대 → {swap_count}번 교체")
+
+            for i in range(swap_count):
+                c_robot = fully_charged[i]
+                w_robot = standby_robots[i]
+
+                c_row = db.query(Robot).filter(Robot.id == c_robot["id"]).first()
+                w_row = db.query(Robot).filter(Robot.id == w_robot["id"]).first()
+                if not c_row or not w_row:
+                    continue
+
+                # W 로봇도 max_battery 이상이면 충전 불필요 → 교체 스킵
+                w_max = w_row.max_battery or 95
+                if w_robot["battery"] >= w_max:
+                    logger.info(f"[Battery Rotation] 스킵: W 로봇 {w_robot['id']}({w_robot['battery']:.0f}%) >= "
+                                f"max({w_max}%) — 이미 충전 충분")
+                    continue
+
+                # W 로봇이 C 로봇보다 배터리 높거나 같으면 교체 불필요
+                if w_robot["battery"] >= c_robot["battery"]:
+                    logger.info(f"[Battery Rotation] 스킵: W 로봇 {w_robot['id']}({w_robot['battery']:.0f}%) >= "
+                                f"C 로봇 {c_robot['id']}({c_robot['battery']:.0f}%)")
+                    continue
+
+                # DB 위치 교환: C → W, W → C
+                c_row.charging_id = None
+                c_row.standby_id = w_robot["standby_id"]
+                w_row.standby_id = None
+                w_row.charging_id = c_robot["charging_id"]
+                db.commit()
+
+                logger.info(f"[Battery Rotation] 로봇 {c_robot['id']}({c_robot['poi_name']}) ↔ "
+                            f"로봇 {w_robot['id']}({w_robot['poi_name']})")
+
+                # 충전 시작 시각 정리: C에서 나간 로봇은 삭제, W에서 C로 간 로봇은 기록
+                _charging_start_time.pop(c_robot["id"], None)
+                _charging_start_time[w_robot["id"]] = time.time()
+
+                # 순차 교체: W 로봇 먼저 C로 이동(충전 시작) → 완료 후 C 로봇이 W로 이동
+                # 이유: 동시에 움직이면 경로 충돌, 같은 위치 도달 가능
+                threading.Thread(
+                    target=_rotate_swap_sequential,
+                    args=(
+                        w_robot["id"], w_robot["ip"], c_robot["poi_name"],
+                        c_robot["id"], c_robot["ip"], w_robot["poi_name"],
+                    ),
+                    daemon=True,
+                ).start()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"[Battery Rotation] 실패: {e}")
+    finally:
+        _schedule_battery_rotation()
+
+
+def _rotate_swap_sequential(
+    w_id: int, w_ip: str, c_poi_name: str,
+    c_id: int, c_ip: str, w_poi_name: str,
+):
+    """동시 교체: 양쪽 로봇이 동시에 출발 (standard 모드 장애물 회피)
+
+    순차 실행 시 먼저 도착한 로봇이 길을 막는 문제 방지
+    """
+    try:
+        logger.info(f"[Battery Rotation] 동시 출발: 로봇 {w_id}({w_poi_name} → {c_poi_name}), "
+                     f"로봇 {c_id}({c_poi_name} → {w_poi_name})")
+        t1 = threading.Thread(target=_rotate_robot_move, args=(w_id, w_ip, c_poi_name, "charging"), daemon=True)
+        t2 = threading.Thread(target=_rotate_robot_move, args=(c_id, c_ip, w_poi_name, "standby"), daemon=True)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        logger.info(f"[Battery Rotation] 교체 완료: 로봇 {w_id} ↔ 로봇 {c_id}")
+    except Exception as e:
+        logger.warning(f"[Battery Rotation] 동시 교체 실패: {e}")
+
+
+def _rotate_robot_move(robot_id: int, robot_ip: str, target_poi_name: str, target_type: str):
+    """로테이션 이동 실행 (개별 로봇 스레드) — 직행, 실패 시 무한 재시도"""
+    try:
+        db = SessionLocal()
+        try:
+            poi = db.query(MapPOI).filter(
+                MapPOI.name == target_poi_name, MapPOI.is_active == True,
+            ).first()
+            if not poi:
+                logger.warning(f"[Rotate Robot {robot_id}] POI '{target_poi_name}' 없음")
+                return
+            tx = float(poi.world_x if poi.world_x is not None else poi.x)
+            ty = float(poi.world_y if poi.world_y is not None else poi.y)
+            t_angle = float(poi.angle or 0.0)
+        finally:
+            db.close()
+
+        cancel_and_verify(robot_ip)
+        time.sleep(1.0)
+        move_lock = _get_move_lock(robot_id)
+        stop_event = threading.Event()
+        ws = None
+        try:
+            ws = _create_planning_ws(robot_ip)
+        except Exception:
+            pass
+
+        ws, result, _ = _execute_move(
+            robot_id, robot_ip, tx, ty, t_angle, "",
+            ws, move_lock, stop_event)
+        retry_count = 0
+        while result != "succeeded":
+            retry_count += 1
+            logger.warning(f"[Rotate Robot {robot_id}] 이동 실패 ({result}) — 재시도 {retry_count}")
+            cancel_and_verify(robot_ip)
+            time.sleep(RECOVERY_DELAY)
+            try:
+                if ws: ws.close()
+            except Exception:
+                pass
+            ws = None
+            try:
+                ws = _create_planning_ws(robot_ip)
+            except Exception:
+                pass
+            ws, result, _ = _execute_move(
+                robot_id, robot_ip, tx, ty, t_angle, "",
+                ws, move_lock, stop_event)
+
+        if target_type == "charging":
+            time.sleep(1.0)
+            send_charge(robot_ip, charger_name=target_poi_name)
+            logger.info(f"[Rotate Robot {robot_id}] {target_poi_name} 충전 시작")
+        else:
+            logger.info(f"[Rotate Robot {robot_id}] {target_poi_name} 도착 (대기)")
+        if ws:
+            try: ws.close()
+            except Exception: pass
+    except Exception as e:
+        logger.warning(f"[Rotate Robot {robot_id}] 이동 실패: {e}")
+
+
+def _schedule_battery_rotation():
+    """배터리 로테이션 타이머 예약 (3분 간격)"""
+    global _battery_rotation_timer
+    if _battery_rotation_stop.is_set():
+        return
+    t = threading.Timer(BATTERY_ROTATION_INTERVAL, _battery_rotation_check)
+    t.daemon = True
+    _battery_rotation_timer = t
+    t.start()
+
+
+def start_battery_rotation():
+    """배터리 로테이션 스케줄러 시작"""
+    _battery_rotation_stop.clear()
+    _schedule_battery_rotation()
+    logger.info(f"[Battery Rotation] 스케줄러 시작 — {BATTERY_ROTATION_INTERVAL}초 간격")
+
+
+def stop_battery_rotation():
+    """배터리 로테이션 스케줄러 중지"""
+    global _battery_rotation_timer
+    _battery_rotation_stop.set()
+    if _battery_rotation_timer:
+        _battery_rotation_timer.cancel()
+        _battery_rotation_timer = None
+    logger.info("[Battery Rotation] 스케줄러 중지")
 
 
 # ─── 헬퍼: 다음 정지점 찾기 (태블릿 표시용) ──────────────────────────────────────
@@ -2622,7 +3111,7 @@ def _evacuate_robot(rc: dict, side_counter: dict, side_lock: threading.Lock):
         "", ws, move_lock, stop_event, max_retries=2
     )
 
-    if result == "success":
+    if result == "succeeded":
         _update_robot_status(robot_id, "evacuated", current_poi=safe_poi_name)
         logger.info(f"[Fire/Robot {robot_id}] 대피 완료: {safe_poi_name}")
     else:
@@ -2680,6 +3169,9 @@ def fire_evacuate() -> tuple[bool, str]:
 
     threading.Thread(target=_wait_evacuation_done, daemon=True).start()
 
+    log_activity("convoy", "fire_evacuate",
+                 f"화재 경보 발령 — convoy {len(robots)}대 SAFE 대피 시작",
+                 source="fire_evacuate")
     return True, f"{len(robots)}대 로봇 대피 시작"
 
 
@@ -2688,8 +3180,13 @@ def reset_fire() -> None:
     _fire_event.clear()
     global _convoy_phase
     with _convoy_lock:
+        prev = _convoy_phase
         if _convoy_phase == "evacuating":
             _convoy_phase = "stopped"
+
+    log_activity("convoy", "fire_reset",
+                 f"화재 해제 — 이전 phase={prev}",
+                 source="reset_fire")
 
 
 def _return_robot_simple(rc: dict):

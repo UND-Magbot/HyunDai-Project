@@ -80,6 +80,12 @@ def api_confirm_loop(robot_id: int):
     return {"message": msg, "robot_id": robot_id}
 
 
+# ─── 태블릿 status 캐시 (빈번 폴링으로 인한 로봇 WS 부하 방지) ──
+import time as _time_mod
+_tablet_status_cache: dict[int, dict] = {}   # {robot_id: {battery, paused, ts}}
+_TABLET_CACHE_TTL = 5.0                      # 5초 캐시
+
+
 @router.get("/loop/status/{robot_id}")
 def api_loop_status(robot_id: int, db: Session = Depends(get_db)):
     """무한반복 작업 상태 조회 (idle일 때 실제 충전 상태 반영)"""
@@ -88,42 +94,68 @@ def api_loop_status(robot_id: int, db: Session = Depends(get_db)):
     robot = db.query(Robot).filter(Robot.id == robot_id, Robot.is_active == True).first()
     amr_label = f"AMR{str(robot.wcs_no).zfill(2)}" if robot and robot.wcs_no else f"AMR{str(robot_id).zfill(2)}"
 
-    if status.get("status") in ("idle", "stopped"):
+    # 캐시 체크 (배터리/paused/charging은 3초 캐시)
+    now_ts = _time_mod.time()
+    cached = _tablet_status_cache.get(robot_id)
+    if cached and (now_ts - cached["ts"]) < _TABLET_CACHE_TTL:
+        battery_pct = cached["battery"]
+        paused = cached["paused"]
+        if cached.get("charging") and status.get("status") in ("idle", "stopped"):
+            status = {"status": "charging", "message": "충전 중"}
+    else:
+        # 캐시 미스 → 로봇 조회 (배터리 + control_mode + charging 한 번에)
+        battery_pct = None
+        paused = False
+        is_charging = False
+
         if robot and robot.ip_address:
+            # 배터리 + planning/charging 상태 조회
             try:
-                ws_data, _ = _collect_ws_topics(robot.ip_address, ["/planning_state", "/detailed_battery_state", "/battery_state"], timeout_sec=3)
-                planning = ws_data.get("/planning_state", {})
-                battery = ws_data.get("/detailed_battery_state", {}) or ws_data.get("/battery_state", {})
-                runstate = _to_runstate(planning, battery, online=True)
-                if runstate == "CHARGING":
-                    status = {"status": "charging", "message": "충전 중"}
+                ws_data, _ = _collect_ws_topics(
+                    robot.ip_address,
+                    ["/battery_state", "/planning_state", "/detailed_battery_state"],
+                    timeout_sec=2)
+                bs = ws_data.get("/battery_state", {})
+                if bs and "percentage" in bs:
+                    raw = bs["percentage"]
+                    battery_pct = round(raw * 100) if raw <= 1.0 else round(raw)
+                if status.get("status") in ("idle", "stopped", "charging"):
+                    planning = ws_data.get("/planning_state", {})
+                    battery = ws_data.get("/detailed_battery_state", {}) or bs
+                    runstate = _to_runstate(planning, battery, online=True)
+                    if runstate == "CHARGING":
+                        is_charging = True
+                        status = {"status": "charging", "message": "충전 중"}
+                    elif status.get("status") == "charging":
+                        # 메모리는 "충전 중"이지만 실제로는 아님 — 사람이 충전기 뺌
+                        status = {"status": "standby", "message": "대기 중"}
+                        # 백엔드 메모리도 동기화 (다음 조회에서도 일관)
+                        try:
+                            from app.robot_api.robot_task_service import _run_info, _task_lock
+                            with _task_lock:
+                                _run_info[robot_id] = status
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
-    # 배터리 조회 (항상 실시간 WS 조회)
-    battery_pct = None
-    if robot and robot.ip_address:
-        try:
-            ws_data, _ = _collect_ws_topics(robot.ip_address, ["/battery_state"], timeout_sec=2)
-            bs = ws_data.get("/battery_state", {})
-            if bs and "percentage" in bs:
-                raw = bs["percentage"]
-                battery_pct = round(raw * 100) if raw <= 1.0 else round(raw)
-        except Exception:
-            pass
+            # control_mode (HTTP)
+            try:
+                import requests as _req
+                _r = _req.get(f"http://{robot.ip_address}:8090/chassis/status",
+                              headers={"Authorization": "Secret 19a11878aaab420fba94577ce3620dce"},
+                              timeout=1)
+                if _r.status_code == 200:
+                    paused = _r.json().get("control_mode") == "manual"
+            except Exception:
+                pass
 
-    # 일시정지 상태 확인 (control_mode == manual)
-    paused = False
-    if robot and robot.ip_address:
-        try:
-            import requests as _req
-            _r = _req.get(f"http://{robot.ip_address}:8090/chassis/status",
-                          headers={"Authorization": "Secret 19a11878aaab420fba94577ce3620dce"},
-                          timeout=2)
-            if _r.status_code == 200:
-                paused = _r.json().get("control_mode") == "manual"
-        except Exception:
-            pass
+        _tablet_status_cache[robot_id] = {
+            "battery": battery_pct,
+            "paused": paused,
+            "charging": is_charging,
+            "ts": now_ts,
+        }
 
     return {"robot_id": robot_id, "amr_label": amr_label, "battery": battery_pct, "paused": paused, **status}
 
@@ -453,18 +485,6 @@ body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
   0%,100% {{ opacity:1; }}
   50% {{ opacity:0.6; }}
 }}
-.corner-btn {{
-  position:fixed; top:12px;
-  width:clamp(44px,7vw,60px); height:clamp(44px,7vw,60px);
-  font-size:clamp(1.2rem,3vw,1.8rem);
-  background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
-  border-radius:50%; color:rgba(255,255,255,0.4);
-  cursor:pointer; z-index:1002;
-  display:flex; align-items:center; justify-content:center;
-}}
-.corner-btn:active {{ background:rgba(255,255,255,0.2); color:#fff; }}
-#btn-home {{ left:12px; }}
-#btn-settings {{ right:12px; }}
 #btn-shutdown {{
   position:fixed; bottom:16px; right:16px;
   width:clamp(48px,8vw,64px); height:clamp(48px,8vw,64px);
@@ -504,8 +524,6 @@ body {{ font-family:'Noto Sans KR',sans-serif; background:#1a1a2e; color:#fff;
     <button class="btn-no" onclick="hideShutdown()">취소</button>
   </div>
 </div>
-<button class="corner-btn" id="btn-home"     onclick="if(window.Android) Android.goHome()">⌂</button>
-<button class="corner-btn" id="btn-settings" onclick="if(window.Android) Android.openSettings()">⚙</button>
 
 <div class="battery-label">
   <div class="battery-icon"><div class="battery-fill" id="batteryFill" style="width:0%;background:#aaa;"></div></div>
@@ -736,7 +754,7 @@ async function doConfirm() {{
 
 // 폴링
 fetchStatus();
-polling = setInterval(fetchStatus, 500);
+polling = setInterval(fetchStatus, 1000);
 </script>
 </body>
 </html>"""

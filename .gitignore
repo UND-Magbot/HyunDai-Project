@@ -9,7 +9,30 @@ frontend/.next/
 # Env
 frontend/.env.local
 .env
+.env.*
 
+# Build artifacts / 이미지
+*.tar
+*.zip
+frontend.tar
+backend.tar
+backend_5.tar
+images.tar
+
+# DB dumps
+*.sql
+db_backup*
+
+# 작업 임시 디렉토리 (압축 풀림)
+5번/
+6번/
+map94_temp.json
+
+# 맵 파일 (로봇에서 동기화, 대용량, 별도 관리)
+BackEnd/static/maps/
+
+# IDE / local settings
+.claude/settings.local.json
 
 # prompts
 frontend/spec/

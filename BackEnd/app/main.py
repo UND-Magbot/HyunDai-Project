@@ -42,8 +42,15 @@ async def lifespan(application: FastAPI):
 
     start_wcs_reporter()
 
+    # 배터리 로테이션 스케줄러 시작 (대기 상태 시 충전소 ↔ W 로봇 자동 교체)
+    # ※ 일시 비활성화 — 작업 종료 후 C↔W 자동 교체 로직만 끔
+    # ※ 작업 중 1시간 체크(_convoy_hourly_battery_check)는 convoy 시작 시 자동 스케줄되므로 영향 없음
+    # from app.robot_api.robot_convoy_service import start_battery_rotation, stop_battery_rotation
+    # start_battery_rotation()
+
     yield
 
+    # stop_battery_rotation()
     stop_wcs_reporter()
 
     for lgr in target_loggers:

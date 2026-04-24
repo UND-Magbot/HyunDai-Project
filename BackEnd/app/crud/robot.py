@@ -198,26 +198,38 @@ def update_robot_status(db: Session, robot_id: int, data: RobotStatusUpdate) -> 
     return _status_to_response(rs)
 
 
-# ── 최소 배터리 조회 (SN 기반) ──
+# ── 최소/최대 배터리 조회 (SN 기반) ──
 def get_min_battery_by_sn(db: Session, sn: str) -> dict:
     robot = db.query(Robot).filter(Robot.serial_number == sn, Robot.is_active == True).first()
     if not robot:
-        return {"min_battery": 20, "charging_id": None, "standby_id": None}
-    return {"min_battery": robot.min_battery, "charging_id": robot.charging_id, "standby_id": robot.standby_id}
+        return {"min_battery": 20, "max_battery": 95, "charging_id": None, "standby_id": None}
+    return {
+        "min_battery": robot.min_battery,
+        "max_battery": robot.max_battery or 95,
+        "charging_id": robot.charging_id,
+        "standby_id": robot.standby_id,
+    }
 
 
-# ── 최소 배터리 수정 (SN 기반) ──
+# ── 최소/최대 배터리 수정 (SN 기반) ──
 def update_min_battery_by_sn(db: Session, sn: str, data: MinBatteryUpdate) -> dict:
     robot = db.query(Robot).filter(Robot.serial_number == sn, Robot.is_active == True).first()
     if not robot:
         raise HTTPException(status_code=404, detail="등록되지 않은 로봇입니다.")
 
     robot.min_battery = data.min_battery
+    if data.max_battery is not None:
+        robot.max_battery = data.max_battery
     robot.charging_id = data.charging_id
     robot.standby_id = data.standby_id
     db.commit()
     db.refresh(robot)
-    return {"min_battery": robot.min_battery, "charging_id": robot.charging_id, "standby_id": robot.standby_id}
+    return {
+        "min_battery": robot.min_battery,
+        "max_battery": robot.max_battery,
+        "charging_id": robot.charging_id,
+        "standby_id": robot.standby_id,
+    }
 
 
 # ── RB-05 로봇 상태 조회 ──

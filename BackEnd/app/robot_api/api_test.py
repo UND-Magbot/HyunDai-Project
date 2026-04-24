@@ -101,10 +101,18 @@ def _to_runstate(planning: dict, battery: dict, online: bool) -> str:
     if move_state == "moving":
         return "EXECUTING"
 
-    # 충전 판정 완화
-    if power_supply_status in {"charging", "full"}:
+    # 충전 판정 — BMS + action_type 조합 (full 상태 오판 방지)
+    is_charge_action = action_type == "charge"
+
+    if power_supply_status == "charging":
         return "CHARGING"
-    if action_type == "charge" and move_state in {"idle", "none", "succeeded"}:
+    if power_supply_status in {"discharging", "not_charging"}:
+        return "IDLE"
+    if power_supply_status == "full":
+        return "CHARGING" if is_charge_action else "IDLE"
+
+    # power_supply_status 정보 없을 때만 action_type 폴백
+    if is_charge_action and move_state in {"idle", "none", "succeeded"}:
         return "CHARGING"
 
     if move_state in {"idle", "failed", "cancelled", "succeeded"} or waiting_for_dest:

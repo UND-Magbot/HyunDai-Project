@@ -56,11 +56,32 @@ def _load_config(db: Session) -> ConvoyConfig:
 
 # ─── 엔드포인트 ────────────────────────────────────────────────────────────────
 
+def _build_auto_robots_config(db: Session) -> list[dict]:
+    """활성 로봇 + 출발지 설정된 로봇을 convoy 대상으로 자동 구성"""
+    robots = db.query(Robot).filter(
+        Robot.is_active == True,
+        (Robot.charging_id.isnot(None)) | (Robot.standby_id.isnot(None)),
+    ).all()
+    result = []
+    for r in robots:
+        poi_id = r.charging_id or r.standby_id
+        poi = db.query(MapPOI).filter(MapPOI.id == poi_id, MapPOI.is_active == True).first()
+        if not poi:
+            continue
+        result.append({
+            "robot_id": r.id,
+            "charging_poi": poi.name,
+            "entry_poi_names": [f"{poi.name}-1", "ENTER-LAST"],
+            "return_poi_names": ["ENTER-LAST", f"{poi.name}-1"],
+        })
+    return result
+
+
 @router.get("/config")
 def api_convoy_config(db: Session = Depends(get_db)):
     """Convoy 작업 설정 조회
-    1순위: DB convoy_configs 테이블
-    2순위: MapLine 그래프에서 자동 결정 (폴백)
+    - work_poi_names / stop_names: DB convoy_configs 테이블
+    - robots_config: DB의 활성 로봇에서 실시간 자동 추출 (JSON 필드 사용 안 함)
     """
     cfg = db.query(ConvoyConfig).filter(ConvoyConfig.is_active == True).first()
 
@@ -68,7 +89,7 @@ def api_convoy_config(db: Session = Depends(get_db)):
         return {
             "work_poi_names": json.loads(cfg.work_poi_names),
             "stop_names": json.loads(cfg.stop_names),
-            "robots_config": json.loads(cfg.robots_config),
+            "robots_config": _build_auto_robots_config(db),
             "reset_time": cfg.reset_time or "08:00",
             "battery_check_interval": cfg.battery_check_interval or 5,
         }
@@ -142,12 +163,23 @@ def api_convoy_start(fresh: bool = False, immediate: bool = False, db: Session =
 
     work_poi_names = json.loads(cfg.work_poi_names)
     stop_names = json.loads(cfg.stop_names)
-    robots_cfg = json.loads(cfg.robots_config)
+
+    # ── convoy 대상 로봇 자동 추출 ──
+    # is_active=TRUE 이고 (charging_id 또는 standby_id 설정된) 로봇을 자동으로 포함.
+    # robots_config JSON은 사용하지 않음 → 스페어 교체 시 UI 드롭다운만 수정하면 됨.
+    auto_robots = db.query(Robot).filter(
+        Robot.is_active == True,
+        (Robot.charging_id.isnot(None)) | (Robot.standby_id.isnot(None)),
+    ).all()
+    robots_cfg = [{"robot_id": r.id} for r in auto_robots]
 
     if not work_poi_names:
         raise HTTPException(status_code=400, detail="work_poi_names가 비어있습니다")
     if not robots_cfg:
-        raise HTTPException(status_code=400, detail="robots_config가 비어있습니다")
+        raise HTTPException(
+            status_code=400,
+            detail="활성 로봇이 없습니다 — is_active=TRUE이고 charging_id 또는 standby_id가 설정된 로봇이 최소 1대 필요합니다",
+        )
 
     # ── 리셋 시각 기준 저장 상태 확인 ──
     if fresh:
@@ -398,10 +430,15 @@ def api_convoy_return_all():
 def api_convoy_pause(db: Session = Depends(get_db)):
     """전체 일시정지 — 모든 로봇 manual 모드 전환 (즉시 멈춤)"""
     import requests as http_req
-    cfg = _load_config(db)
-    robots_cfg = json.loads(cfg.robots_config)
+    _auto = db.query(Robot).filter(
+        Robot.is_active == True,
+        (Robot.charging_id.isnot(None)) | (Robot.standby_id.isnot(None)),
+    ).all()
+    robots_cfg = [{"robot_id": r.id} for r in _auto]
     secret = "19a11878aaab420fba94577ce3620dce"
     results = []
+    ok_count = 0
+    fail_count = 0
     for rc in robots_cfg:
         robot = db.query(Robot).filter(Robot.id == rc["robot_id"], Robot.is_active == True).first()
         if not robot or not robot.ip_address:
@@ -412,8 +449,17 @@ def api_convoy_pause(db: Session = Depends(get_db)):
                 headers={"Authorization": f"Secret {secret}", "Content-Type": "application/json"},
                 json={"control_mode": "manual"}, timeout=5)
             results.append({"robot_id": rc["robot_id"], "status": r.status_code})
+            if 200 <= r.status_code < 300:
+                ok_count += 1
+            else:
+                fail_count += 1
         except Exception as e:
             results.append({"robot_id": rc["robot_id"], "error": str(e)})
+            fail_count += 1
+
+    log_activity("convoy", "convoy_pause",
+                 f"Convoy 전체 일시정지 — 성공 {ok_count}대 / 실패 {fail_count}대",
+                 source="api_convoy_pause")
     return {"message": "전체 일시정지 완료", "results": results}
 
 
@@ -421,10 +467,15 @@ def api_convoy_pause(db: Session = Depends(get_db)):
 def api_convoy_resume(db: Session = Depends(get_db)):
     """전체 일시정지 해제 — 모든 로봇 auto 모드 복원 (이동 재개)"""
     import requests as http_req
-    cfg = _load_config(db)
-    robots_cfg = json.loads(cfg.robots_config)
+    _auto = db.query(Robot).filter(
+        Robot.is_active == True,
+        (Robot.charging_id.isnot(None)) | (Robot.standby_id.isnot(None)),
+    ).all()
+    robots_cfg = [{"robot_id": r.id} for r in _auto]
     secret = "19a11878aaab420fba94577ce3620dce"
     results = []
+    ok_count = 0
+    fail_count = 0
     for rc in robots_cfg:
         robot = db.query(Robot).filter(Robot.id == rc["robot_id"], Robot.is_active == True).first()
         if not robot or not robot.ip_address:
@@ -435,6 +486,15 @@ def api_convoy_resume(db: Session = Depends(get_db)):
                 headers={"Authorization": f"Secret {secret}", "Content-Type": "application/json"},
                 json={"control_mode": "auto"}, timeout=5)
             results.append({"robot_id": rc["robot_id"], "status": r.status_code})
+            if 200 <= r.status_code < 300:
+                ok_count += 1
+            else:
+                fail_count += 1
         except Exception as e:
             results.append({"robot_id": rc["robot_id"], "error": str(e)})
+            fail_count += 1
+
+    log_activity("convoy", "convoy_resume",
+                 f"Convoy 일시정지 해제 — 성공 {ok_count}대 / 실패 {fail_count}대",
+                 source="api_convoy_resume")
     return {"message": "전체 일시정지 해제 완료", "results": results}
