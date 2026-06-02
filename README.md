@@ -188,6 +188,20 @@ docker compose up -d backend
 - 서버 연결 실패 시 재연결/설정 UI (네이티브)
 - 서버 주소 / 로봇 ID 현장 설정 가능
 
+### 7. 통계 페이지 (가용성 지표)
+- **MTTR** (Mean Time To Repair) — 평균 복구 시간
+- **MTBF** (Mean Time Between Failures) — 평균 고장 간격
+- **가용성** = MTBF / (MTBF + MTTR) × 100
+- **로봇별 가동률** — 대기/작업중/충전중/에러/오프라인 시간 점유 비율
+- 기간 필터 (1일/7일/30일/사용자 지정)
+- `robot_status_history` 테이블의 status 전이 시점 기반 자동 산출
+
+### 8. 운영자 PC 모니터링 화면 — 작업 확인 버튼
+- 정지점 도착 후 운영자가 화면에서 직접 확인 가능
+- 빨간 깜빡임 + "✔ 확인" 버튼 (waiting_confirmation 상태 10초 이상 지속 시 표시)
+- 태블릿 응답 안 될 때 PC에서 즉시 복구 가능
+- NET-001(네트워크 일시 끊김)은 silent 처리 — false alarm 차단
+
 ---
 
 ## 🔧 운영 가이드
@@ -240,6 +254,30 @@ sudo tail -30 /DB/docker2.err  # 6번
 ---
 
 ## 📝 최근 주요 업데이트
+
+### 2026.05.29 — CPU 부하 최적화
+- 태블릿 상태 캐시 TTL **5초 → 15초** ([task.py:86](BackEnd/app/routers/task.py#L86))
+- 로봇별 WS 신규 연결 빈도 1/3로 감소 → 단일 backend worker CPU 100% → 50~60% 절감
+- 태블릿 화면의 배터리/충전 표시 지연 5→15초 (운영 영향 X)
+
+### 2026.05.07 — 무한 cancel 루프 사고 차단 + 통계 페이지
+- **confirm_event.clear() 추가** (3곳) — 태블릿/PC 확인 버튼이 trigger하던 무한 루프 사고 차단
+- outer retry 가드 (`and not _arrived`) — 강제 도착 시 불필요 재시도 방지
+- **신규: 통계 페이지** ([app/routers/statistics.py](BackEnd/app/routers/statistics.py), [/statistics](frontend/app/statistics/))
+  - MTTR / MTBF / 가용성 / 로봇별 가동률
+  - `wcs_service` status 전이 시점 자동 기록
+- 신규: `/healthz` 초경량 엔드포인트 + Docker healthcheck retries 3→5 (autoheal false trigger 차단)
+- WS_SILENCE_LIMIT 15→30초 + 5cm 잔여거리 시 succeeded 추정 가드
+- Frontend 운영자 PC 모니터링에 "✔ 확인" 빨간 버튼 추가 (10초 지연 표시, NET-001 silent)
+
+### 2026.05.05 — Convoy 시작 자동 위치재조정 + 중복 복귀 사고 차단
+- Convoy 시작 시 모든 참여 로봇을 자기 충전소/대기지점 좌표로 강제 인식 ([_auto_relocalize_robots](BackEnd/app/robot_api/robot_convoy_service.py))
+  - ThreadPoolExecutor 병렬 처리 (6대 동시) — worst case 15초 이내
+  - 부팅 후 SLAM 위치 어긋남 → "진입 미도착" 사이클 차단
+- **시간 체크 중복 등록 방지** — 이미 복귀 대기 중인 로봇 있으면 새 후보 스킵 (2대 동시 충전소 진입 사고 차단)
+- 복귀 요청 30분 타임아웃 자동 해제 + 알람 + 활동 로그
+- 재배치 시 복귀 후보 제외 (잘못된 위치 명령 차단)
+- 충전 상태 깜빡임 fix — `fully_charged`에서 status=0 대신 status=2 유지
 
 ### 2026.04.23 — DB 장애 복구 (DNS 역조회 원인)
 - MariaDB `skip-name-resolve` 설정 추가 (양쪽 서버)
