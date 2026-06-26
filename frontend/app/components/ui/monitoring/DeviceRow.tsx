@@ -24,11 +24,14 @@ export function DeviceRow({
   battery,
   status,
   taskMessage,
+  showConfirm = false,
+  confirmMessage,
   isExpanded = false,
   onToggleExpand,
   onInfo,
   onReturn,
   onStop,
+  onConfirm,
 }: DeviceRowProps) {
   const expanded = isExpanded;
   const isOffline = power === "offline";
@@ -47,7 +50,7 @@ export function DeviceRow({
 
   return (
     <div
-      className={`device-row${expanded ? " device-row--expanded" : ""}`}
+      className={`device-row${expanded ? " device-row--expanded" : ""}${showConfirm ? " device-row--confirm" : ""}`}
       onClick={() => onToggleExpand?.(id)}
     >
       <button
@@ -66,6 +69,19 @@ export function DeviceRow({
           </span>
         </span>
       </button>
+      {showConfirm && onConfirm ? (
+        <button
+          type="button"
+          className="device-row__confirm"
+          onClick={(event) => {
+            event.stopPropagation();
+            onConfirm(id);
+          }}
+          title={confirmMessage || "작업 포인트 확인"}
+        >
+          ✔ 확인 {confirmMessage ? `(${confirmMessage})` : ""}
+        </button>
+      ) : null}
       {expanded ? (
         <div
           className="device-row__actions"

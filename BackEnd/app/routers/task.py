@@ -83,7 +83,11 @@ def api_confirm_loop(robot_id: int):
 # ─── 태블릿 status 캐시 (빈번 폴링으로 인한 로봇 WS 부하 방지) ──
 import time as _time_mod
 _tablet_status_cache: dict[int, dict] = {}   # {robot_id: {battery, paused, ts}}
-_TABLET_CACHE_TTL = 5.0                      # 5초 캐시
+_TABLET_CACHE_TTL = 15.0                     # 캐시 TTL (5→15초 완화)
+                                             # 태블릿 5대 × 1초 폴링 = 5 req/s에서 캐시 미스 시
+                                             # 로봇별 WS 새 연결(2초 timeout) 발생 → CPU 100% 부하 원인.
+                                             # 15초로 늘리면 WS 호출 빈도 1/3로 감소 → CPU 절감.
+                                             # 단점: 배터리/충전 상태 표시 지연이 5→15초로 늘어남 (운영상 무리 X)
 
 
 @router.get("/loop/status/{robot_id}")

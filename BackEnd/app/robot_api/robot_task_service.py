@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 PORT = 8090
 MOVE_TIMEOUT = 1800      # 단일 이동 최대 대기 시간 (30분)
 WS_RECV_TIMEOUT = 3.0    # WebSocket recv 대기 시간 (초)
-WS_SILENCE_LIMIT = 15.0  # WebSocket 무응답 허용 시간 (초) — 초과 시 연결 끊김 판단
+WS_SILENCE_LIMIT = 30.0  # WebSocket 무응답 허용 시간 (초) — 초과 시 연결 끊김 판단 (15→30 완화: 정지점 idle 오탐 방지)
 RECOVERY_DELAY = 1.5     # cancel 후 새 이동 전 물리적 복구 대기 (초)
 
 # 스레드 안전한 공유 상태 관리
@@ -759,6 +759,19 @@ def _wait_for_move_ws(ws, move_id: int, ip: str,
         # WebSocket 무응답 감지 — 일정 시간 메시지 없으면 연결 끊김 판단
         silence = time.time() - last_msg_time
         if silence > WS_SILENCE_LIMIT:
+            # [false positive 가드] 도착 직전 잔여거리가 매우 작으면 정상 도착으로 간주
+            # 로봇이 정지점 도달 직전 /planning_state 발행을 잠시 중단하면 30초 후 ws_error로
+            # 잘못 판정되는 false positive 발생 (분당 ~0.4건 누적 → autoheal trigger 사고 원인)
+            # 5cm 이내면 사실상 도착이므로 succeeded로 처리하여 불필요한 cancel/재이동 차단.
+            if last_remaining is not None and last_remaining < 0.05:
+                logger.info(
+                    f"[Move {move_id}] 도착 추정 — WS 무응답 {silence:.0f}초 + "
+                    f"잔여 {last_remaining:.3f}m (5cm 이내)"
+                )
+                if robot_id is not None:
+                    with _lock:
+                        _stuck_states[robot_id] = False
+                return "succeeded", f"도착 추정 (잔여 {last_remaining:.3f}m)"
             logger.error(f"[Move {move_id}] WS {silence:.0f}초 무응답 — 연결 끊김 판단")
             return "ws_error", f"WebSocket {silence:.0f}초 무응답"
 
@@ -810,8 +823,10 @@ def _wait_for_move_ws(ws, move_id: int, ip: str,
             last_state = state
             last_remaining = remaining
 
-        # action_id가 있으면 우리 이동인지 확인
-        if action_id is not None and action_id != move_id:
+        # action_id가 우리 이동과 일치하는 메시지만 처리.
+        # action_id 없거나 다른 move의 메시지는 무시 — 이전 cancel의 후속 메시지가
+        # 새 move를 cancelled로 잘못 판정하는 race condition 방지.
+        if action_id is None or action_id != move_id:
             continue
 
         # 종료 상태 처리
@@ -1356,7 +1371,15 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
             if loop > 1:
                 battery_pct = _get_battery_percentage(robot_ip)
                 if battery_pct is not None:
-                    min_bat, charging_poi = _get_charging_config(db, robot_id)
+                    # NOTE: 외부 db 변수는 이미 line 1238에서 close됨.
+                    # 충전 설정 조회는 새 짧은 세션을 열어서 수행 후 즉시 close.
+                    db_cfg = SessionLocal()
+                    try:
+                        min_bat, charging_poi = _get_charging_config(db_cfg, robot_id)
+                        if charging_poi is not None:
+                            db_cfg.expunge(charging_poi)  # 세션 닫기 전 detach
+                    finally:
+                        db_cfg.close()
                     logger.info(f"[Robot {robot_id}] 배터리: {battery_pct:.1f}% (최소: {min_bat}%)")
 
                     if battery_pct <= min_bat:
@@ -1424,11 +1447,16 @@ def _task_runner(robot_id: int, robot_ip: str, poi_names: list[str],
                                     }
 
                             # 2단계: ENTERPOS 역순 → 충전소 이동
-                            _navigate_to_charger(
-                                robot_id, robot_ip, charging_poi,
-                                entry_poi_names, db, ws, move_lock, stop_event,
-                                robot_name=robot_name
-                            )
+                            # 외부 db는 이미 close됨 → 새 세션으로 호출 후 즉시 close
+                            db_nav = SessionLocal()
+                            try:
+                                _navigate_to_charger(
+                                    robot_id, robot_ip, charging_poi,
+                                    entry_poi_names, db_nav, ws, move_lock, stop_event,
+                                    robot_name=robot_name
+                                )
+                            finally:
+                                db_nav.close()
 
                             # 모든 활성 로봇이 충전소로 갔는지 확인
                             with _lock:

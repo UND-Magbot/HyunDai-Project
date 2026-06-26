@@ -15,6 +15,11 @@ WS_TIMEOUT = 2
 _offline_cache: dict[str, float] = {}  # {ip: 실패 시각}
 _OFFLINE_CACHE_TTL = 60.0
 
+# 전역 ThreadPoolExecutor — 매 요청마다 새 executor 생성 시 thread 누수 발생 (2026-04-29 사건)
+# /api/robots/live가 초당 여러 번 폴링되어 48분만에 thread 한도(만 단위) 도달
+# 16개 worker만 영구적으로 유지하고 재사용
+_LIVE_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="robot-live")
+
 REST_ENDPOINTS = {
     "device_info": "/device/info",
     # "wifi_info": "/device/wifi_info",  # 성능 최적화: 필수 아닌 조회 스킵
@@ -191,35 +196,48 @@ def fetch_all_robots_live(robots: list[dict]) -> dict:
         return {"total": 0, "items": []}
 
     items: list[dict] = []
-    max_workers = min(16, len(robots))
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {
-            executor.submit(fetch_robot_live, robot["ip"], robot["secret"]): robot
-            for robot in robots
+    # 전역 _LIVE_EXECUTOR 재사용 — 매번 새 ThreadPoolExecutor 생성 시 thread 누수 발생
+    future_map = {
+        _LIVE_EXECUTOR.submit(fetch_robot_live, robot["ip"], robot["secret"]): robot
+        for robot in robots
+    }
+
+    # as_completed에 timeout 추가 — 죽은 로봇 끼면 영원히 안 풀리던 문제 방지
+    # HTTP_TIMEOUT(2) + WS_TIMEOUT(2) × N + 마진 → 15초면 충분
+    AS_COMPLETED_TIMEOUT = 15.0
+    completed_futures: set = set()
+
+    def _offline_item(robot: dict, reason: str) -> dict:
+        return {
+            "IP": robot.get("ip", "N/A"),
+            "SN": "N/A",
+            "ROBOTNAME": "N/A",
+            "MODEL": "N/A",
+            "NICKNAME": None,
+            "AXBOT_VERSION": None,
+            "PLATFORM": None,
+            "RUNSTATE": "OFFLINE",
+            "ONLINE": "Offline",
+            "SIGNAL": "N/A",
+            "POWER(%)": "-",
+            "errors": {"fetch_robot_live": reason},
         }
 
-        for future in as_completed(future_map):
+    try:
+        for future in as_completed(future_map, timeout=AS_COMPLETED_TIMEOUT):
+            completed_futures.add(future)
             robot = future_map[future]
             try:
-                items.append(future.result())
+                items.append(future.result(timeout=1.0))
             except Exception as exc:
-                items.append(
-                    {
-                        "IP": robot.get("ip", "N/A"),
-                        "SN": "N/A",
-                        "ROBOTNAME": "N/A",
-                        "MODEL": "N/A",
-                        "NICKNAME": None,
-                        "AXBOT_VERSION": None,
-                        "PLATFORM": None,
-                        "RUNSTATE": "OFFLINE",
-                        "ONLINE": "Offline",
-                        "SIGNAL": "N/A",
-                        "POWER(%)": "-",
-                        "errors": {"fetch_robot_live": str(exc)},
-                    }
-                )
+                items.append(_offline_item(robot, str(exc)))
+    except TimeoutError:
+        # as_completed 타임아웃 — 미완료 future는 OFFLINE 처리하고 다음 폴링에 맡김
+        for fut, robot in future_map.items():
+            if fut not in completed_futures:
+                fut.cancel()
+                items.append(_offline_item(robot, "as_completed timeout"))
 
     items.sort(key=lambda x: str(x.get("IP", "")))
     return {"total": len(items), "items": items}

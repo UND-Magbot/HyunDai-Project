@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+
+# Virtualenv (호스트 OS용 — Docker 안에서는 pip가 새로 설치)
+venv/
+.venv/
+env/
+
+# Static / 런타임 생성 파일 (docker-compose에서 volume mount로 주입됨)
+static/maps/
+static/uploads/
+
+# 로그
+*.log
+logs/
+
+# IDE / 에디터
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker / 빌드 결과물
+backend.tar
+Dockerfile
+.dockerignore
+
+# 환경변수 (.env는 런타임에 docker compose가 주입)
+.env
+.env.local
+.env.*.local
+
+# Windows 전용 빌드 산출물 (있다면)
+*.exe
+build/
+dist/

@@ -16,7 +16,7 @@ DATABASE_URL = f"mysql+pymysql://{quote_plus(DB_USER)}:{quote_plus(DB_PASSWORD)}
 
 engine = create_engine(
     DATABASE_URL, echo=False, pool_pre_ping=True,
-    pool_size=20, max_overflow=40, pool_recycle=1800, pool_timeout=60,
+    pool_size=20, max_overflow=40, pool_recycle=800, pool_timeout=30,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -104,7 +104,8 @@ _DEFAULT_MENUS = [
     {"menu_key": "robots",     "menu_name": "로봇관리",  "sort_order": 2},
     {"menu_key": "logs",       "menu_name": "로그관리",  "sort_order": 3},
     {"menu_key": "map",        "menu_name": "맵관리",    "sort_order": 4},
-    {"menu_key": "settings",   "menu_name": "설정",      "sort_order": 5},
+    {"menu_key": "statistics", "menu_name": "통계",      "sort_order": 5},
+    {"menu_key": "settings",   "menu_name": "설정",      "sort_order": 6},
 ]
 
 # 설정 하위 메뉴

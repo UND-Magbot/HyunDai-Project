@@ -397,6 +397,43 @@
   gap: var(--space-1);
 }
 
+/* 작업 포인트 확인 대기 상태 — 빨간 깜빡임으로 운영자 주의 환기 */
+.device-row--confirm {
+  border: 2px solid #e94560;
+  box-shadow: 0 0 12px rgba(233, 69, 96, 0.5);
+  animation: device-row-confirm-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes device-row-confirm-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(233, 69, 96, 0.5); }
+  50%      { box-shadow: 0 0 22px rgba(233, 69, 96, 0.85); }
+}
+
+.device-row__confirm {
+  display: block;
+  width: calc(100% - var(--space-2) * 2);
+  margin: var(--space-2);
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #e94560, #c23152);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  box-shadow: 0 6px 18px rgba(233, 69, 96, 0.45);
+}
+
+.device-row__confirm:hover {
+  box-shadow: 0 8px 22px rgba(233, 69, 96, 0.6);
+}
+
+.device-row__confirm:active {
+  transform: scale(0.97);
+  box-shadow: 0 3px 10px rgba(233, 69, 96, 0.3);
+}
+
 .device-row__actions .icon-btn {
   font-size: var(--font-size-xs);
   width: 90px;

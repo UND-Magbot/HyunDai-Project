@@ -18,17 +18,36 @@ services:
     volumes:
       - ./BackEnd/static:/app/static
       - /home/administrator:/home/administrator
+      # 백엔드 로그 영구 보관 — 컨테이너 삭제/재빌드해도 호스트에 남음
+      - ./BackEnd/logs:/var/log/backend
     restart: unless-stopped
+    # 메모리 한도 — 누수 발생해도 호스트 OOM Killer가 다른 서비스(MariaDB 등) 죽이는 것 방지
+    # backend가 limit 초과하면 컨테이너만 죽고 autoheal이 재시작
+    # 4g: thread 동시 ~3600개 가능 (1MB stack 기준), 누수 발생해도 OS 한도 도달 전에 디버깅 시간 충분
+    mem_limit: 4g
+    mem_reservation: 512m
+    # thread/file descriptor 한도 — 장기 운영 시 누적/일시 폭증으로 한도 도달 방지
+    # ("RuntimeError: can't start new thread" 재발 방지)
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
     logging:
       driver: "json-file"
       options:
         max-size: "20m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping')"]
+      # /healthz: DB/외부호출 없이 즉시 응답하는 초경량 endpoint
+      # timeout 10s + retries 5 = 일시 부하 (스레드 spike 등) 흡수 — autoheal false trigger 방지
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=8)"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s
+    labels:
+      - "autoheal=true"
 
   frontend:
     build:
@@ -42,8 +61,87 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     logging:
       driver: "json-file"
       options:
         max-size: "20m"
         max-file: "5"
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    # 내부망 환경 — 이미지가 이미 로컬에 있으면 pull 시도 안 함 (DNS 실패로 전체 멈추는 사고 방지)
+    pull_policy: missing
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=10
+      - TZ=Asia/Seoul
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    mem_limit: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  backend-watchdog:
+    # /healthz가 8초 안에 응답 못하면 hang 판단 → 호스트 /tmp에 진단 로그 백업
+    # 재시작은 autoheal이 담당. watchdog은 로그 보존 + 디스크 자동 정리.
+    image: docker:cli
+    pull_policy: missing
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      - TZ=Asia/Seoul
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp:/host-tmp
+    mem_limit: 64m
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        last_dump=0
+        last_cleanup=0
+        while true; do
+          # ── 1) Hang 감지 + 로그 백업 ──
+          if ! wget -q --timeout=8 -O /dev/null http://backend:8000/healthz; then
+            now=$$(date +%s)
+            # 같은 hang에서 매분 덤프 방지 (10분 cooldown)
+            if [ $$((now - last_dump)) -gt 600 ]; then
+              TS=$$(date +%Y%m%d-%H%M%S)
+              CNAME=$$(docker ps --filter "label=autoheal=true" --format "{{.Names}}" | head -1)
+              if [ -n "$$CNAME" ]; then
+                docker logs --tail 5000 "$$CNAME" > /host-tmp/backend-hang-$${TS}.log 2>&1 || true
+                echo "[$${TS}] backend hang detected ($$CNAME) — log saved to /tmp/backend-hang-$${TS}.log"
+                last_dump=$$now
+              fi
+            fi
+          fi
+
+          # ── 2) 디스크 자동 정리 (24시간마다 1회) ──
+          now=$$(date +%s)
+          if [ $$((now - last_cleanup)) -gt 86400 ]; then
+            CTS=$$(date +%Y%m%d-%H%M%S)
+            # 30일 이상 된 hang 로그 삭제
+            DELETED=$$(find /host-tmp -maxdepth 1 -name "backend-hang-*.log" -mtime +30 -print -delete 2>/dev/null | wc -l)
+            # dangling 이미지 정리 (사용 안 하는 빌드 잔재)
+            PRUNED=$$(docker image prune -f 2>/dev/null | grep -E "Total reclaimed" || echo "")
+            echo "[$${CTS}] cleanup: hang-logs=$${DELETED}, $${PRUNED}"
+            last_cleanup=$$now
+          fi
+
+          sleep 60
+        done
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"

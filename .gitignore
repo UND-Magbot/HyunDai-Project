@@ -31,6 +31,10 @@ map94_temp.json
 # 맵 파일 (로봇에서 동기화, 대용량, 별도 관리)
 BackEnd/static/maps/
 
+# 백엔드 로그 (호스트 마운트, 영구 보관용)
+BackEnd/logs/*
+!BackEnd/logs/.gitkeep
+
 # IDE / local settings
 .claude/settings.local.json
 

@@ -13,7 +13,7 @@ import httpx
 from websocket import create_connection, WebSocketException
 
 from app.database import SessionLocal
-from app.models.robot import Robot, RobotStatus
+from app.models.robot import Robot, RobotStatus, RobotStatusHistory
 from app.crud.activity_log import log_activity
 
 logger = logging.getLogger(__name__)
@@ -109,13 +109,16 @@ def _robot_ws_loop(ip: str, stop_event: threading.Event):
 
 
 def _sync_cache_to_db(db, robots: list[tuple[Robot, "RobotStatus | None"]]):
-    """캐시 데이터를 DB RobotStatus에 반영."""
+    """캐시 데이터를 DB RobotStatus에 반영. status 변경 시 RobotStatusHistory에도 기록 (가용성 통계용)."""
+    transitions: list[RobotStatusHistory] = []
     for i, (robot, status) in enumerate(robots):
         if not status:
             status = RobotStatus(robot_id=robot.id, status=4)
             db.add(status)
             db.flush()
             robots[i] = (robot, status)
+
+        prev_status = status.status
 
         with _cache_lock:
             cache = _robot_cache.get(robot.ip_address)
@@ -132,14 +135,31 @@ def _sync_cache_to_db(db, robots: list[tuple[Robot, "RobotStatus | None"]]):
                 status.status = 2  # 충전중
             elif cs in ("fully_charged", "Full"):
                 status.charging_status = 2
-                if status.status == 4:
-                    status.status = 0
+                # 완충도 도킹된 충전 상태 — status=2 유지로 충전중 ↔ 대기중 깜빡임 방지
+                if status.status in (0, 4):
+                    status.status = 2
             else:
                 status.charging_status = 0
                 if status.status == 4:
                     status.status = 0  # 오프라인→대기
         else:
             status.status = 4  # 오프라인
+
+        # status 전이 시점만 이력 저장 (MTTR/MTBF 계산용 — 같은 상태 반복 INSERT 안 함)
+        if status.status != prev_status:
+            transitions.append(RobotStatusHistory(
+                robot_id=robot.id,
+                battery_level=status.battery_level,
+                charging_status=status.charging_status,
+                position_x=status.position_x,
+                position_y=status.position_y,
+                position_yaw=status.position_yaw,
+                status=status.status,
+            ))
+
+    if transitions:
+        db.add_all(transitions)
+
     try:
         db.commit()
     except Exception as e:

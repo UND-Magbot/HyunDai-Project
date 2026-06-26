@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import math
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -16,7 +18,7 @@ from sqlalchemy.orm import Session
 STATIC_MAPS_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "maps"
 STATIC_MAPS_DIR.mkdir(parents=True, exist_ok=True)
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.crud.activity_log import log_activity
 from app.models.robot import Robot
 from app.models.map import RobotMap, Business, Area, MapPolygon
@@ -127,7 +129,7 @@ def _update_robots_area(db: Session, area_id: str):
 DOCKING_OFFSET = 0.9  # 충전소에서 도킹 포인트까지의 거리 (m)
 
 
-def _correct_map_grid_origin(db: Session, map_id: int) -> bool:
+def _correct_map_grid_origin(map_id: int) -> bool:
     """DB 맵의 grid_origin이 실제 로봇 맵과 다르면 보정.
 
     맵핑 원시 데이터의 grid_origin과 로봇이 서비스 재시작 후 만든
@@ -135,25 +137,36 @@ def _correct_map_grid_origin(db: Session, map_id: int) -> bool:
     DB grid_origin, image_url, download_url(JSON) 모두 갱신.
 
     Returns: 보정 수행 시 True, 불필요하거나 실패 시 False.
+
+    NOTE: 자체 SessionLocal()로 짧게 세션을 열고, 외부 HTTP 호출(15~30s)이 끝나면
+    별도 세션으로 commit. request 세션을 보유하지 않아 풀 고갈 위험 없음.
     """
     import json as _json
 
-    rm = db.query(RobotMap).filter(RobotMap.id == map_id, RobotMap.is_active == True).first()
-    if not rm or not rm.robot_sn:
-        return False
+    # 1단계: 짧은 세션으로 메타 조회만
+    db_meta = SessionLocal()
+    try:
+        rm = db_meta.query(RobotMap).filter(RobotMap.id == map_id, RobotMap.is_active == True).first()
+        if not rm or not rm.robot_sn:
+            return False
+        source_robot = db_meta.query(Robot).filter(
+            Robot.serial_number == rm.robot_sn, Robot.is_active == True
+        ).first()
+        if not source_robot or not source_robot.ip_address:
+            return False
+        source_ip = source_robot.ip_address
+        db_gx = float(rm.grid_origin_x or 0)
+        db_gy = float(rm.grid_origin_y or 0)
+        db_download_url = rm.download_url
+    finally:
+        db_meta.close()
 
-    source_robot = db.query(Robot).filter(
-        Robot.serial_number == rm.robot_sn, Robot.is_active == True
-    ).first()
-    if not source_robot or not source_robot.ip_address:
-        return False
-
-    source_ip = source_robot.ip_address
     try:
         source_secret = _find_secret(source_ip)
     except HTTPException:
         return False
 
+    # 2단계: 외부 HTTP 호출 (DB 세션 없이)
     try:
         maps_list = get_maps(source_ip, source_secret)
         if not isinstance(maps_list, list) or not maps_list:
@@ -165,34 +178,28 @@ def _correct_map_grid_origin(db: Session, map_id: int) -> bool:
         actual_gy = float(actual_detail.get("grid_origin_y", 0))
         actual_res = float(actual_detail.get("grid_resolution", 0.05))
 
-        db_gx = float(rm.grid_origin_x or 0)
-        db_gy = float(rm.grid_origin_y or 0)
-
         if abs(db_gx - actual_gx) < 0.1 and abs(db_gy - actual_gy) < 0.1:
             return False  # 보정 불필요
 
         logger.warning(f"[map-correct] grid_origin 불일치 감지 (map_id={map_id}): "
                        f"DB=({db_gx}, {db_gy}) vs 로봇=({actual_gx}, {actual_gy})")
 
-        # ── 1) DB grid_origin 갱신 ──
-        rm.grid_origin_x = actual_gx
-        rm.grid_origin_y = actual_gy
-        rm.grid_resolution = actual_res
-
-        # ── 2) 맵 이미지 재다운로드 ──
+        # 이미지 재다운로드 (외부 IO, DB 세션 없이)
+        new_image_url: str | None = None
         try:
             img_bytes = download_map_image(source_ip, source_secret, actual_map_id)
             img_filename = f"map_img_{uuid.uuid4().hex[:12]}.png"
             img_filepath = STATIC_MAPS_DIR / img_filename
             img_filepath.write_bytes(img_bytes)
-            rm.image_url = f"/static/maps/{img_filename}"
+            new_image_url = f"/static/maps/{img_filename}"
         except Exception as img_err:
             logger.warning(f"[map-correct] 이미지 갱신 실패 (무시): {img_err}")
 
-        # ── 3) JSON 매핑 데이터의 grid_origin 갱신 ──
-        if rm.download_url and rm.download_url.startswith("/static/"):
+        # JSON 매핑 데이터의 grid_origin 갱신 (외부 IO, DB 세션 없이)
+        new_download_url: str | None = None
+        if db_download_url and db_download_url.startswith("/static/"):
             try:
-                json_path = Path(__file__).resolve().parent.parent.parent / rm.download_url.lstrip("/")
+                json_path = Path(__file__).resolve().parent.parent.parent / db_download_url.lstrip("/")
                 if json_path.exists():
                     raw = _json.loads(json_path.read_text())
                     if isinstance(raw, list):
@@ -203,18 +210,41 @@ def _correct_map_grid_origin(db: Session, map_id: int) -> bool:
                     new_json_name = f"map_data_{uuid.uuid4().hex[:12]}.json"
                     new_json_path = STATIC_MAPS_DIR / new_json_name
                     new_json_path.write_text(_json.dumps(raw))
-                    rm.download_url = f"/static/maps/{new_json_name}"
+                    new_download_url = f"/static/maps/{new_json_name}"
             except Exception as json_err:
                 logger.warning(f"[map-correct] JSON 갱신 실패 (무시): {json_err}")
-
-        db.commit()
-        logger.info(f"[map-correct] 보정 완료: grid_origin=({actual_gx}, {actual_gy}), "
-                    f"image={rm.image_url}, json={rm.download_url}")
-        return True
-
     except Exception as e:
         logger.error(f"[map-correct] 보정 실패 (로봇 연결 문제?): {e}")
         return False
+
+    # 3단계: 짧은 새 세션으로 결과만 commit
+    db_save = SessionLocal()
+    try:
+        rm = db_save.query(RobotMap).filter(RobotMap.id == map_id, RobotMap.is_active == True).first()
+        if not rm:
+            return False
+        rm.grid_origin_x = actual_gx
+        rm.grid_origin_y = actual_gy
+        rm.grid_resolution = actual_res
+        if new_image_url:
+            rm.image_url = new_image_url
+        if new_download_url:
+            rm.download_url = new_download_url
+        db_save.commit()
+        logger.info(f"[map-correct] 보정 완료: grid_origin=({actual_gx}, {actual_gy}), "
+                    f"image={rm.image_url}, json={rm.download_url}")
+        return True
+    except Exception as e:
+        db_save.rollback()
+        logger.error(f"[map-correct] 보정 commit 실패: {e}")
+        return False
+    finally:
+        db_save.close()
+
+
+# NOTE: _correct_map_grid_origin_async 함수는 thread 누수 원인이었어 제거함.
+# 보정이 필요하면 _correct_map_grid_origin()을 직접 호출 (자체 SessionLocal 사용).
+# 자동 보정은 맵 저장 시(_auto_sync)에서만 1회 수행.
 
 
 def _build_charging_overlay_features(charging_pois: list) -> list[dict]:
@@ -544,7 +574,14 @@ def _download_robot_file(url: str, prefix: str, ext: str, secret: str | None = N
 @router.post("/maps/save", status_code=201)
 def api_save_map(body: dict, db: Session = Depends(get_db)):
     """매핑 종료 후 결과를 DB에 저장.
-    이미지·맵 데이터를 로봇에서 다운로드하여 로컬 서버에 저장한 뒤 경로를 DB에 기록."""
+    이미지·맵 데이터를 로봇에서 다운로드하여 로컬 서버에 저장한 뒤 경로를 DB에 기록.
+
+    NOTE: 다운로드(최대 60초 × 5개)가 길어 request 세션을 풀에서 즉시 반환한 뒤,
+    DB 작업 시점에만 짧은 새 세션을 사용한다. (풀 고갈 방지)
+    """
+    # 외부 다운로드 전에 request 세션을 풀로 반환 (Depends(get_db)의 finally는 idempotent)
+    db.close()
+
     # 로봇 secret 조회 (download_url에 필요)
     robot_secret = None
     download_url = body.get("download_url")
@@ -557,7 +594,7 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
             logger.warning(f"[save_map] 로봇 Secret 조회 실패: {e}")
             pass
 
-    # 로봇 URL → 로컬 서버 파일로 다운로드
+    # 로봇 URL → 로컬 서버 파일로 다운로드 (DB 세션 없이)
     if body.get("image_url"):
         local_path = _download_robot_image(body["image_url"], "map_img")
         if local_path:
@@ -586,19 +623,24 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
         if local_path:
             body["trajectories_url"] = local_path
 
+    # 다운로드 완료 후, DB 작업용 짧은 새 세션
+    db_save = SessionLocal()
     try:
-        result = save_robot_map(db, body)
-    except Exception as e:
-        logger.error(f"[save_map] DB 저장 실패: {e}")
-        raise HTTPException(status_code=500, detail=f"맵 DB 저장 에 실패했습니다: {e}")
-
-    # 맵 저장 성공 시, 연결 가능한 모든 로봇의 area_id 업데이트
-    area_id = body.get("area_id")
-    if area_id:
         try:
-            _update_robots_area(db, str(area_id))
+            result = save_robot_map(db_save, body)
         except Exception as e:
-            logger.error(f"[save_map] 로봇 area_id 업데이트 실패: {e}")
+            logger.error(f"[save_map] DB 저장 실패: {e}")
+            raise HTTPException(status_code=500, detail=f"맵 DB 저장 에 실패했습니다: {e}")
+
+        # 맵 저장 성공 시, 연결 가능한 모든 로봇의 area_id 업데이트
+        area_id = body.get("area_id")
+        if area_id:
+            try:
+                _update_robots_area(db_save, str(area_id))
+            except Exception as e:
+                logger.error(f"[save_map] 로봇 area_id 업데이트 실패: {e}")
+    finally:
+        db_save.close()
 
     # ── 자동 동기화: 서버 데이터 기반으로 즉시 동기화 + 후속 DB 보정 ──
     saved_map_id = result.get("id")
@@ -608,35 +650,45 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
         import threading
 
         def _auto_sync():
-            from app.database import SessionLocal
-            sync_db = SessionLocal()
+            # NOTE: 외부 IO(맵 다운로드/대기 120초)가 길어 DB 세션을 절대 보유하지 않음.
+            # 단계마다 짧은 세션을 새로 열고 즉시 close → pool 고갈 방지.
+
+            # 1단계: source_ip만 짧은 세션으로 조회
+            db_meta = SessionLocal()
             try:
-                source_robot = sync_db.query(Robot).filter(
+                source_robot = db_meta.query(Robot).filter(
                     Robot.serial_number == source_sn, Robot.is_active == True
                 ).first()
                 source_ip = source_robot.ip_address if source_robot else None
-                if not source_ip:
-                    logger.warning(f"[auto-sync] 소스 로봇 IP를 찾지 못했습니다: {source_sn}")
-                    return
+            finally:
+                db_meta.close()
 
-                # ── 1) 서버 데이터 기반 즉시 동기화 (소스 로봇 대기 불필요) ──
+            if not source_ip:
+                logger.warning(f"[auto-sync] 소스 로봇 IP를 찾지 못했습니다: {source_sn}")
+                return
+
+            try:
+                # 2단계: 타겟 로봇별로 동기화 (각 호출마다 새 짧은 세션)
                 targets = [r["ip"] for r in ROBOTS if r["ip"] != source_ip]
                 if targets:
                     logger.info(f"[auto-sync] 서버 데이터 기반 즉시 동기화: → {targets}")
                     for target_ip in targets:
+                        db_sync = SessionLocal()
                         try:
                             api_sync_map_to_robot(
                                 map_id=saved_map_id,
                                 body={"robot_ip": target_ip, "area_name": area_name, "method": "full"},
-                                db=sync_db,
+                                db=db_sync,
                             )
                             logger.info(f"[auto-sync] {target_ip} 동기화 완료")
                         except Exception as e:
                             logger.error(f"[auto-sync] {target_ip} 동기화 실패: {e}")
+                        finally:
+                            db_sync.close()
                 else:
                     logger.info("[auto-sync] 동기화할 타겟 로봇이 없습니다.")
 
-                # ── 2) 소스 로봇의 새 맵 생성 대기 → DB 보정 (grid_origin + image + JSON) ──
+                # 3단계: 새 맵 생성 대기 (DB 세션 없이 외부 호출만)
                 import time as _time
                 source_secret = _find_secret(source_ip)
                 old_maps = get_maps(source_ip, source_secret)
@@ -662,8 +714,8 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
                     logger.warning("[auto-sync] 120초 내 새 맵 미생성 — DB 보정은 api_get_default_map에서 재시도됨")
                     return
 
-                # ── _correct_map_grid_origin()으로 한 번에 보정 (grid_origin + image + JSON) ──
-                corrected = _correct_map_grid_origin(sync_db, saved_map_id)
+                # 4단계: _correct_map_grid_origin (자체 SessionLocal 사용)
+                corrected = _correct_map_grid_origin(saved_map_id)
                 if corrected:
                     logger.info("[auto-sync] DB 보정 완료 (grid_origin + image + JSON)")
                 else:
@@ -671,8 +723,6 @@ def api_save_map(body: dict, db: Session = Depends(get_db)):
 
             except Exception as e:
                 logger.error(f"[auto-sync] 오류: {e}")
-            finally:
-                sync_db.close()
 
         threading.Thread(target=_auto_sync, daemon=True).start()
 
@@ -704,9 +754,9 @@ def api_get_default_map(db: Session = Depends(get_db)):
         if not latest:
             return {"map_id": None, "image_url": None, "grid_origin_x": 0, "grid_origin_y": 0, "grid_resolution": 0.05, "area_id": None}
 
-        # grid_origin 보정 확인 (로봇 연결 가능 시 자동 보정, 실패해도 기존 값 반환)
-        if _correct_map_grid_origin(db, latest.id):
-            db.refresh(latest)
+        # NOTE: 자동 보정은 의도적으로 비활성화 (thread 누수 원인이었음)
+        # 보정이 필요한 경우는 맵 저장 시(_auto_sync)에 수행됨.
+        # 추가 보정이 필요하면 관리자가 수동으로 트리거해야 함.
 
         return {
             "map_id": latest.id,
@@ -1302,9 +1352,9 @@ def api_relocalize_robots(body: dict, db: Session = Depends(get_db)):
                 results.append(result)
                 continue
 
-            # POI가 속한 맵의 grid_origin 보정 (맵당 1회만)
+            # NOTE: 자동 보정 비활성화 (thread 누수 원인이었음)
+            # 필요하면 맵 저장 시(_auto_sync)에 수행됨.
             if poi.map_id and poi.map_id not in _corrected_map_ids:
-                _correct_map_grid_origin(db, poi.map_id)
                 _corrected_map_ids.add(poi.map_id)
 
             if poi.world_x is None or poi.world_y is None:

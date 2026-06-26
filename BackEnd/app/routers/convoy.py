@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.robot import Robot
 from app.models.map import MapPOI, ConvoyConfig, ConvoySavedState
-from app.robot_api.robot_convoy_service import start_convoy, start_convoy_resume, stop_convoy, force_stop_convoy, get_convoy_status, fire_evacuate, reset_fire, return_all_convoy
+from app.robot_api.robot_convoy_service import start_convoy, start_convoy_resume, stop_convoy, force_stop_convoy, get_convoy_status, fire_evacuate, reset_fire, return_all_convoy, reset_convoy_state, clear_convoy_saved_state
 from app.robot_api.robot_task_service import confirm_loop
 from app.robot_api.route_utils import find_work_loop_order
 from app.crud.activity_log import log_activity
@@ -381,6 +381,36 @@ def api_convoy_stop():
 def api_convoy_force_stop():
     """Convoy 즉시 정지 — 모든 이동 취소 + 상태 리셋"""
     ok, msg = force_stop_convoy()
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"message": msg}
+
+
+@router.post("/reset")
+def api_convoy_reset():
+    """[관리자용] Convoy 상태 강제 초기화
+
+    복귀 중 워커 thread가 hang되거나 도킹 실패로 phase가 'returning' 상태에서
+    풀리지 않을 때 강제로 idle 상태로 되돌린다.
+    ConvoySavedState DB도 클리어하여 재개 정보까지 폐기한다.
+
+    NOTE: 일반 종료가 정상 동작할 때는 사용 금지. 이상 상황 전용.
+    """
+    ok, msg = reset_convoy_state()
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"message": msg}
+
+
+@router.post("/clear-saved-state")
+def api_convoy_clear_saved_state():
+    """[관리자용] 로봇별 마지막 저장 위치(재개 정보)만 삭제
+
+    컨보이 자체는 정상이지만 다음 시작 시 "재개 모드"가 아니라
+    "처음부터 새로 시작"하고 싶을 때 사용한다.
+    실행 중인 컨보이에는 영향 없음 (실행 중이면 거부).
+    """
+    ok, msg = clear_convoy_saved_state()
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
     return {"message": msg}

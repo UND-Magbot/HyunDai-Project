@@ -185,6 +185,8 @@ export function MonitoringClient({ initialDateTime }: Props) {
   const lastBatteryAlertRef = useRef<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [loopRunning, setLoopRunning] = useState(false);
+  // convoy 현재 phase (entering 중에는 일반 종료 버튼 비활성화 — 비상정지는 별도 버튼 사용)
+  const [convoyPhase, setConvoyPhase] = useState<string | null>(null);
   const [loopStopping, setLoopStopping] = useState(false);
   const [loopEntering, setLoopEntering] = useState(false);
   const [convoyCountdown, setConvoyCountdown] = useState<number | null>(null);
@@ -861,6 +863,42 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
   };
 
+  // 작업 포인트 확인 (waiting_confirmation 상태에서 운영자가 확인 버튼 클릭)
+  // backend autoheal 재시작 등으로 태블릿 상태가 끊긴 경우에도 PC 화면에서 즉시 복구 가능.
+  const handleConfirm = async (deviceId: string) => {
+    const robot = apiRobotsFull.find((r) => String(r.id) === deviceId);
+    if (!robot) return;
+    // 중복 클릭 차단 (이미 confirm 보낸 카드는 즉시 비활성)
+    setConfirmMap((prev) => {
+      if (!prev[deviceId]) return prev;
+      const next = { ...prev };
+      delete next[deviceId];
+      return next;
+    });
+    // 타이머 리셋 — backend 처리 지연 시 재진입해도 10초 다시 카운트 (즉시 재표시 방지)
+    delete confirmFirstSeenRef.current[deviceId];
+    try {
+      await apiPost(`/api/convoy/confirm/${robot.id}`, {});
+    } catch (err: unknown) {
+      const code = err instanceof ApiError ? err.errorCode : undefined;
+      // NET-001(네트워크 일시 끊김)은 silent 처리.
+      // confirm_loop은 backend에서 거의 즉시 처리되므로 요청이 도달했을 가능성 높고,
+      // 실제로 처리 안 됐으면 다음 폴링에서 waiting_confirmation이 다시 표시되어 재시도 가능.
+      if (code === "NET-001") {
+        console.warn(`[handleConfirm] 일시 네트워크 오류 — silent (로봇: ${robot.name})`, err);
+        return;
+      }
+      const msg = err instanceof Error ? err.message : "확인 처리 실패";
+      showAlert({
+        title: "작업 확인 실패",
+        message: `${msg} (로봇: ${robot.name})`,
+        errorCode: code ?? "TASK-008",
+        errorType: "task",
+        source: "모니터링 > 작업 확인",
+      });
+    }
+  };
+
   const handleEmergencyStop = async () => {
     try {
       await apiPost("/api/convoy/pause", {});
@@ -904,22 +942,51 @@ export function MonitoringClient({ initialDateTime }: Props) {
     }
   };
 
+  // 작업 포인트 확인 대기 상태 매핑 (DeviceRow에 빨간 확인 버튼 표시용)
+  // 10초 지연 표시 — 정상 작업 흐름(태블릿 5초 자동 확인)에서는 깜빡이지 않고,
+  // 태블릿이 처리 못 한 비정상 상황(autoheal 재시작 후 안전정지 등)에서만 등장.
+  const [confirmMap, setConfirmMap] = useState<Record<string, { show: boolean; message: string }>>({});
+  const confirmFirstSeenRef = useRef<Record<string, number>>({});
+  const CONFIRM_DELAY_MS = 10000;  // 10초 — 태블릿 자동 확인(5초) + 마진
+
   // Convoy 상태 폴링 (3초 간격, 항상 실행 — 새로고침 후에도 상태 복원)
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const res = await apiFetch<{ phase: string; countdown?: number | null; is_resume?: boolean; robots?: Array<{ robot_id: number; message?: string }> }>("/api/convoy/status");
+        const res = await apiFetch<{ phase: string; countdown?: number | null; is_resume?: boolean; robots?: Array<{ robot_id: number; status?: string; message?: string; show_confirm?: boolean }> }>("/api/convoy/status");
         setFireAlert(res.phase === "evacuating" || res.phase === "evacuated");
         setFireEvacuationDone(res.phase === "evacuated");
+        setConvoyPhase(res.phase ?? null);
         setConvoyCountdown(res.countdown ?? null);
-        // 로봇별 작업 메시지 매핑
+        // 로봇별 작업 메시지 + 확인 대기 상태 매핑
         const msgs: Record<string, string> = {};
+        const confirms: Record<string, { show: boolean; message: string }> = {};
+        const now = Date.now();
+        const seen = confirmFirstSeenRef.current;
+        const stillWaiting = new Set<string>();
         if (res.robots) {
           for (const r of res.robots) {
             if (r.message) msgs[String(r.robot_id)] = r.message;
+            const needsConfirm = r.show_confirm === true || r.status === "waiting_confirmation";
+            if (needsConfirm) {
+              const id = String(r.robot_id);
+              stillWaiting.add(id);
+              // 첫 진입 시각 기록 → 10초 이상 지속될 때만 빨간 표시
+              if (!seen[id]) seen[id] = now;
+              if (now - seen[id] >= CONFIRM_DELAY_MS) {
+                confirms[id] = { show: true, message: r.message ?? "" };
+              }
+            }
+          }
+        }
+        // 더 이상 waiting_confirmation 아닌 로봇은 트래킹 제거 (다음 진입 때 타이머 새로 시작)
+        for (const id of Object.keys(seen)) {
+          if (!stillWaiting.has(id)) {
+            delete seen[id];
           }
         }
         setConvoyRobotMessages(msgs);
+        setConfirmMap(confirms);
         if (res.phase === "entering") {
           setLoopRunning(true);
           setLoopStopping(false);
@@ -1161,11 +1228,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
                     battery={device.battery}
                     status={device.status}
                     taskMessage={convoyRobotMessages[device.id]}
+                    showConfirm={confirmMap[device.id]?.show === true}
+                    confirmMessage={confirmMap[device.id]?.message}
                     isExpanded={expandedDeviceId === device.id}
                     onToggleExpand={handleDeviceToggle}
                     onInfo={setOpenDeviceId}
                     onReturn={handleReturn}
                     onStop={handleStop}
+                    onConfirm={handleConfirm}
                   />
                 ))
               )}
@@ -1302,9 +1372,14 @@ export function MonitoringClient({ initialDateTime }: Props) {
                 <button
                   className="btn btn--danger"
                   onClick={handleStopAll}
-                  disabled={!isRunning || loopStopping}
+                  disabled={!isRunning || loopStopping || convoyPhase === "entering"}
+                  title={convoyPhase === "entering" ? "모든 로봇이 작업 위치에 도달한 후 종료할 수 있습니다 (비상정지는 별도 버튼)" : undefined}
                 >
-                  {loopStopping ? "종료중..." : "종료"}
+                  {loopStopping
+                    ? "종료중..."
+                    : convoyPhase === "entering"
+                      ? "진입 중"
+                      : "종료"}
                 </button>
               </div>
             }

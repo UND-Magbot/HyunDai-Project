@@ -11,11 +11,17 @@ export type DeviceRowProps = {
   battery: string;
   status: DeviceStatus;
   taskMessage?: string;
+  /** 작업 포인트 도착 후 확인 대기 중 — 빨간 확인 버튼 노출 */
+  showConfirm?: boolean;
+  /** 확인 대기 메시지 (예: "피킹 장소 대기") */
+  confirmMessage?: string;
   isExpanded?: boolean;
   onToggleExpand?: (deviceId: string) => void;
   onInfo?: (deviceId: string) => void;
   onReturn?: (deviceId: string) => void;
   onStop?: (deviceId: string) => void;
+  /** 작업 포인트 확인 버튼 클릭 → backend confirm API 호출 */
+  onConfirm?: (deviceId: string) => void;
 };
 
 export type MockDevice = DeviceRowProps & { id: string };

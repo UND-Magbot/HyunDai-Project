@@ -12,6 +12,7 @@ export const defaultNavItems: NavItem[] = [
   // { label: "tasks", href: "/tasks", match: "/tasks", icon: "/icon/Icon (15).png" },
   { label: "로그관리", href: "/logs", match: "/logs", icon: "/icon/zoom-in-w.png" },
   { label: "맵관리", href: "/map", match: "/map", icon: "/icon/Icon (24).png" },
+  { label: "통계", href: "/statistics", match: "/statistics", icon: "/icon/statistics-w.svg" },
   { label: "설정", href: "/settings", match: "/settings", icon: "/icon/Icon (17).png" },
 ];
 
@@ -21,6 +22,7 @@ const HREF_TO_MENU_KEY: Record<string, string> = {
   "/robots":     "robots",
   "/logs":       "logs",
   "/map":        "map",
+  "/statistics": "statistics",
   "/settings":   "settings",
 };
 
